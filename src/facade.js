@@ -609,7 +609,7 @@ function decomposeAsync( positions, indices, options )
 // afterwards (pass `cache: false`, or call b3ClearConvexDecompositionCache). An
 // `options.cacheKey` (e.g. an asset id) replaces the mesh hash entirely.
 
-const DECOMPOSITION_CACHE_LIMIT = 256;
+const DECOMPOSITION_CACHE_LIMIT = 512;
 const DECOMPOSITION_KEY_VERSION = 'b3cd1';
 
 let decompositionCache = new Map(); // key -> Promise<packed>; Map order = LRU order
