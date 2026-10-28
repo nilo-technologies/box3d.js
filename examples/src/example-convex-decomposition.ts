@@ -235,10 +235,13 @@ for (const key of Object.keys(status) as (keyof typeof status)[])
 
 let bowlReady = false;
 let bowlCompound: b3CompoundData | null = null;
+// set before the world is destroyed: pending decompositions check it after they resolve
+let disposed = false;
 
 // the bowl's shape references its compound, so the compound is freed after the world
 addEventListener('pagehide', (event) => {
 	if (event.persisted) return;
+	disposed = true;
 	b3.b3DestroyWorld(world);
 	b3.b3DestroyCompound(bowlCompound);
 });
@@ -256,6 +259,7 @@ async function buildBowl() {
 			resolution: 100000,
 		},
 	);
+	if (disposed) return;
 	status.bowl = `${bowl.offsets.length - 1} pieces in ${Math.round(performance.now() - t0)} ms`;
 
 	const bowlDef = b3.b3DefaultBodyDef();
@@ -329,6 +333,7 @@ async function drop(kind: keyof typeof meshes) {
 			mesh.indices,
 			{ maxConvexHulls, resolution: 50000 },
 		);
+		if (disposed) return;
 		b3.b3Body_Enable(body);
 		const object = sourceObject(sourceGeometries[kind]);
 		sourceGroup.add(object);
@@ -338,6 +343,12 @@ async function drop(kind: keyof typeof meshes) {
 		status.lastMs = +(performance.now() - t0).toFixed(2);
 		const { hits, misses } = b3.b3GetConvexDecompositionCacheStats();
 		status.cache = `${hits} hits / ${misses} misses`;
+	} catch (err) {
+		// once disposed, the body went with the world and the rejection is expected
+		if (disposed) return;
+		// otherwise a failed drop would leave its disabled body behind on every retry
+		b3.b3DestroyBody(body);
+		console.error(err);
 	} finally {
 		status.decomposing--;
 	}
@@ -356,6 +367,7 @@ statusFolder.open();
 // the page renders and simulates while every decomposition runs in the background
 let timer = 0;
 app.onFrame((dt) => {
+	if (disposed) return;
 	timer += dt;
 	const canDrop =
 		actions.autoDrop &&
