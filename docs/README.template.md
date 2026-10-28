@@ -224,6 +224,24 @@ Compound shapes combine multiple child shapes on a single body. **In box3d, comp
 
 <ExamplesTable ids="example-static-compound" />
 
+### Convex Decomposition (V-HACD)
+
+Triangle meshes are meant for static geometry, so for a concave object that has to move, box3d.js bundles [V-HACD](https://github.com/kmammou/v-hacd) to split them into convex pieces. On a dynamic or kinematic body, each piece becomes its own hull shape on the same body: the pieces move as one rigid object and never collide with each other. On a static body, put the pieces into one compound shape instead.
+
+<Snippet source="./shapes.ts" select="decomposition-dynamic" />
+
+The result follows the same `{ count, data }` layout as the other shape id buffers, plus a `skipped` count. A piece is skipped only when box3d can't build a hull from it, even after retrying with smaller vertex budgets (box3d hulls are capped at 255 vertices, faces and half-edges).
+
+<Snippet source="./shapes.ts" select="decomposition-async" />
+
+In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stages on 8 worker threads. These come from the same 32-thread pool as box3d's world workers, so leave room for them. The blocking call spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
+
+<Snippet source="./shapes.ts" select="decomposition-static" />
+
+<Snippet source="./shapes.ts" select="decomposition-cache" />
+
+<ExamplesTable ids="example-convex-decomposition" />
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -392,7 +410,7 @@ Outputs to `dist/`:
 # Debug build
 pnpm build:debug
 
-# Smoke test (falling-box simulation on both ST and MT builds)
+# Smoke test (simulation, buffers and convex decomposition on the ST and MT builds)
 pnpm test
 ```
 

@@ -52,9 +52,15 @@ export type WorldRenderer = {
 	update(): void;
 };
 
+export type WorldRendererOptions = {
+	/** Return false to skip drawing a shape this frame. */
+	shouldDraw?: (shapeId: b3ShapeId, bodyId: b3BodyId) => boolean;
+};
+
 export function createWorldRenderer(
 	b3: Box3DModule,
 	world: b3WorldId,
+	options: WorldRendererOptions = {},
 ): WorldRenderer {
 	const group = new THREE.Group();
 	const meshes = new Map<string, THREE.Mesh>();
@@ -106,10 +112,11 @@ export function createWorldRenderer(
 		seen.clear();
 
 		b3.b3World_OverlapAABB(world, HUGE_BOUNDS, filter, (shapeId: b3ShapeId) => {
+			const body = b3.b3Shape_GetBody(shapeId);
+			if (options.shouldDraw && !options.shouldDraw(shapeId, body)) return true;
+
 			const key = shapeKey(shapeId);
 			seen.add(key);
-
-			const body = b3.b3Shape_GetBody(shapeId);
 
 			let mesh = meshes.get(key);
 			if (mesh === undefined) {

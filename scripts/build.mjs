@@ -103,6 +103,16 @@ function validateESModule( file )
 		throw new Error( `${file}: require() still present after rewrite — did emscripten's output change?` );
 	}
 
+	// The facade's single-threaded convex decomposition worker is built from
+	// `Box3D.toString()` and asks findWasmBinary() where the wasm is, so the whole
+	// ST module must stay one self-contained factory function.
+	const singleThreaded = !file.includes( '.mt.' );
+	if ( singleThreaded && ( !src.startsWith( 'async function Box3D(' ) || !/export default Box3D;\s*$/.test( src )
+		|| !src.includes( 'function findWasmBinary(' ) ) )
+	{
+		throw new Error( `${file}: expected a self-contained \`async function Box3D\` factory with findWasmBinary — did emscripten's output change?` );
+	}
+
 	// dead file readers (SINGLE_FILE builds only)
 	if ( file.includes( '.inline.' ) )
 	{
@@ -166,9 +176,35 @@ function buildBox3dLib( buildDir, cflags )
 	return lib;
 }
 
+// V-HACD hardcodes an 8-thread worker pool. Stage a copy of its header with the
+// pool size as a macro so the build controls it (the pthread pool is shared with
+// box3d's own workers).
+const VHACD_THREADS = 8;
+function stageVhacdHeader()
+{
+	const src = readFileSync( join( root, 'vendor', 'v-hacd', 'include', 'VHACD.h' ), 'utf8' );
+	const needle = 'new ThreadPool(8)';
+	if ( src.split( needle ).length !== 2 ) throw new Error( `VHACD.h: expected exactly one \`${needle}\` — did the vendored V-HACD change?` );
+	mkdirSync( join( root, 'build', 'vhacd' ), { recursive: true } );
+	writeFileSync( join( root, 'build', 'vhacd', 'VHACD.h' ), src.replace( needle, 'new ThreadPool(B3_VHACD_THREADS)' ) );
+}
+
+function wasmSizes()
+{
+	const sizes = {};
+	for ( const f of [ 'box3d.wasm', 'box3d.mt.wasm' ] )
+	{
+		try { sizes[ f ] = statSync( join( root, 'dist', f ) ).size; }
+		catch { sizes[ f ] = null; }
+	}
+	return sizes;
+}
+
 assertEmscriptenVersion();
 
 mkdirSync( join( root, 'dist' ), { recursive: true } );
+const sizesBefore = wasmSizes();
+stageVhacdHeader();
 
 // box3d static libs: single-threaded, and a threaded one (box3d compiled with
 // -pthread -sSHARED_MEMORY so its scheduler uses real threads).
@@ -180,6 +216,8 @@ console.log( 'box3d MT lib:', mtLib );
 // Flags common to every link (bindings source + engine lib are prepended per build).
 const commonFlags = [
 	'-I', 'vendor/box3d/include',
+	'-I', 'build/vhacd',
+	`-DB3_VHACD_THREADS=${VHACD_THREADS}`,
 	'-std=c++17',
 	'-lembind',
 	// NB: the facade post-js (build/facade.generated.js) is NOT here — it is codegen'd
@@ -300,7 +338,56 @@ export interface Manifold {
   pointCount: number;
   points: ManifoldPoint[];
 }
+/** Packed convex decomposition: xyz points for every piece back to back, and
+ * pieceCount + 1 vertex offsets (piece i is vertices offsets[i] .. offsets[i+1]). */
+export interface b3ConvexDecomposition { points: Float32Array; offsets: Uint32Array; }
+export interface b3ConvexDecompositionOptions {
+  /** Maximum number of pieces. Default 32. */
+  maxConvexHulls?: number;
+  /** Voxel resolution; higher is more accurate and slower. Default 100000. */
+  resolution?: number;
+  /** Vertex budget per piece, clamped to [4, 255]. Default 32 (box3d hulls are capped at 255 half-edges). */
+  maxVerticesPerHull?: number;
+  /** Stop splitting once a piece is within this volume error, in percent. Default 1. */
+  minVolumePercentError?: number;
+  /** Maximum split recursion depth. Default 10. */
+  maxRecursionDepth?: number;
+  /** Project hull vertices back onto the source mesh. Default true. */
+  shrinkWrap?: boolean;
+  /** Use V-HACD's worker threads (multithreaded builds only; ignored otherwise). Default false. */
+  useThreads?: boolean;
+  /** Async variants only: reuse an earlier result for the same mesh + options instead of
+   * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
+   * in place afterwards (their hash is memoized per array object). */
+  cache?: boolean;
+  /** Async variants only: identifies the mesh in the cache (e.g. an asset id) instead of
+   * hashing its contents. Change it whenever the mesh changes. */
+  cacheKey?: string;
+}
+export interface b3ConvexDecompositionCacheStats { entries: number; hits: number; misses: number; }
+/** Shape ids created from a decomposition (ShapeIdBuffer layout, read with getShapeIdAt),
+ * plus the number of pieces that could not become a box3d hull. */
+export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
+export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
 export interface Box3DFacade {
+  /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
+   * blocking the calling thread, then attaches one hull shape per piece in a single call.
+   * Single-threaded builds run V-HACD in a Web Worker (Node: synchronously); multithreaded
+   * builds on a pthread. Create the body disabled and enable it once this resolves, so it
+   * doesn't fall without shapes. Rejects if the body is destroyed first. Results are
+   * cached (see options.cache), so further bodies of the same mesh skip V-HACD. */
+  b3CreateConvexDecompositionShapesAsync(bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3DecompositionShapes>;
+  /** Packed decomposition computed without blocking the calling thread (same threading as
+   * b3CreateConvexDecompositionShapesAsync). Use it for static compounds and caching. */
+  b3ComputeConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3ConvexDecomposition>;
+  /** Cache key the async variants use: options.cacheKey or a 64-bit hash of the mesh
+   * (memoized per array pair), plus every option that changes the result. */
+  b3ConvexDecompositionCacheKey(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): string;
+  /** Drops every cached decomposition and memoized mesh hash, and resets the stats. */
+  b3ClearConvexDecompositionCache(): void;
+  b3GetConvexDecompositionCacheStats(): b3ConvexDecompositionCacheStats;
+  b3PackConvexDecomposition(parts: ArrayLike<number>[]): b3ConvexDecomposition;
+  b3UnpackConvexDecomposition(packed: b3ConvexDecomposition): Float32Array[];
   getNumShapeIds(buf: ShapeIdBuffer): number;
   createShapeId(): b3ShapeId;
   getShapeIdAt(out: b3ShapeId, buf: ShapeIdBuffer, i: number): b3ShapeId;
@@ -359,6 +446,21 @@ for ( const { method, tsType } of retMeta )
 	const re = new RegExp( `^(\\s*)${method}\\(([^)]*)\\): any;`, 'm' );
 	if ( !re.test( tsd ) ) throw new Error( `tsd: no \`${method}(...): any;\` line to retype — binding renamed/removed or return type changed?` );
 	tsd = tsd.replace( re, `$1${method}($2): ${tsType};` );
+}
+
+// val params also emit as `any`. The convex decomposition bindings take JS arrays and
+// option bags, and the facade wraps them so the trailing argument may be omitted.
+const valParamSigs = {
+	b3ComputeConvexDecomposition: 'positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions',
+	b3CreateConvexDecompositionShapes: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions',
+	b3CreateConvexDecompositionShapesFromPacked: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number',
+	b3CreateDecompositionCompound: 'packed: b3ConvexDecomposition, material?: b3SurfaceMaterial',
+};
+for ( const [ method, params ] of Object.entries( valParamSigs ) )
+{
+	const re = new RegExp( `^(\\s*)${method}\\([^)]*\\):`, 'm' );
+	if ( !re.test( tsd ) ) throw new Error( `tsd: no \`${method}(...)\` line to retype — binding renamed/removed?` );
+	tsd = tsd.replace( re, `$1${method}(${params}):` );
 }
 
 // out-param math reads: rewrite each raw `MethodInto(out: number, ...): void;` embind
@@ -424,6 +526,14 @@ validateESModule( 'dist/box3d.mt.mjs' );
 // + separate-wasm-fetch friction (as JoltPhysics.js does).
 run( 'em++', [ 'src/bindings.cpp', mtLib, ...commonFlags, ...mtFlags, ...post, '-sSINGLE_FILE=1', '-o', 'dist/box3d.mt.inline.mjs' ] );
 validateESModule( 'dist/box3d.mt.inline.mjs' );
+
+const sizesAfter = wasmSizes();
+console.log( '\nwasm size (before -> after this build):' );
+for ( const f of Object.keys( sizesAfter ) )
+{
+	const kb = ( n ) => ( n == null ? 'missing' : `${( n / 1024 ).toFixed( 1 )} KiB` );
+	console.log( `  ${f.padEnd( 16 )} ${kb( sizesBefore[ f ] )} -> ${kb( sizesAfter[ f ] )}` );
+}
 
 console.log( '\nBuild artifacts:' );
 for ( const f of [

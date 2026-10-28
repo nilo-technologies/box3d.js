@@ -10,8 +10,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const docsDir = path.dirname(new URL(import.meta.url).pathname);
+const docsDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(docsDir, '..');
 
 // Examples gallery (GitHub Pages). The gallery deep-links each example via a

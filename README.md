@@ -134,13 +134,19 @@ npm install box3d.js
       </a>
     </td>
     <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-convex-decomposition">
+        <img src="./examples/public/screenshots/example-convex-decomposition.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Convex Decomposition
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-triangle-mesh">
         <img src="./examples/public/screenshots/example-triangle-mesh.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Triangle Mesh
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-mesh">
         <img src="./examples/public/screenshots/example-mesh.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -153,14 +159,14 @@ npm install box3d.js
         Cast Ray
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-cast-shape">
         <img src="./examples/public/screenshots/example-cast-shape.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Cast Shape
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-hinge-motor">
         <img src="./examples/public/screenshots/example-hinge-motor.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -173,14 +179,14 @@ npm install box3d.js
         GJK Distance
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-manifold">
         <img src="./examples/public/screenshots/example-manifold.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Manifold
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-tree">
         <img src="./examples/public/screenshots/example-tree.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -193,14 +199,14 @@ npm install box3d.js
         Explosion
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-geometry">
         <img src="./examples/public/screenshots/example-geometry.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Geometry
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-sensor">
         <img src="./examples/public/screenshots/example-sensor.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -213,14 +219,14 @@ npm install box3d.js
         Events
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-contacts">
         <img src="./examples/public/screenshots/example-contacts.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Contacts
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-multithreading">
         <img src="./examples/public/screenshots/example-multithreading.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -912,6 +918,88 @@ b3.b3CreateCompoundShape(compoundBody, b3.b3DefaultShapeDef(), compoundData);
   </tr>
 </table>
 
+### Convex Decomposition (V-HACD)
+
+Triangle meshes are meant for static geometry, so for a concave object that has to move, box3d.js bundles [V-HACD](https://github.com/kmammou/v-hacd) to split them into convex pieces. On a dynamic or kinematic body, each piece becomes its own hull shape on the same body: the pieces move as one rigid object and never collide with each other. On a static body, put the pieces into one compound shape instead.
+
+```ts
+// One call: V-HACD splits the mesh into convex pieces, and each piece becomes a
+// hull shape on the body, all inside wasm. Works on dynamic and kinematic bodies.
+const decompBodyDef = b3.b3DefaultBodyDef();
+decompBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+const decompBody = b3.b3CreateBody(world, decompBodyDef);
+
+const shapes = b3.b3CreateConvexDecompositionShapes(decompBody, sd, concavePositions, concaveIndices, {
+    maxConvexHulls: 16,     // keep this modest for dynamic bodies: one shape per piece
+    maxVerticesPerHull: 32, // box3d hulls are capped at 255 half-edges
+});
+console.log(`${shapes.count} hull shapes, ${shapes.skipped} pieces skipped`);
+
+// shape ids come back packed; read them with the shape id reader
+const shapeId = b3.createShapeId();
+for (let i = 0; i < b3.getNumShapeIds(shapes); i++) {
+    b3.getShapeIdAt(shapeId, shapes, i);
+}
+```
+
+The result follows the same `{ count, data }` layout as the other shape id buffers, plus a `skipped` count. A piece is skipped only when box3d can't build a hull from it, even after retrying with smaller vertex budgets (box3d hulls are capped at 255 vertices, faces and half-edges).
+
+```ts
+// Promise variant (the recommended path): V-HACD runs off the main thread, so the page
+// keeps rendering. Multithreaded builds use a background thread, single-threaded browser
+// builds a Web Worker; Node runs it synchronously. Create the body disabled so it can't
+// fall before its shapes exist, then enable it once the Promise resolves.
+const asyncBodyDef = b3.b3DefaultBodyDef();
+asyncBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+asyncBodyDef.isEnabled = false;
+const asyncBody = b3.b3CreateBody(world, asyncBodyDef);
+
+const asyncShapes = await b3.b3CreateConvexDecompositionShapesAsync(
+    asyncBody, sd, concavePositions, concaveIndices, { useThreads: true },
+);
+b3.b3Body_Enable(asyncBody);
+```
+
+In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stages on 8 worker threads. These come from the same 32-thread pool as box3d's world workers, so leave room for them. The blocking call spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
+
+```ts
+// Static bodies: put every piece into one compound shape instead.
+const decomposition = await b3.b3ComputeConvexDecompositionAsync(concavePositions, concaveIndices, { maxConvexHulls: 32 });
+const { compound } = b3.b3CreateDecompositionCompound(decomposition, { ...b3.b3DefaultSurfaceMaterial(), friction: 0.8 });
+
+const levelBodyDef = b3.b3DefaultBodyDef();
+levelBodyDef.type = b3.b3BodyType.b3_staticBody;
+const levelBody = b3.b3CreateBody(world, levelBodyDef);
+b3.b3CreateCompoundShape(levelBody, b3.b3DefaultShapeDef(), compound!);
+// the shape references the compound: b3DestroyCompound(compound) after the body/world is gone
+```
+
+```ts
+// Decomposition is slow (it voxelizes the mesh), so precompute it for shipped assets.
+// The packed form is two typed arrays: store them, then rebuild shapes without V-HACD.
+const packed = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices);
+const saved = { points: packed.points.buffer, offsets: packed.offsets.buffer }; // e.g. write to disk
+
+const loaded = { points: new Float32Array(saved.points), offsets: new Uint32Array(saved.offsets) };
+const cachedBody = b3.b3CreateBody(world, decompBodyDef);
+b3.b3CreateConvexDecompositionShapesFromPacked(cachedBody, sd, loaded);
+
+// one Float32Array of xyz points per piece, and back
+const pieces = b3.b3UnpackConvexDecomposition(loaded);
+const repacked = b3.b3PackConvexDecomposition(pieces);
+```
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-convex-decomposition">
+      <img src="./examples/public/screenshots/example-convex-decomposition.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Convex Decomposition</strong>
+    </a>
+  </td>
+  </tr>
+</table>
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -1444,7 +1532,7 @@ Outputs to `dist/`:
 # Debug build
 pnpm build:debug
 
-# Smoke test (falling-box simulation on both ST and MT builds)
+# Smoke test (simulation, buffers and convex decomposition on the ST and MT builds)
 pnpm test
 ```
 
