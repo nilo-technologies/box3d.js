@@ -10,7 +10,7 @@ Convex decomposition: [V-HACD](https://github.com/kmammou/v-hacd) v4.1.0 is comp
 - `b3ComputeConvexDecomposition` / `b3ComputeConvexDecompositionAsync` return a packed decomposition (`{ points: Float32Array, offsets: Uint32Array }`) for precomputing assets offline. Rebuild shapes from it with `b3CreateConvexDecompositionShapesFromPacked`, and convert to and from one array per piece with `b3PackConvexDecomposition` / `b3UnpackConvexDecomposition`.
 - `b3CreateDecompositionCompound(packed, material?)` builds a compound for static bodies.
 - Pieces that box3d can't turn into a hull (hulls are capped at 255 vertices, faces and half-edges) are retried with smaller vertex budgets, and reported in `skipped` if they still fail.
-- Options: `maxConvexHulls`, `resolution`, `maxVerticesPerHull`, `minVolumePercentError`, `maxRecursionDepth`, `shrinkWrap`, and `useThreads` (multithreaded builds: V-HACD's 8-thread worker pool).
+- Options: `maxConvexHulls`, `resolution`, `maxVerticesPerHull`, `minVolumePercentError`, `maxRecursionDepth`, `shrinkWrap`, and `useThreads` (multithreaded builds: V-HACD's 8-thread worker pool). The integer options are clamped to the uint32 range, so `Infinity` or `NaN` can't produce an out-of-range conversion.
 - `b3HasThreads()` reports whether the loaded build is multithreaded.
 - The wasm grows by about 100 KiB (single-threaded) and 122 KiB (multithreaded).
 - New example: Convex Decomposition. V-HACD's license is included as `LICENSE-vhacd`.

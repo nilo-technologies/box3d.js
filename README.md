@@ -945,18 +945,26 @@ for (let i = 0; i < b3.getNumShapeIds(shapes); i++) {
 The result follows the same `{ count, data }` layout as the other shape id buffers, plus a `skipped` count. A piece is skipped only when box3d can't build a hull from it, even after retrying with smaller vertex budgets (box3d hulls are capped at 255 vertices, faces and half-edges).
 
 ```ts
-// Promise variant: in the multithreaded builds V-HACD runs on a background thread,
-// so the page keeps rendering. Single-threaded builds run it synchronously.
+// Promise variant (the recommended path): V-HACD runs off the main thread, so the page
+// keeps rendering. Multithreaded builds use a background thread, single-threaded browser
+// builds a Web Worker; Node runs it synchronously. Create the body disabled so it can't
+// fall before its shapes exist, then enable it once the Promise resolves.
+const asyncBodyDef = b3.b3DefaultBodyDef();
+asyncBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+asyncBodyDef.isEnabled = false;
+const asyncBody = b3.b3CreateBody(world, asyncBodyDef);
+
 const asyncShapes = await b3.b3CreateConvexDecompositionShapesAsync(
-    decompBody, sd, concavePositions, concaveIndices, { useThreads: true },
+    asyncBody, sd, concavePositions, concaveIndices, { useThreads: true },
 );
+b3.b3Body_Enable(asyncBody);
 ```
 
 In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stages on 8 worker threads. These come from the same 32-thread pool as box3d's world workers, so leave room for them. The blocking call spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
 
 ```ts
 // Static bodies: put every piece into one compound shape instead.
-const decomposition = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, { maxConvexHulls: 32 });
+const decomposition = await b3.b3ComputeConvexDecompositionAsync(concavePositions, concaveIndices, { maxConvexHulls: 32 });
 const { compound } = b3.b3CreateDecompositionCompound(decomposition, { ...b3.b3DefaultSurfaceMaterial(), friction: 0.8 });
 
 const levelBodyDef = b3.b3DefaultBodyDef();

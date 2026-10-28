@@ -73,6 +73,7 @@ enum DecompositionError
 	e_offsetsOrder,
 	e_offsetsLength,
 	e_bodyInvalid,
+	e_jobNotReady,
 };
 EM_JS( void, b3ThrowDecompositionError, ( int code ), {
 	const messages = [
@@ -85,6 +86,7 @@ EM_JS( void, b3ThrowDecompositionError, ( int code ), {
 		"packed offsets must be non-decreasing",
 		"packed offsets do not match points length",
 		"body is not valid",
+		"convex decomposition job has not finished",
 	];
 	throw new Error( "box3d.js: " + messages[ code ] );
 } );
@@ -620,15 +622,21 @@ DecompositionOptions readDecompositionOptions( val options )
 		val v = hasOptions ? options[key] : val::undefined();
 		return v.isUndefined() ? fallback : v.as<bool>();
 	};
+	// Casting a double outside the uint32 range (Infinity, 1e12) is undefined
+	// behaviour, so clamp first; NaN falls to the lower bound.
+	auto count = [&]( const char* key, double fallback, double lo ) -> uint32_t
+	{
+		return (uint32_t)std::min( 4294967295.0, std::max( lo, num( key, fallback ) ) );
+	};
 
 	DecompositionOptions o;
 	VHACD::IVHACD::Parameters& p = o.params;
-	p.m_maxConvexHulls = (uint32_t)std::max( 1.0, num( "maxConvexHulls", 32 ) );
-	p.m_resolution = (uint32_t)std::max( 1000.0, num( "resolution", 100000 ) );
+	p.m_maxConvexHulls = count( "maxConvexHulls", 32, 1.0 );
+	p.m_resolution = count( "resolution", 100000, 1000.0 );
 	o.maxVerticesPerHull = (int)std::min( 255.0, std::max( 4.0, num( "maxVerticesPerHull", 32 ) ) );
 	p.m_maxNumVerticesPerCH = (uint32_t)o.maxVerticesPerHull;
 	p.m_minimumVolumePercentErrorAllowed = num( "minVolumePercentError", 1.0 );
-	p.m_maxRecursionDepth = (uint32_t)std::max( 1.0, num( "maxRecursionDepth", 10 ) );
+	p.m_maxRecursionDepth = count( "maxRecursionDepth", 10, 1.0 );
 	p.m_shrinkWrap = flag( "shrinkWrap", true );
 #ifdef __EMSCRIPTEN_PTHREADS__
 	p.m_asyncACD = flag( "useThreads", false );
@@ -799,7 +807,11 @@ public:
 	}
 
 	bool isReady() const { return m_vhacd->IsReady(); }
-	val takeResult() const { return toPacked( collectPieces( m_vhacd ) ); }
+	val takeResult() const
+	{
+		if ( !m_vhacd->IsReady() ) throwJsError( e_jobNotReady );
+		return toPacked( collectPieces( m_vhacd ) );
+	}
 
 private:
 	VHACD::IVHACD* m_vhacd;

@@ -9,7 +9,7 @@
 // static-only), built from b3ComputeConvexDecompositionAsync. The "show" control draws
 // the hull shapes, the source mesh they approximate, or both overlaid.
 
-import type { Box3DModule, b3BodyId } from 'box3d.js';
+import type { Box3DModule, b3BodyId, b3CompoundData } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
@@ -234,6 +234,14 @@ for (const key of Object.keys(status) as (keyof typeof status)[])
 	statusFolder.add(status, key).disable().listen();
 
 let bowlReady = false;
+let bowlCompound: b3CompoundData | null = null;
+
+// the bowl's shape references its compound, so the compound is freed after the world
+addEventListener('pagehide', (event) => {
+	if (event.persisted) return;
+	b3.b3DestroyWorld(world);
+	b3.b3DestroyCompound(bowlCompound);
+});
 
 // static bowl: one compound shape. The renderer can't introspect compounds, so the
 // pieces are drawn here from the packed decomposition.
@@ -253,9 +261,9 @@ async function buildBowl() {
 	const bowlDef = b3.b3DefaultBodyDef();
 	bowlDef.position = [0, 0.5, 0];
 	const bowlBody = b3.b3CreateBody(world, bowlDef);
-	const { compound } = b3.b3CreateDecompositionCompound(bowl);
-	if (compound)
-		b3.b3CreateCompoundShape(bowlBody, b3.b3DefaultShapeDef(), compound);
+	bowlCompound = b3.b3CreateDecompositionCompound(bowl).compound;
+	if (bowlCompound)
+		b3.b3CreateCompoundShape(bowlBody, b3.b3DefaultShapeDef(), bowlCompound);
 
 	const bowlGroup = new THREE.Group();
 	bowlGroup.position.set(0, 0.5, 0);
@@ -296,7 +304,9 @@ const sourceGeometries = {
 const shapeDef = b3.b3DefaultShapeDef();
 shapeDef.density = 1;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const MAX_BODIES = 40;
 async function drop(kind: keyof typeof meshes) {
+	if (status.bodies + status.decomposing >= MAX_BODIES) return;
 	const { mesh, maxConvexHulls } = meshes[kind];
 	const def = b3.b3DefaultBodyDef();
 	def.type = b3.b3BodyType.b3_dynamicBody;
@@ -333,7 +343,6 @@ async function drop(kind: keyof typeof meshes) {
 	}
 }
 
-const MAX_BODIES = 40;
 const actions = {
 	dropTorus: () => void drop('torus'),
 	dropLShape: () => void drop('lShape'),
@@ -363,4 +372,7 @@ app.onFrame((dt) => {
 });
 app.start();
 
-void buildBowl();
+buildBowl().catch((err) => {
+	status.bowl = `failed: ${err instanceof Error ? err.message : err}`;
+	console.error(err);
+});
