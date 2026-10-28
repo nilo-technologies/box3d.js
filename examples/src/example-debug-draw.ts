@@ -84,6 +84,50 @@ function frame(position: b3Vec3, quaternion: b3Quat) {
 	return { position, quaternion };
 }
 
+// Names sit in the world, just above the thing they describe. The sprite's
+// center.y is 0, so `y` is the bottom of the label. Fixed positions: the fast
+// box, the slide, and the kinematic mover all move under a stationary tag.
+function makeLabel(
+	text: string,
+	x: number,
+	y: number,
+	z: number,
+	height: number,
+): void {
+	const canvas = document.createElement('canvas');
+	const ctx = canvas.getContext('2d')!;
+	const font = 'bold 64px sans-serif';
+	ctx.font = font;
+	const padX = 28;
+	const metrics = ctx.measureText(text);
+	canvas.width = Math.ceil(metrics.width + padX * 2);
+	canvas.height = 96;
+	ctx.font = font;
+	ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	ctx.fillStyle = '#ffffff';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.generateMipmaps = false;
+	texture.minFilter = THREE.LinearFilter;
+	texture.magFilter = THREE.LinearFilter;
+	const material = new THREE.SpriteMaterial({
+		map: texture,
+		transparent: true,
+		depthTest: false,
+		depthWrite: false,
+	});
+	const sprite = new THREE.Sprite(material);
+	sprite.center.set(0.5, 0);
+	sprite.scale.set(height * (canvas.width / canvas.height), height, 1);
+	sprite.position.set(x, y, z);
+	sprite.renderOrder = 10;
+	app.scene.add(sprite);
+}
+
 // Ground covers the shape gallery and the state row. The joint row is past its
 // far edge, on its own platforms, so a drawing-bounds box can drop just that row.
 b3.b3CreateBoxShape(
@@ -440,6 +484,45 @@ wheel(jointX[5]);
 motor(jointX[6]);
 parallel(jointX[7]);
 filterJoint(jointX[8]);
+
+// Shape gallery, in front. x is shifted toward the camera axis so a tag
+// raised above its shape still sits over that shape on screen.
+makeLabel('hull', -10.67, 1.41, 4, 0.5);
+makeLabel('mesh', -7.13, 1.33, 4, 0.5);
+makeLabel('height field', -3.36, 1.88, 4, 0.5);
+makeLabel('compound', 0.42, 1.45, 4, 0.5);
+makeLabel('sphere', 2.72, 1.41, 4, 0.5);
+makeLabel('capsule', 4.87, 1.69, 4, 0.5);
+makeLabel('friction', 8.23, 1.62, 2.2, 0.5);
+makeLabel('category 2', 11.99, 3.78, 3.4, 0.52);
+
+// Body-state colours. The fast box shuttles behind this row, so its tag sits on the lane.
+makeLabel('sensor', -10.77, 1.76, 0.6, 0.42);
+makeLabel('kinematic', -8.42, 1.43, 0.6, 0.42);
+makeLabel('kin. sleep', -6.15, 1.24, 0.6, 0.42);
+makeLabel('bullet', -3.9, 1.24, 0.6, 0.42);
+makeLabel('fast', -0.39, 2.11, -1.3, 0.46);
+makeLabel('speed cap', -1.56, 2.34, 0.6, 0.42);
+makeLabel('custom', 0.75, 2.06, 0.6, 0.42);
+makeLabel('invalid mass', 2.94, 2.29, 0.6, 0.42);
+makeLabel('sleeping', 5.19, 2.44, 0.6, 0.42);
+
+// Joint row, far back. Alternate heights so the longer names don't touch.
+const jointNames = [
+	'revolute',
+	'prismatic',
+	'spherical',
+	'weld',
+	'distance',
+	'wheel',
+	'motor',
+	'parallel',
+	'filter',
+];
+for (let i = 0; i < jointNames.length; i++) {
+	const high = i % 2 === 0;
+	makeLabel(jointNames[i], jointX[i], high ? 4.35 : 2.85, JOINT_Z, 0.9);
+}
 
 const debug = createDebugRenderer(b3, world, {
 	THREE,

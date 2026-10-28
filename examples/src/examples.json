@@ -375,7 +375,7 @@
   },
   "example-debug-draw": {
     "title": "Debug Draw",
-    "description": "every shape and joint type, contacts, and body-state colours, drawn with three.js",
+    "description": "every shape and joint type, contacts, and body-state colours, labeled in the world and drawn with three.js",
     "tags": [
       "world",
       "physics",
