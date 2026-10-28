@@ -591,6 +591,7 @@ interface EmbindModule {
   b3DestroyDynamicTree(tree: b3DynamicTree | null): void;
   b3DynamicTree_Validate(tree: b3DynamicTree | null): void;
   b3IsDoublePrecision(): boolean;
+  b3HasThreads(): boolean;
   b3DestroyWorld(worldId: b3WorldId): void;
   b3World_IsValid(worldId: b3WorldId): boolean;
   b3World_EnableSleeping(worldId: b3WorldId, flag: boolean): void;
@@ -700,8 +701,7 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
-  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -990,14 +990,17 @@ interface EmbindModule {
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
-  b3Body_GetName(bodyId: b3BodyId): string;
-  b3CreateHull(points: any): b3HullData | null;
+  b3Body_GetName(bodyId: b3BodyId): string;  b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
   b3CreateMesh(positions: any, indices: any): b3MeshData | null;
   b3GetMeshVertices(mesh: b3MeshData | null): Float32Array;
   b3GetMeshIndices(mesh: b3MeshData | null): Uint32Array;
   b3GetMeshMaterialIndices(mesh: b3MeshData | null): Uint8Array;
   b3CreateCompound(spec: any): b3CompoundData | null;
+  b3ComputeConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3ConvexDecomposition;
+  b3CreateConvexDecompositionShapes(bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3DecompositionShapes;
+  b3CreateConvexDecompositionShapesFromPacked(bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number): b3DecompositionShapes;
+  b3CreateDecompositionCompound(packed: b3ConvexDecomposition, material?: b3SurfaceMaterial): b3DecompositionCompound;
   b3CreateHeightField(heights: any, countX: number, countZ: number, scale: b3Vec3): b3HeightFieldData | null;
   b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, callback: any): number;
   b3World_CollideMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, callback: any): void;
@@ -1100,7 +1103,56 @@ export interface Manifold {
   pointCount: number;
   points: ManifoldPoint[];
 }
+/** Packed convex decomposition: xyz points for every piece back to back, and
+ * pieceCount + 1 vertex offsets (piece i is vertices offsets[i] .. offsets[i+1]). */
+export interface b3ConvexDecomposition { points: Float32Array; offsets: Uint32Array; }
+export interface b3ConvexDecompositionOptions {
+  /** Maximum number of pieces. Default 32. */
+  maxConvexHulls?: number;
+  /** Voxel resolution; higher is more accurate and slower. Default 100000. */
+  resolution?: number;
+  /** Vertex budget per piece, clamped to [4, 255]. Default 32 (box3d hulls are capped at 255 half-edges). */
+  maxVerticesPerHull?: number;
+  /** Stop splitting once a piece is within this volume error, in percent. Default 1. */
+  minVolumePercentError?: number;
+  /** Maximum split recursion depth. Default 10. */
+  maxRecursionDepth?: number;
+  /** Project hull vertices back onto the source mesh. Default true. */
+  shrinkWrap?: boolean;
+  /** Use V-HACD's worker threads (multithreaded builds only; ignored otherwise). Default false. */
+  useThreads?: boolean;
+  /** Async variants only: reuse an earlier result for the same mesh + options instead of
+   * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
+   * in place afterwards (their hash is memoized per array object). */
+  cache?: boolean;
+  /** Async variants only: identifies the mesh in the cache (e.g. an asset id) instead of
+   * hashing its contents. Change it whenever the mesh changes. */
+  cacheKey?: string;
+}
+export interface b3ConvexDecompositionCacheStats { entries: number; hits: number; misses: number; }
+/** Shape ids created from a decomposition (ShapeIdBuffer layout, read with getShapeIdAt),
+ * plus the number of pieces that could not become a box3d hull. */
+export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
+export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
 export interface Box3DFacade {
+  /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
+   * blocking the calling thread, then attaches one hull shape per piece in a single call.
+   * Single-threaded builds run V-HACD in a Web Worker (Node: synchronously); multithreaded
+   * builds on a pthread. Create the body disabled and enable it once this resolves, so it
+   * doesn't fall without shapes. Rejects if the body is destroyed first. Results are
+   * cached (see options.cache), so further bodies of the same mesh skip V-HACD. */
+  b3CreateConvexDecompositionShapesAsync(bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3DecompositionShapes>;
+  /** Packed decomposition computed without blocking the calling thread (same threading as
+   * b3CreateConvexDecompositionShapesAsync). Use it for static compounds and caching. */
+  b3ComputeConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3ConvexDecomposition>;
+  /** Cache key the async variants use: options.cacheKey or a 64-bit hash of the mesh
+   * (memoized per array pair), plus every option that changes the result. */
+  b3ConvexDecompositionCacheKey(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): string;
+  /** Drops every cached decomposition and memoized mesh hash, and resets the stats. */
+  b3ClearConvexDecompositionCache(): void;
+  b3GetConvexDecompositionCacheStats(): b3ConvexDecompositionCacheStats;
+  b3PackConvexDecomposition(parts: ArrayLike<number>[]): b3ConvexDecomposition;
+  b3UnpackConvexDecomposition(packed: b3ConvexDecomposition): Float32Array[];
   getNumShapeIds(buf: ShapeIdBuffer): number;
   createShapeId(): b3ShapeId;
   getShapeIdAt(out: b3ShapeId, buf: ShapeIdBuffer, i: number): b3ShapeId;

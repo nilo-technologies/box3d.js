@@ -33,6 +33,7 @@
 //
 // The file is organized into sections so it stays buildable as coverage grows.
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -46,6 +47,47 @@
 
 #include <box3d/box3d.h>
 #include <box3d/collision.h>
+
+// V-HACD (convex decomposition). scripts/build.mjs stages a copy of VHACD.h whose
+// worker-pool size is B3_VHACD_THREADS. Single-threaded builds have no pthreads,
+// so V-HACD's threading (its worker pool and async job) is compiled out entirely.
+#ifndef __EMSCRIPTEN_PTHREADS__
+#define VHACD_DISABLE_THREADING 1
+#endif
+#define ENABLE_VHACD_IMPLEMENTATION 1
+#include <VHACD.h>
+
+#include <emscripten/em_js.h>
+
+// Convex decomposition input errors. The messages live on the JS side because
+// decoding a C++ string out of growable wasm memory fails in browsers (TextDecoder
+// rejects resizable ArrayBuffers). Keep the order in sync with the message list.
+enum DecompositionError
+{
+	e_positionsLength,
+	e_indicesLength,
+	e_meshTooSmall,
+	e_indexRange,
+	e_packedMissing,
+	e_offsetsStart,
+	e_offsetsOrder,
+	e_offsetsLength,
+	e_bodyInvalid,
+};
+EM_JS( void, b3ThrowDecompositionError, ( int code ), {
+	const messages = [
+		"positions length must be a multiple of 3",
+		"indices length must be a multiple of 3",
+		"mesh needs at least 4 vertices and 4 triangles",
+		"triangle index out of range",
+		"packed decomposition is required",
+		"packed offsets must start with 0",
+		"packed offsets must be non-decreasing",
+		"packed offsets do not match points length",
+		"body is not valid",
+	];
+	throw new Error( "box3d.js: " + messages[ code ] );
+} );
 
 using namespace emscripten;
 
@@ -547,6 +589,222 @@ void worldDraw( b3WorldId worldId, val handlers )
 
 	b3World_Draw( worldId, &dd, B3_DEFAULT_MASK_BITS );
 }
+
+// ---- convex decomposition (V-HACD) ----------------------------------------
+// A decomposition crosses the boundary in one packed form, both directions:
+// { points: Float32Array (xyz per vertex, all pieces back to back),
+//   offsets: Uint32Array (pieceCount + 1 vertex offsets; piece i = [offsets[i], offsets[i+1])) }.
+
+[[noreturn]] void throwJsError( DecompositionError code )
+{
+	b3ThrowDecompositionError( code );
+	__builtin_unreachable();
+}
+
+struct DecompositionOptions
+{
+	VHACD::IVHACD::Parameters params;
+	int maxVerticesPerHull = 32;
+};
+
+DecompositionOptions readDecompositionOptions( val options )
+{
+	const bool hasOptions = !options.isUndefined() && !options.isNull();
+	auto num = [&]( const char* key, double fallback ) -> double
+	{
+		val v = hasOptions ? options[key] : val::undefined();
+		return v.isUndefined() ? fallback : v.as<double>();
+	};
+	auto flag = [&]( const char* key, bool fallback ) -> bool
+	{
+		val v = hasOptions ? options[key] : val::undefined();
+		return v.isUndefined() ? fallback : v.as<bool>();
+	};
+
+	DecompositionOptions o;
+	VHACD::IVHACD::Parameters& p = o.params;
+	p.m_maxConvexHulls = (uint32_t)std::max( 1.0, num( "maxConvexHulls", 32 ) );
+	p.m_resolution = (uint32_t)std::max( 1000.0, num( "resolution", 100000 ) );
+	o.maxVerticesPerHull = (int)std::min( 255.0, std::max( 4.0, num( "maxVerticesPerHull", 32 ) ) );
+	p.m_maxNumVerticesPerCH = (uint32_t)o.maxVerticesPerHull;
+	p.m_minimumVolumePercentErrorAllowed = num( "minVolumePercentError", 1.0 );
+	p.m_maxRecursionDepth = (uint32_t)std::max( 1.0, num( "maxRecursionDepth", 10 ) );
+	p.m_shrinkWrap = flag( "shrinkWrap", true );
+#ifdef __EMSCRIPTEN_PTHREADS__
+	p.m_asyncACD = flag( "useThreads", false );
+#else
+	p.m_asyncACD = false;
+#endif
+	return o;
+}
+
+// Mesh input copied out of JS and checked up front: V-HACD does not bounds-check
+// triangle indices, so a bad index would read out of bounds inside the voxelizer.
+struct DecompositionMesh
+{
+	std::vector<float> positions;
+	std::vector<uint32_t> indices;
+};
+
+DecompositionMesh readDecompositionMesh( val positions, val indices )
+{
+	DecompositionMesh m;
+	m.positions = convertJSArrayToNumberVector<float>( positions );
+	m.indices = convertJSArrayToNumberVector<uint32_t>( indices );
+	if ( m.positions.size() % 3 != 0 ) throwJsError( e_positionsLength );
+	if ( m.indices.size() % 3 != 0 ) throwJsError( e_indicesLength );
+	if ( m.positions.size() < 12 || m.indices.size() < 12 ) throwJsError( e_meshTooSmall );
+	const uint32_t vertexCount = (uint32_t)( m.positions.size() / 3 );
+	for ( uint32_t i : m.indices )
+	{
+		if ( i >= vertexCount ) throwJsError( e_indexRange );
+	}
+	return m;
+}
+
+struct DecompositionPieces
+{
+	std::vector<float> points;
+	std::vector<uint32_t> offsets{ 0 };
+};
+
+DecompositionPieces collectPieces( VHACD::IVHACD* vhacd )
+{
+	DecompositionPieces out;
+	for ( uint32_t i = 0, n = vhacd->GetNConvexHulls(); i < n; ++i )
+	{
+		VHACD::IVHACD::ConvexHull ch;
+		if ( !vhacd->GetConvexHull( i, ch ) ) continue;
+		for ( const VHACD::Vertex& v : ch.m_points )
+		{
+			out.points.insert( out.points.end(), { (float)v.mX, (float)v.mY, (float)v.mZ } );
+		}
+		out.offsets.push_back( (uint32_t)( out.points.size() / 3 ) );
+	}
+	return out;
+}
+
+DecompositionPieces runDecomposition( const DecompositionMesh& mesh, const DecompositionOptions& opts )
+{
+	VHACD::IVHACD* vhacd = VHACD::CreateVHACD();
+	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
+		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
+	DecompositionPieces pieces = collectPieces( vhacd );
+	vhacd->Clean();
+	vhacd->Release();
+	return pieces;
+}
+
+DecompositionPieces readPacked( val packed )
+{
+	if ( packed.isUndefined() || packed.isNull() ) throwJsError( e_packedMissing );
+	DecompositionPieces p;
+	p.points = convertJSArrayToNumberVector<float>( packed["points"] );
+	p.offsets = convertJSArrayToNumberVector<uint32_t>( packed["offsets"] );
+	if ( p.offsets.empty() || p.offsets[0] != 0 ) throwJsError( e_offsetsStart );
+	for ( size_t i = 1; i < p.offsets.size(); ++i )
+	{
+		if ( p.offsets[i] < p.offsets[i - 1] ) throwJsError( e_offsetsOrder );
+	}
+	if ( (size_t)p.offsets.back() * 3 != p.points.size() ) throwJsError( e_offsetsLength );
+	return p;
+}
+
+val toPacked( const DecompositionPieces& p )
+{
+	val out = val::object();
+	out.set( "points", toF32( p.points ) );
+	out.set( "offsets", val::global( "Uint32Array" ).new_( typed_memory_view( p.offsets.size(), p.offsets.data() ) ) );
+	return out;
+}
+
+int readMaxVertices( val maxVerticesPerHull )
+{
+	if ( maxVerticesPerHull.isUndefined() || maxVerticesPerHull.isNull() ) return 32;
+	return (int)std::min( 255.0, std::max( 4.0, maxVerticesPerHull.as<double>() ) );
+}
+
+// box3d caps hull vertices, faces and half-edges at 255, so a piece can fail at
+// its own size yet succeed once b3CreateHull simplifies it to a smaller budget.
+b3HullData* buildHullWithRetry( const float* points, int count, int maxVertices )
+{
+	if ( count < 4 ) return nullptr;
+	const b3Vec3* pts = reinterpret_cast<const b3Vec3*>( points );
+	int last = std::min( count, maxVertices );
+	if ( b3HullData* hull = b3CreateHull( pts, count, last ) ) return hull;
+	for ( int budget : { 32, 24, 16, 8 } )
+	{
+		if ( budget >= last ) continue;
+		last = budget;
+		if ( b3HullData* hull = b3CreateHull( pts, count, budget ) ) return hull;
+	}
+	return nullptr;
+}
+
+// Returns { count, data: Int32Array (3 int32 per shape id), skipped }: the
+// ShapeIdBuffer layout, read with getNumShapeIds / getShapeIdAt.
+val attachHullShapes( b3BodyId bodyId, const b3ShapeDef& def, const DecompositionPieces& pieces, int maxVertices )
+{
+	if ( !b3Body_IsValid( bodyId ) ) throwJsError( e_bodyInvalid );
+	std::vector<int32_t> ids;
+	int skipped = 0;
+	const size_t pieceCount = pieces.offsets.size() - 1;
+	ids.reserve( pieceCount * layout::shapeId );
+	for ( size_t i = 0; i < pieceCount; ++i )
+	{
+		const uint32_t begin = pieces.offsets[i];
+		const int count = (int)( pieces.offsets[i + 1] - begin );
+		b3HullData* hull = buildHullWithRetry( pieces.points.data() + (size_t)begin * 3, count, maxVertices );
+		if ( hull == nullptr )
+		{
+			++skipped;
+			continue;
+		}
+		b3ShapeId id = b3CreateHullShape( bodyId, &def, hull );
+		b3DestroyHull( hull );
+		if ( id.index1 == 0 )
+		{
+			++skipped;
+			continue;
+		}
+		ids.insert( ids.end(), { id.index1, id.world0, id.generation } );
+	}
+	val out = val::object();
+	out.set( "count", (int)( ids.size() / layout::shapeId ) );
+	out.set( "data", toI32( ids ) );
+	out.set( "skipped", skipped );
+	return out;
+}
+
+#ifdef __EMSCRIPTEN_PTHREADS__
+// Background decomposition for the facade's Promise variants. V-HACD's async
+// implementation copies the mesh at start and runs it on its own thread; the
+// destructor cancels and joins that thread, so deleting a running job is safe.
+class ConvexDecompositionJob
+{
+public:
+	ConvexDecompositionJob() : m_vhacd( VHACD::CreateVHACD_ASYNC() ) {}
+	~ConvexDecompositionJob()
+	{
+		m_vhacd->Clean();
+		m_vhacd->Release();
+	}
+
+	void start( val positions, val indices, val options )
+	{
+		DecompositionMesh mesh = readDecompositionMesh( positions, indices );
+		DecompositionOptions opts = readDecompositionOptions( options );
+		m_vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
+			(uint32_t)( mesh.indices.size() / 3 ), opts.params );
+	}
+
+	bool isReady() const { return m_vhacd->IsReady(); }
+	val takeResult() const { return toPacked( collectPieces( m_vhacd ) ); }
+
+private:
+	VHACD::IVHACD* m_vhacd;
+};
+#endif
 } // namespace
 
 EMSCRIPTEN_BINDINGS( box3d )
@@ -972,6 +1230,86 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3CreateCompoundShape(bodyId, shapeDef, compound)",
 		+[]( b3BodyId bodyId, b3ShapeDef def, b3CompoundData* compound ) { return b3CreateCompoundShape( bodyId, &def, compound ); },
 		allow_raw_pointers() );
+
+	// Convex decomposition (V-HACD). Each shape-creating call runs the whole
+	// mesh -> hulls -> b3CreateHullShape pipeline in C++ and returns the shape ids
+	// packed (ShapeIdBuffer layout + skipped count), so a decomposition costs one
+	// boundary crossing however many pieces it has. The facade wraps these four so
+	// trailing options/material/maxVerticesPerHull arguments may be omitted.
+	ret_function( "b3ComputeConvexDecomposition(positions, indices, options): b3ConvexDecomposition",
+		+[]( val positions, val indices, val options ) -> val
+		{
+			DecompositionMesh mesh = readDecompositionMesh( positions, indices );
+			return toPacked( runDecomposition( mesh, readDecompositionOptions( options ) ) );
+		} );
+	ret_function( "b3CreateConvexDecompositionShapes(bodyId, shapeDef, positions, indices, options): b3DecompositionShapes",
+		+[]( b3BodyId bodyId, b3ShapeDef def, val positions, val indices, val options ) -> val
+		{
+			if ( !b3Body_IsValid( bodyId ) ) throwJsError( e_bodyInvalid );
+			DecompositionMesh mesh = readDecompositionMesh( positions, indices );
+			DecompositionOptions opts = readDecompositionOptions( options );
+			return attachHullShapes( bodyId, def, runDecomposition( mesh, opts ), opts.maxVerticesPerHull );
+		} );
+	ret_function( "b3CreateConvexDecompositionShapesFromPacked(bodyId, shapeDef, packed, maxVerticesPerHull): b3DecompositionShapes",
+		+[]( b3BodyId bodyId, b3ShapeDef def, val packed, val maxVerticesPerHull ) -> val
+		{
+			return attachHullShapes( bodyId, def, readPacked( packed ), readMaxVertices( maxVerticesPerHull ) );
+		} );
+	// The compound copies the hulls, so they are freed here. The compound itself is
+	// referenced (not copied) by b3CreateCompoundShape: keep it alive until the shape
+	// is destroyed, then b3DestroyCompound it. Compounds require a static body.
+	ret_function( "b3CreateDecompositionCompound(packed, material): b3DecompositionCompound",
+		+[]( val packed, val material ) -> val
+		{
+			DecompositionPieces pieces = readPacked( packed );
+			const b3SurfaceMaterial mat = ( material.isUndefined() || material.isNull() )
+				? b3DefaultSurfaceMaterial() : material.as<b3SurfaceMaterial>();
+			std::vector<b3HullData*> hulls;
+			std::vector<b3CompoundHullDef> defs;
+			int skipped = 0;
+			for ( size_t i = 0; i + 1 < pieces.offsets.size(); ++i )
+			{
+				const uint32_t begin = pieces.offsets[i];
+				b3HullData* hull = buildHullWithRetry( pieces.points.data() + (size_t)begin * 3,
+					(int)( pieces.offsets[i + 1] - begin ), 32 );
+				if ( hull == nullptr )
+				{
+					++skipped;
+					continue;
+				}
+				hulls.push_back( hull );
+				defs.push_back( { hull, b3Transform_identity, mat } );
+			}
+			b3CompoundData* compound = nullptr;
+			if ( !defs.empty() )
+			{
+				b3CompoundDef def = {};
+				def.hulls = defs.data();
+				def.hullCount = (int)defs.size();
+				compound = b3CreateCompound( &def );
+			}
+			for ( b3HullData* hull : hulls ) b3DestroyHull( hull );
+			val out = val::object();
+			out.set( "compound", compound ? val( compound, allow_raw_pointers() ) : val::null() );
+			out.set( "skipped", skipped );
+			return out;
+		} );
+	function( "b3HasThreads()", +[]() -> bool
+	{
+#ifdef __EMSCRIPTEN_PTHREADS__
+		return true;
+#else
+		return false;
+#endif
+	} );
+#ifdef __EMSCRIPTEN_PTHREADS__
+	// Internal: driven by the facade's b3Create*/b3Compute*Async Promise wrappers.
+	class_<ConvexDecompositionJob>( "ConvexDecompositionJobImpl" )
+		.constructor<>()
+		.function( "start", &ConvexDecompositionJob::start )
+		.function( "isReady", &ConvexDecompositionJob::isReady )
+		.function( "takeResult", &ConvexDecompositionJob::takeResult );
+#endif
 
 	class_<b3HeightFieldData>( "b3HeightFieldData" );
 	function( "b3CreateHeightField(heights, countX, countZ, scale)", +[]( val heights, int countX, int countZ, b3Vec3 scale ) -> b3HeightFieldData*

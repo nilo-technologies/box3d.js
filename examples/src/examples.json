@@ -195,6 +195,19 @@
       "shapes"
     ]
   },
+  "example-convex-decomposition": {
+    "title": "Convex Decomposition",
+    "description": "V-HACD splits a torus and an L-shape into hull shapes (one call per body); they pile into a decomposed static bowl",
+    "tags": [
+      "world",
+      "physics",
+      "convex-decomposition",
+      "vhacd",
+      "hull",
+      "compound",
+      "shapes"
+    ]
+  },
   "example-triangle-mesh": {
     "title": "Triangle Mesh",
     "description": "balls roll across a procedural triangle-mesh terrain",

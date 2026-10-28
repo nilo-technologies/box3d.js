@@ -444,6 +444,368 @@ function getPlaneResultAt( out, buf, i )
 	return out;
 }
 
+// --- convex decomposition (V-HACD) -------------------------------------------
+//
+//   const res = b3.b3CreateConvexDecompositionShapes( body, shapeDef, positions, indices, { maxConvexHulls: 16 } );
+//   const id = b3.createShapeId();
+//   for ( let i = 0; i < b3.getNumShapeIds( res ); i++ ) b3.getShapeIdAt( id, res, i );
+//
+// The blocking bindings live in src/bindings.cpp. The Promise variants below keep
+// the calling thread free while V-HACD runs:
+//
+// * MT builds: a background pthread (ConvexDecompositionJobImpl), polled from the
+//   event loop.
+// * ST builds in a browser: a module Web Worker running its own single-threaded
+//   instance of this module, created on first use from this factory's own source
+//   (`Box3D.toString()`), so no extra file has to be served or bundled. The worker
+//   returns the packed decomposition (transferred, not copied) and the main thread
+//   attaches it in one call. If the worker can't start (e.g. a CSP that blocks blob:
+//   workers), the jobs run synchronously instead.
+// * ST builds in Node: synchronously.
+
+const DECOMPOSITION_POLL_MS = 4;
+
+let decompositionWorker = null; // { worker, pending: Map<id, job>, nextId, failed }
+
+function canUseDecompositionWorker()
+{
+	return !ENVIRONMENT_IS_NODE && typeof Worker === 'function' && typeof Blob === 'function'
+		&& typeof URL.createObjectURL === 'function';
+}
+
+function computeDecompositionNow( job )
+{
+	try { job.resolve( Module.b3ComputeConvexDecomposition( job.positions, job.indices, job.options ) ); }
+	catch ( err ) { job.reject( err ); }
+}
+
+function failDecompositionWorker( w, reason )
+{
+	if ( w.failed ) return;
+	w.failed = true;
+	w.worker.terminate();
+	console.warn( `box3d.js: convex decomposition worker unavailable (${reason}); decomposing on the main thread` );
+	for ( const job of w.pending.values() ) computeDecompositionNow( job );
+	w.pending.clear();
+}
+
+function startDecompositionWorker()
+{
+	// separate-wasm builds locate the .wasm by URL; inline builds embed it in the factory source
+	const wasm = findWasmBinary();
+	const moduleArg = typeof wasm === 'string'
+		? `{ locateFile: () => ${JSON.stringify( new URL( wasm, globalThis.location?.href ).href )} }`
+		: '{}';
+	const src = `const factory = (${Box3D.toString()});
+const ready = factory(${moduleArg});
+ready.then(() => self.postMessage({ type: 'ready' }),
+	(err) => self.postMessage({ type: 'init-error', message: String(err?.message ?? err) }));
+self.onmessage = async ({ data }) => {
+	const b3 = await ready;
+	let packed;
+	try { packed = b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options); }
+	catch (err) { self.postMessage({ type: 'error', id: data.id, message: String(err?.message ?? err) }); return; }
+	self.postMessage({ type: 'result', id: data.id, packed }, [packed.points.buffer, packed.offsets.buffer]);
+};`;
+	const url = URL.createObjectURL( new Blob( [ src ], { type: 'text/javascript' } ) );
+	const w = { worker: null, pending: new Map(), nextId: 1, failed: false };
+	try
+	{
+		w.worker = new Worker( url, { type: 'module', name: 'box3d.js convex decomposition' } );
+	}
+	catch ( err )
+	{
+		URL.revokeObjectURL( url );
+		w.failed = true;
+		console.warn( `box3d.js: convex decomposition worker unavailable (${err?.message ?? err}); decomposing on the main thread` );
+		return w;
+	}
+	w.worker.onmessage = ( { data } ) =>
+	{
+		if ( data.type === 'ready' ) { URL.revokeObjectURL( url ); return; }
+		if ( data.type === 'init-error' ) { URL.revokeObjectURL( url ); failDecompositionWorker( w, data.message ); return; }
+		const job = w.pending.get( data.id );
+		if ( !job ) return;
+		w.pending.delete( data.id );
+		if ( data.type === 'result' ) job.resolve( data.packed );
+		else job.reject( new Error( data.message ) );
+	};
+	w.worker.onerror = ( event ) =>
+	{
+		event.preventDefault?.();
+		URL.revokeObjectURL( url );
+		failDecompositionWorker( w, event.message || 'worker error' );
+	};
+	return w;
+}
+
+// Promise of the packed decomposition, computed off the calling thread in ST browsers.
+function decomposeOffThread( positions, indices, options )
+{
+	return new Promise( ( resolve, reject ) =>
+	{
+		const job = { resolve, reject, positions, indices, options };
+		if ( !canUseDecompositionWorker() ) { computeDecompositionNow( job ); return; }
+		decompositionWorker ??= startDecompositionWorker();
+		const w = decompositionWorker;
+		if ( w.failed ) { computeDecompositionNow( job ); return; }
+		const id = w.nextId++;
+		w.pending.set( id, job );
+		try
+		{
+			w.worker.postMessage( { id, positions, indices, options } );
+		}
+		catch ( err )
+		{
+			w.pending.delete( id );
+			reject( err );
+		}
+	} );
+}
+
+function runDecompositionJob( positions, indices, options, finish )
+{
+	return new Promise( ( resolve, reject ) =>
+	{
+		const job = new Module.ConvexDecompositionJobImpl();
+		try
+		{
+			job.start( positions, indices, options );
+		}
+		catch ( err )
+		{
+			job.delete();
+			reject( err );
+			return;
+		}
+		const poll = () =>
+		{
+			if ( !job.isReady() )
+			{
+				setTimeout( poll, DECOMPOSITION_POLL_MS );
+				return;
+			}
+			try { resolve( finish( job ) ); }
+			catch ( err ) { reject( err ); }
+			finally { job.delete(); }
+		};
+		setTimeout( poll, DECOMPOSITION_POLL_MS );
+	} );
+}
+
+function decomposeAsync( positions, indices, options )
+{
+	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options );
+	return runDecompositionJob( positions, indices, options, ( job ) => job.takeResult() );
+}
+
+// --- convex decomposition cache ------------------------------------------------
+// The async variants keep finished (and in-flight) decompositions in an LRU keyed by
+// b3ConvexDecompositionCacheKey, so the same mesh + options runs V-HACD once; later
+// requests reuse the packed result and only build hull shapes. Failed decompositions
+// are not kept. The mesh part of the key is a 64-bit hash of exactly what V-HACD
+// reads (positions as float32 bits, indices as uint32), memoized per (positions,
+// indices) array pair — so arrays handed to the cache must not be edited in place
+// afterwards (pass `cache: false`, or call b3ClearConvexDecompositionCache). An
+// `options.cacheKey` (e.g. an asset id) replaces the mesh hash entirely.
+
+const DECOMPOSITION_CACHE_LIMIT = 256;
+const DECOMPOSITION_KEY_VERSION = 'b3cd1';
+
+let decompositionCache = new Map(); // key -> Promise<packed>; Map order = LRU order
+let decompositionMeshHashes = new WeakMap(); // positions -> WeakMap<indices, { hash, positionsLength, indicesLength }>
+const decompositionCacheStats = { hits: 0, misses: 0 };
+
+const HASH_CHUNK = 4096;
+const hashScratchF32 = new Float32Array( HASH_CHUNK );
+const hashScratchU32 = new Uint32Array( hashScratchF32.buffer );
+let hashA = 0;
+let hashB = 0;
+
+// Two MurmurHash3-style 32-bit lanes with independent constants. Per-word rotations
+// matter: without them a pair of sign-bit flips (e.g. mirrored vertices) cancels out.
+function hashWords( words, count )
+{
+	let h1 = hashA, h2 = hashB;
+	for ( let i = 0; i < count; i++ )
+	{
+		const w = words[ i ];
+		let k1 = Math.imul( w, 0xcc9e2d51 );
+		k1 = ( k1 << 15 ) | ( k1 >>> 17 );
+		h1 ^= Math.imul( k1, 0x1b873593 );
+		h1 = ( h1 << 13 ) | ( h1 >>> 19 );
+		h1 = ( Math.imul( h1, 5 ) + 0xe6546b64 ) | 0;
+		let k2 = Math.imul( w, 0x85ebca6b );
+		k2 = ( k2 << 17 ) | ( k2 >>> 15 );
+		h2 ^= Math.imul( k2, 0xc2b2ae35 );
+		h2 = ( h2 << 11 ) | ( h2 >>> 21 );
+		h2 = ( Math.imul( h2, 9 ) + 0x561ccd1b ) | 0;
+	}
+	hashA = h1;
+	hashB = h2;
+}
+
+function fmix32( h )
+{
+	h ^= h >>> 16;
+	h = Math.imul( h, 0x85ebca6b );
+	h ^= h >>> 13;
+	h = Math.imul( h, 0xc2b2ae35 );
+	return h ^ ( h >>> 16 );
+}
+
+function hashDecompositionMesh( positions, indices )
+{
+	hashA = 0x9747b28c ^ positions.length;
+	hashB = 0x2f4a7c15 ^ indices.length;
+	if ( positions instanceof Float32Array )
+	{
+		hashWords( new Uint32Array( positions.buffer, positions.byteOffset, positions.length ), positions.length );
+	}
+	else
+	{
+		// number[] / Float64Array: hash the float32 rounding V-HACD will actually see
+		for ( let start = 0; start < positions.length; start += HASH_CHUNK )
+		{
+			const n = Math.min( HASH_CHUNK, positions.length - start );
+			for ( let i = 0; i < n; i++ ) hashScratchF32[ i ] = positions[ start + i ];
+			hashWords( hashScratchU32, n );
+		}
+	}
+	hashWords( indices, indices.length );
+	let h1 = fmix32( hashA ^ positions.length );
+	let h2 = fmix32( hashB ^ indices.length );
+	h1 = ( h1 + h2 ) | 0;
+	h2 = ( h2 + h1 ) | 0;
+	return ( h1 >>> 0 ).toString( 16 ).padStart( 8, '0' ) + ( h2 >>> 0 ).toString( 16 ).padStart( 8, '0' );
+}
+
+function decompositionMeshHash( positions, indices )
+{
+	if ( typeof positions !== 'object' || positions === null || typeof indices !== 'object' || indices === null )
+	{
+		return hashDecompositionMesh( positions, indices );
+	}
+	let byIndices = decompositionMeshHashes.get( positions );
+	const memo = byIndices?.get( indices );
+	if ( memo && memo.positionsLength === positions.length && memo.indicesLength === indices.length ) return memo.hash;
+	const hash = hashDecompositionMesh( positions, indices );
+	if ( !byIndices ) decompositionMeshHashes.set( positions, byIndices = new WeakMap() );
+	byIndices.set( indices, { hash, positionsLength: positions.length, indicesLength: indices.length } );
+	return hash;
+}
+
+// Mirrors readDecompositionOptions in src/bindings.cpp (defaults, clamps, integer
+// truncation), so equivalent option objects share an entry. useThreads is left out:
+// threaded and unthreaded runs produce identical results.
+function b3ConvexDecompositionCacheKey( positions, indices, options )
+{
+	const o = options ?? {};
+	const num = ( v, fallback ) => ( v === undefined ? fallback : Number( v ) );
+	const mesh = o.cacheKey !== undefined && o.cacheKey !== null
+		? `id:${o.cacheKey}`
+		: `mesh:${decompositionMeshHash( positions, indices )}`;
+	return [
+		DECOMPOSITION_KEY_VERSION,
+		mesh,
+		Math.trunc( Math.max( 1, num( o.maxConvexHulls, 32 ) ) ),
+		Math.trunc( Math.max( 1000, num( o.resolution, 100000 ) ) ),
+		Math.trunc( Math.min( 255, Math.max( 4, num( o.maxVerticesPerHull, 32 ) ) ) ),
+		num( o.minVolumePercentError, 1 ),
+		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
+		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
+	].join( '|' );
+}
+
+function cachedDecomposition( positions, indices, options )
+{
+	if ( options?.cache === false ) return decomposeAsync( positions, indices, options );
+	let key;
+	try { key = b3ConvexDecompositionCacheKey( positions, indices, options ); }
+	catch { return decomposeAsync( positions, indices, options ); } // malformed input: let the binding report it
+	let entry = decompositionCache.get( key );
+	if ( entry )
+	{
+		decompositionCacheStats.hits++;
+		decompositionCache.delete( key );
+		decompositionCache.set( key, entry );
+		return entry;
+	}
+	decompositionCacheStats.misses++;
+	entry = decomposeAsync( positions, indices, options );
+	decompositionCache.set( key, entry );
+	entry.catch( () => { if ( decompositionCache.get( key ) === entry ) decompositionCache.delete( key ); } );
+	if ( decompositionCache.size > DECOMPOSITION_CACHE_LIMIT ) decompositionCache.delete( decompositionCache.keys().next().value );
+	return entry;
+}
+
+function b3ClearConvexDecompositionCache()
+{
+	decompositionCache = new Map();
+	decompositionMeshHashes = new WeakMap();
+	decompositionCacheStats.hits = 0;
+	decompositionCacheStats.misses = 0;
+}
+
+function b3GetConvexDecompositionCacheStats()
+{
+	return { entries: decompositionCache.size, hits: decompositionCacheStats.hits, misses: decompositionCacheStats.misses };
+}
+
+function b3ComputeConvexDecompositionAsync( positions, indices, options )
+{
+	if ( options?.cache === false ) return decomposeAsync( positions, indices, options );
+	// callers get their own copy, so editing the result can't corrupt the cache
+	return cachedDecomposition( positions, indices, options ).then( ( packed ) =>
+		( { points: packed.points.slice(), offsets: packed.offsets.slice() } ) );
+}
+
+function assertBodyStillValid( bodyId )
+{
+	if ( !Module.b3Body_IsValid( bodyId ) )
+	{
+		throw new Error( 'box3d.js: body was destroyed before the convex decomposition finished' );
+	}
+}
+
+function b3CreateConvexDecompositionShapesAsync( bodyId, shapeDef, positions, indices, options )
+{
+	if ( !Module.b3Body_IsValid( bodyId ) ) return Promise.reject( new Error( 'box3d.js: body is not valid' ) );
+	return cachedDecomposition( positions, indices, options ).then( ( packed ) =>
+	{
+		assertBodyStillValid( bodyId );
+		return Module.b3CreateConvexDecompositionShapesFromPacked( bodyId, shapeDef, packed, options?.maxVerticesPerHull );
+	} );
+}
+
+function b3PackConvexDecomposition( parts )
+{
+	let total = 0;
+	for ( const part of parts )
+	{
+		if ( part.length % 3 !== 0 ) throw new Error( 'box3d.js: each piece must have a multiple of 3 floats' );
+		total += part.length;
+	}
+	const points = new Float32Array( total );
+	const offsets = new Uint32Array( parts.length + 1 );
+	let o = 0;
+	for ( let i = 0; i < parts.length; i++ )
+	{
+		points.set( parts[ i ], o );
+		o += parts[ i ].length;
+		offsets[ i + 1 ] = o / 3;
+	}
+	return { points, offsets };
+}
+
+function b3UnpackConvexDecomposition( packed )
+{
+	const { points, offsets } = packed;
+	const parts = [];
+	for ( let i = 0; i + 1 < offsets.length; i++ ) parts.push( points.subarray( offsets[ i ] * 3, offsets[ i + 1 ] * 3 ) );
+	return parts;
+}
+
 // --- out-param math reads (conventions documented in src/bindings.cpp header) ---
 // Each raw `b3X_GetYInto(out, ...)` writes floats to a static wasm scratch; the
 // public `b3X_GetY(out, ...) -> out` copies scratch -> the caller's mathcat array.
@@ -517,6 +879,19 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		Module[ entry.method ] = makeOutParamReader( raw, entry.sizes, entry.trailing );
 	}
 
+	// embind checks argument counts exactly; these wrappers let the trailing
+	// options / maxVerticesPerHull / material argument be omitted.
+	const rawCompute = Module.b3ComputeConvexDecomposition;
+	const rawShapes = Module.b3CreateConvexDecompositionShapes;
+	const rawShapesFromPacked = Module.b3CreateConvexDecompositionShapesFromPacked;
+	const rawCompound = Module.b3CreateDecompositionCompound;
+	Module.b3ComputeConvexDecomposition = ( positions, indices, options ) => rawCompute( positions, indices, options );
+	Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
+		rawShapes( bodyId, shapeDef, positions, indices, options );
+	Module.b3CreateConvexDecompositionShapesFromPacked = ( bodyId, shapeDef, packed, maxVerticesPerHull ) =>
+		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
+	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
+
 	// Attach onto the Emscripten module object (in scope here as `Module`).
 	Object.assign( Module, {
 		getNumShapeIds, createShapeId, getShapeIdAt,
@@ -532,5 +907,8 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createSensorTouchEvent, getSensorBeginEventAt, getSensorEndEventAt,
 		createJointEvent, getJointEventAt,
 		getNumPlaneResults, createPlaneResult, getPlaneResultAt,
+		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
+		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
+		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,
 	} );
 }

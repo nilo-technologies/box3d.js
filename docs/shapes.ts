@@ -109,4 +109,65 @@ const compoundData = b3.b3CreateCompound(spec)!;
 b3.b3CreateCompoundShape(compoundBody, b3.b3DefaultShapeDef(), compoundData);
 /* SNIPPET_END: compound */
 
+// a concave mesh to decompose: a hollow open box (floor + four walls)
+const concave = b3.b3CreateHollowBoxMesh([0, 0, 0], [1, 1, 1])!;
+const concavePositions = b3.b3GetMeshVertices(concave);
+const concaveIndices = b3.b3GetMeshIndices(concave);
+b3.b3DestroyMesh(concave);
+
+/* SNIPPET_START: decomposition-dynamic */
+// One call: V-HACD splits the mesh into convex pieces, and each piece becomes a
+// hull shape on the body, all inside wasm. Works on dynamic and kinematic bodies.
+const decompBodyDef = b3.b3DefaultBodyDef();
+decompBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+const decompBody = b3.b3CreateBody(world, decompBodyDef);
+
+const shapes = b3.b3CreateConvexDecompositionShapes(decompBody, sd, concavePositions, concaveIndices, {
+    maxConvexHulls: 16,     // keep this modest for dynamic bodies: one shape per piece
+    maxVerticesPerHull: 32, // box3d hulls are capped at 255 half-edges
+});
+console.log(`${shapes.count} hull shapes, ${shapes.skipped} pieces skipped`);
+
+// shape ids come back packed; read them with the shape id reader
+const shapeId = b3.createShapeId();
+for (let i = 0; i < b3.getNumShapeIds(shapes); i++) {
+    b3.getShapeIdAt(shapeId, shapes, i);
+}
+/* SNIPPET_END: decomposition-dynamic */
+
+/* SNIPPET_START: decomposition-async */
+// Promise variant: in the multithreaded builds V-HACD runs on a background thread,
+// so the page keeps rendering. Single-threaded builds run it synchronously.
+const asyncShapes = await b3.b3CreateConvexDecompositionShapesAsync(
+    decompBody, sd, concavePositions, concaveIndices, { useThreads: true },
+);
+/* SNIPPET_END: decomposition-async */
+
+/* SNIPPET_START: decomposition-static */
+// Static bodies: put every piece into one compound shape instead.
+const decomposition = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, { maxConvexHulls: 32 });
+const { compound } = b3.b3CreateDecompositionCompound(decomposition, { ...b3.b3DefaultSurfaceMaterial(), friction: 0.8 });
+
+const levelBodyDef = b3.b3DefaultBodyDef();
+levelBodyDef.type = b3.b3BodyType.b3_staticBody;
+const levelBody = b3.b3CreateBody(world, levelBodyDef);
+b3.b3CreateCompoundShape(levelBody, b3.b3DefaultShapeDef(), compound!);
+// the shape references the compound: b3DestroyCompound(compound) after the body/world is gone
+/* SNIPPET_END: decomposition-static */
+
+/* SNIPPET_START: decomposition-cache */
+// Decomposition is slow (it voxelizes the mesh), so precompute it for shipped assets.
+// The packed form is two typed arrays: store them, then rebuild shapes without V-HACD.
+const packed = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices);
+const saved = { points: packed.points.buffer, offsets: packed.offsets.buffer }; // e.g. write to disk
+
+const loaded = { points: new Float32Array(saved.points), offsets: new Uint32Array(saved.offsets) };
+const cachedBody = b3.b3CreateBody(world, decompBodyDef);
+b3.b3CreateConvexDecompositionShapesFromPacked(cachedBody, sd, loaded);
+
+// one Float32Array of xyz points per piece, and back
+const pieces = b3.b3UnpackConvexDecomposition(loaded);
+const repacked = b3.b3PackConvexDecomposition(pieces);
+/* SNIPPET_END: decomposition-cache */
+
 b3.b3DestroyWorld(world);
