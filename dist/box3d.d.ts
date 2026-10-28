@@ -22,6 +22,16 @@ export interface b3ShapeTypeValue<T extends number> {
 }
 export type b3ShapeType = b3ShapeTypeValue<0>|b3ShapeTypeValue<1>|b3ShapeTypeValue<2>|b3ShapeTypeValue<3>|b3ShapeTypeValue<4>|b3ShapeTypeValue<5>;
 
+export interface DebugShapeStateValue<T extends number> {
+  value: T;
+}
+export type DebugShapeState = DebugShapeStateValue<0>|DebugShapeStateValue<1>|DebugShapeStateValue<2>|DebugShapeStateValue<3>|DebugShapeStateValue<4>|DebugShapeStateValue<5>|DebugShapeStateValue<6>|DebugShapeStateValue<7>|DebugShapeStateValue<8>|DebugShapeStateValue<9>|DebugShapeStateValue<10>|DebugShapeStateValue<11>|DebugShapeStateValue<12>;
+
+export interface DebugDrawRoleValue<T extends number> {
+  value: T;
+}
+export type DebugDrawRole = DebugDrawRoleValue<0>|DebugDrawRoleValue<1>|DebugDrawRoleValue<2>|DebugDrawRoleValue<3>|DebugDrawRoleValue<4>|DebugDrawRoleValue<5>|DebugDrawRoleValue<6>|DebugDrawRoleValue<7>|DebugDrawRoleValue<8>|DebugDrawRoleValue<9>;
+
 export interface b3JointTypeValue<T extends number> {
   value: T;
 }
@@ -92,6 +102,38 @@ export interface EventsBufferImpl extends ClassHandle {
 }
 
 export interface b3DynamicTree extends ClassHandle {
+}
+
+export interface DebugDrawBufferImpl extends ClassHandle {
+  shapeCount(): number;
+  segmentCount(): number;
+  pointCount(): number;
+  sphereCount(): number;
+  capsuleCount(): number;
+  boxCount(): number;
+  boundsCount(): number;
+  transformCount(): number;
+  shapeI32Ptr(): number;
+  shapeF64Ptr(): number;
+  segmentI32Ptr(): number;
+  segmentF64Ptr(): number;
+  pointI32Ptr(): number;
+  pointF32Ptr(): number;
+  pointF64Ptr(): number;
+  sphereI32Ptr(): number;
+  sphereF32Ptr(): number;
+  sphereF64Ptr(): number;
+  capsuleI32Ptr(): number;
+  capsuleF32Ptr(): number;
+  capsuleF64Ptr(): number;
+  boxI32Ptr(): number;
+  boxF32Ptr(): number;
+  boxF64Ptr(): number;
+  boundsI32Ptr(): number;
+  boundsF64Ptr(): number;
+  transformI32Ptr(): number;
+  transformF64Ptr(): number;
+  loadFrom(_0: b3WorldId, _1: any): void;
 }
 
 export type b3MotionLocks = {
@@ -565,6 +607,8 @@ export type b3ContactHitEvent = {
 interface EmbindModule {
   b3BodyType: {b3_staticBody: b3BodyTypeValue<0>, b3_kinematicBody: b3BodyTypeValue<1>, b3_dynamicBody: b3BodyTypeValue<2>};
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
+  DebugShapeState: {static: DebugShapeStateValue<0>, kinematic: DebugShapeStateValue<1>, kinematicSleeping: DebugShapeStateValue<2>, awake: DebugShapeStateValue<3>, sleeping: DebugShapeStateValue<4>, sensor: DebugShapeStateValue<5>, disabled: DebugShapeStateValue<6>, fast: DebugShapeStateValue<7>, bullet: DebugShapeStateValue<8>, speedCapped: DebugShapeStateValue<9>, timeOfImpact: DebugShapeStateValue<10>, invalidMass: DebugShapeStateValue<11>, custom: DebugShapeStateValue<12>};
+  DebugDrawRole: {bounds: DebugDrawRoleValue<0>, joints: DebugDrawRoleValue<1>, mass: DebugDrawRoleValue<2>, contactPoints: DebugDrawRoleValue<3>, contactNormals: DebugDrawRoleValue<4>, contactForces: DebugDrawRoleValue<5>, frictionForces: DebugDrawRoleValue<6>, contactFeatures: DebugDrawRoleValue<7>, islands: DebugDrawRoleValue<8>, graphColors: DebugDrawRoleValue<9>};
   b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>};
   b3HullData: {};
   b3MeshData: {};
@@ -584,6 +628,9 @@ interface EmbindModule {
     new(): EventsBufferImpl;
   };
   b3DynamicTree: {};
+  DebugDrawBufferImpl: {
+    new(): DebugDrawBufferImpl;
+  };
   b3DestroyHull(hull: b3HullData | null): void;
   b3DestroyMesh(mesh: b3MeshData | null): void;
   b3DestroyCompound(compound: b3CompoundData | null): void;
@@ -701,7 +748,8 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
+  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -990,7 +1038,8 @@ interface EmbindModule {
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
-  b3Body_GetName(bodyId: b3BodyId): string;  b3CreateHull(points: any): b3HullData | null;
+  b3Body_GetName(bodyId: b3BodyId): string;
+  b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
   b3CreateMesh(positions: any, indices: any): b3MeshData | null;
   b3GetMeshVertices(mesh: b3MeshData | null): Float32Array;
@@ -1033,6 +1082,7 @@ interface EmbindModule {
   b3DynamicTree_RayCast(tree: b3DynamicTree | null, origin: b3Vec3, translation: b3Vec3, maxFraction: number, maskBits: number, callback: any): b3TreeStats;
   b3DynamicTree_QueryClosest(tree: b3DynamicTree | null, point: b3Vec3, maskBits: number, callback: any): b3TreeStats;
   b3World_Draw(worldId: b3WorldId, handler: any): void;
+  getDebugGeometry(id: number): DebugGeometry | null;
 }
 
 export interface ShapeIdBuffer { count: number; data: Int32Array; }
@@ -1077,6 +1127,50 @@ export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
 export interface PlaneResultBuffer { count: number; data: Float32Array; }
 export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+/** Triangle positions/indices plus sphere (xyz, radius) and capsule (c1, c2, radius) parameters.
+ * Views alias the wasm heap until the shape is destroyed or changed. Copy them to cache. */
+export interface DebugGeometry {
+  positions: Float32Array;
+  indices: Uint32Array;
+  spheres: Float32Array;
+  capsules: Float32Array;
+}
+export interface DebugDrawOptions {
+  shapes?: boolean;
+  bounds?: boolean;
+  joints?: boolean;
+  jointExtras?: boolean;
+  mass?: boolean;
+  contacts?: boolean;
+  contactNormals?: boolean;
+  contactForces?: boolean;
+  frictionForces?: boolean;
+  contactFeatures?: boolean;
+  islands?: boolean;
+  graphColors?: boolean;
+  forceScale?: number;
+  jointScale?: number;
+  /** [minX, minY, minZ, maxX, maxY, maxZ]. Defaults to a huge box so nothing is clipped. */
+  drawingBounds?: b3AABB;
+  maskBits?: number;
+}
+export interface DebugDrawBuffer { readonly _brand?: 'DebugDrawBuffer'; }
+export interface DebugShapeRecord {
+  geometryId: number;
+  /** DebugShapeState.*.value */
+  state: number;
+  /** box3d packed colour; low 24 bits are RGB, the high byte is the debug material. */
+  color: number;
+  position: b3Vec3;
+  rotation: b3Quat;
+}
+export interface DebugSegment { p1: b3Vec3; p2: b3Vec3; color: number; role: number; }
+export interface DebugPoint { position: b3Vec3; size: number; color: number; role: number; }
+export interface DebugSpherePrimitive { center: b3Vec3; radius: number; alpha: number; color: number; role: number; }
+export interface DebugCapsulePrimitive { p1: b3Vec3; p2: b3Vec3; radius: number; alpha: number; color: number; role: number; }
+export interface DebugBoxPrimitive { extents: b3Vec3; position: b3Vec3; rotation: b3Quat; color: number; role: number; }
+export interface DebugBoundsPrimitive { aabb: b3AABB; color: number; role: number; }
+export interface DebugTransformPrimitive { position: b3Vec3; rotation: b3Quat; role: number; }
 export interface Contact {
   shapeIdA: b3ShapeId;
   shapeIdB: b3ShapeId;
@@ -1191,6 +1285,35 @@ export interface Box3DFacade {
   getNumPlaneResults(buf: PlaneResultBuffer): number;
   createPlaneResult(): PlaneResult;
   getPlaneResultAt(out: PlaneResult, buf: PlaneResultBuffer, i: number): PlaneResult;
+  /** Reusable wasm buffer filled by getDebugDraw. Free it with destroyDebugDrawBuffer. */
+  createDebugDrawBuffer(): DebugDrawBuffer;
+  /** One b3World_Draw pass per enabled role. Refreshes the heap views; allocates nothing. */
+  getDebugDraw(buf: DebugDrawBuffer, worldId: b3WorldId, options?: DebugDrawOptions): DebugDrawBuffer;
+  destroyDebugDrawBuffer(buf: DebugDrawBuffer): void;
+  getNumDebugShapes(buf: DebugDrawBuffer): number;
+  getNumDebugSegments(buf: DebugDrawBuffer): number;
+  getNumDebugPoints(buf: DebugDrawBuffer): number;
+  getNumDebugSpheres(buf: DebugDrawBuffer): number;
+  getNumDebugCapsules(buf: DebugDrawBuffer): number;
+  getNumDebugBoxes(buf: DebugDrawBuffer): number;
+  getNumDebugBounds(buf: DebugDrawBuffer): number;
+  getNumDebugTransforms(buf: DebugDrawBuffer): number;
+  createDebugShapeRecord(): DebugShapeRecord;
+  getDebugShapeAt(out: DebugShapeRecord, buf: DebugDrawBuffer, i: number): DebugShapeRecord;
+  createDebugSegment(): DebugSegment;
+  getDebugSegmentAt(out: DebugSegment, buf: DebugDrawBuffer, i: number): DebugSegment;
+  createDebugPoint(): DebugPoint;
+  getDebugPointAt(out: DebugPoint, buf: DebugDrawBuffer, i: number): DebugPoint;
+  createDebugSpherePrimitive(): DebugSpherePrimitive;
+  getDebugSphereAt(out: DebugSpherePrimitive, buf: DebugDrawBuffer, i: number): DebugSpherePrimitive;
+  createDebugCapsulePrimitive(): DebugCapsulePrimitive;
+  getDebugCapsuleAt(out: DebugCapsulePrimitive, buf: DebugDrawBuffer, i: number): DebugCapsulePrimitive;
+  createDebugBoxPrimitive(): DebugBoxPrimitive;
+  getDebugBoxAt(out: DebugBoxPrimitive, buf: DebugDrawBuffer, i: number): DebugBoxPrimitive;
+  createDebugBoundsPrimitive(): DebugBoundsPrimitive;
+  getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
+  createDebugTransformPrimitive(): DebugTransformPrimitive;
+  getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
 export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;

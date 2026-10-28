@@ -373,6 +373,18 @@
       "performance"
     ]
   },
+  "example-debug-draw": {
+    "title": "Debug Draw",
+    "description": "box3d's own debug primitives — shapes, contacts, joints — drawn with three.js",
+    "tags": [
+      "world",
+      "physics",
+      "debug-draw",
+      "contacts",
+      "joints",
+      "three"
+    ]
+  },
   "example-replay": {
     "title": "Replay",
     "description": "record a simulation to a buffer, then scrub & play it back deterministically (b3RecPlayer)",

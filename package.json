@@ -19,6 +19,10 @@
     "./mt-inline": {
       "types": "./dist/box3d.d.ts",
       "import": "./dist/box3d.mt.inline.mjs"
+    },
+    "./three": {
+      "types": "./dist/three.d.ts",
+      "import": "./dist/three.mjs"
     }
   },
   "files": [

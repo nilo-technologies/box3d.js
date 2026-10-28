@@ -36,9 +36,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -295,6 +297,28 @@ constexpr int joint = idW;                                        //  3: jointId
 constexpr int plane = 3 + 1 + 3; // 7: plane.normal plane.offset point
 constexpr int shapeId = idW;     // 3: index1 world0 generation
 
+// debug draw. Positions are f64 because b3Pos is double when BOX3D_DOUBLE_PRECISION is on.
+constexpr int debugShapeI32 = 1 + 1 + 1;       // geometryId state color
+constexpr int debugShapeF64 = 3 + 4;           // position rotation(x,y,z,w)
+constexpr int debugSegmentF64 = 3 + 3;         // p1 p2
+constexpr int debugSegmentI32 = 1 + 1;         // color role
+constexpr int debugPointF64 = 3;               // position
+constexpr int debugPointF32 = 1;               // size
+constexpr int debugPointI32 = 1 + 1;           // color role
+constexpr int debugSphereF64 = 3;              // center
+constexpr int debugSphereF32 = 1 + 1;          // radius alpha
+constexpr int debugSphereI32 = 1 + 1;          // color role
+constexpr int debugCapsuleF64 = 3 + 3;         // p1 p2
+constexpr int debugCapsuleF32 = 1 + 1;         // radius alpha
+constexpr int debugCapsuleI32 = 1 + 1;         // color role
+constexpr int debugBoxF32 = 3;                 // extents
+constexpr int debugBoxF64 = 3 + 4;             // position rotation
+constexpr int debugBoxI32 = 1 + 1;             // color role
+constexpr int debugBoundsF64 = 3 + 3;          // min max
+constexpr int debugBoundsI32 = 1 + 1;          // color role
+constexpr int debugTransformF64 = 3 + 4;       // position rotation
+constexpr int debugTransformI32 = 1;           // role
+
 // Tripwires: pin each stride to its known total, so changing a field width is a
 // deliberate, compile-checked edit (and a nudge to reconcile the facade's field reads
 // + the _layoutMeta serializer). The facade pulls the numbers themselves from
@@ -306,6 +330,14 @@ static_assert( contactTouch == 10 && contactHitI32 == 14 && contactHitF64 == 7 &
 	"events buffer stride changed — update the facade field reads + _layoutMeta" );
 static_assert( plane == 7 && shapeId == 3,
 	"plane/shapeId stride changed — update the facade field reads + _layoutMeta" );
+static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 && debugSegmentI32 == 2
+	&& debugPointF64 == 3 && debugPointF32 == 1 && debugPointI32 == 2
+	&& debugSphereF64 == 3 && debugSphereF32 == 2 && debugSphereI32 == 2
+	&& debugCapsuleF64 == 6 && debugCapsuleF32 == 2 && debugCapsuleI32 == 2
+	&& debugBoxF32 == 3 && debugBoxF64 == 7 && debugBoxI32 == 2
+	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
+	&& debugTransformF64 == 7 && debugTransformI32 == 1,
+	"debug draw stride changed — update the facade field reads + _layoutMeta" );
 }
 
 // Fill flat typed-array tiers from b3ContactData[] (CSR: contacts -> manifolds
@@ -592,6 +624,649 @@ void worldDraw( b3WorldId worldId, val handlers )
 	b3World_Draw( worldId, &dd, B3_DEFAULT_MASK_BITS );
 }
 
+// ---- exact debug draw -------------------------------------------------------
+// box3d only emits exact shape outlines through the world-level createDebugShape
+// cache. Geometry is built once, the first time a shape is drawn, and freed from
+// destroyDebugShape (shape destroy, shape change, and b3DestroyWorld all call it).
+// getDebugDraw then runs one b3World_Draw pass per enabled role. A single pass
+// cannot tell those roles apart: contact normals, forces, and features are
+// mutually exclusive, and friction lines are the yellow primitives inside the
+// contact-forces branch (drawFrictionForces itself is unread).
+
+// Numeric values are the facade's DebugShapeState.*.value and the three module's
+// state-name table. Keep this order; it mirrors b3DrawShape in physics_world.c.
+enum DebugShapeState
+{
+	DebugShapeState_static = 0,
+	DebugShapeState_kinematic,
+	DebugShapeState_kinematicSleeping,
+	DebugShapeState_awake,
+	DebugShapeState_sleeping,
+	DebugShapeState_sensor,
+	DebugShapeState_disabled,
+	DebugShapeState_fast,
+	DebugShapeState_bullet,
+	DebugShapeState_speedCapped,
+	DebugShapeState_timeOfImpact,
+	DebugShapeState_invalidMass,
+	DebugShapeState_custom,
+};
+
+enum DebugDrawRole
+{
+	DebugDrawRole_bounds = 0,
+	DebugDrawRole_joints,
+	DebugDrawRole_mass,
+	DebugDrawRole_contactPoints,
+	DebugDrawRole_contactNormals,
+	DebugDrawRole_contactForces,
+	DebugDrawRole_frictionForces,
+	DebugDrawRole_contactFeatures,
+	DebugDrawRole_islands,
+	DebugDrawRole_graphColors,
+};
+
+// Same packing as b3MakeDebugColor. A constexpr copy so the switch cases are
+// constant expressions (the header function is inline, not constexpr).
+constexpr uint32_t debugPackedColor( b3HexColor rgb, b3DebugMaterial material )
+{
+	return ( (uint32_t)rgb & 0x00FFFFFFu ) | ( (uint32_t)material << 24 );
+}
+
+// Counterpart of the colour choice in b3DrawShape (physics_world.c). The high
+// byte is the debug material, so the match is the full packed colour. Anything
+// else, including a surface customColor, is custom.
+int debugShapeStateFromColor( uint32_t color )
+{
+	switch ( color )
+	{
+		case debugPackedColor( b3_colorRed, b3_debugMaterialDefault ): return DebugShapeState_invalidMass;
+		case debugPackedColor( b3_colorSlateGray, b3_debugMaterialDefault ): return DebugShapeState_disabled;
+		case debugPackedColor( b3_colorWheat, b3_debugMaterialDefault ): return DebugShapeState_sensor;
+		case debugPackedColor( b3_colorLime, b3_debugMaterialDefault ): return DebugShapeState_timeOfImpact;
+		case debugPackedColor( b3_colorTurquoise, b3_debugMaterialDefault ): return DebugShapeState_bullet;
+		case debugPackedColor( b3_colorYellow, b3_debugMaterialDefault ): return DebugShapeState_speedCapped;
+		case debugPackedColor( b3_colorOrange, b3_debugMaterialGlossy ): return DebugShapeState_fast;
+		case debugPackedColor( b3_colorDarkGray, b3_debugMaterialMatte ): return DebugShapeState_static;
+		case debugPackedColor( b3_colorSteelBlue, b3_debugMaterialMetallic ): return DebugShapeState_kinematic;
+		case debugPackedColor( b3_colorLightSteelBlue, b3_debugMaterialMatte ): return DebugShapeState_kinematicSleeping;
+		case debugPackedColor( b3_colorTan, b3_debugMaterialSoft ): return DebugShapeState_awake;
+		case debugPackedColor( b3_colorLightSlateGray, b3_debugMaterialDead ): return DebugShapeState_sleeping;
+		default: return DebugShapeState_custom;
+	}
+}
+
+struct DebugGeometry
+{
+	uint32_t id = 0;
+	std::vector<float> positions;
+	std::vector<uint32_t> indices;
+	std::vector<float> spheres;  // xyz + radius
+	std::vector<float> capsules; // c1 xyz, c2 xyz, radius
+};
+
+std::unordered_map<uint32_t, std::unique_ptr<DebugGeometry>> g_debugGeometries;
+uint32_t g_nextDebugGeometryId = 1;
+
+void pushVec3( std::vector<float>& v, b3Vec3 p )
+{
+	v.insert( v.end(), { p.x, p.y, p.z } );
+}
+
+b3Vec3 scaleVec( b3Vec3 v, b3Vec3 s )
+{
+	return b3Vec3{ v.x * s.x, v.y * s.y, v.z * s.z };
+}
+
+void appendHull( DebugGeometry* geo, const b3HullData* hull, const b3Transform* xf )
+{
+	if ( hull == nullptr ) return;
+	const b3Vec3* points = b3GetHullPoints( hull );
+	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
+	const b3HullFace* faces = b3GetHullFaces( hull );
+	if ( points == nullptr || edges == nullptr || faces == nullptr || hull->vertexCount <= 0 ) return;
+
+	const uint32_t base = (uint32_t)( geo->positions.size() / 3 );
+	for ( int i = 0; i < hull->vertexCount; ++i )
+	{
+		b3Vec3 p = xf ? b3TransformPoint( *xf, points[i] ) : points[i];
+		pushVec3( geo->positions, p );
+	}
+
+	const int limit = hull->edgeCount > 0 ? hull->edgeCount : hull->vertexCount;
+	for ( int faceIndex = 0; faceIndex < hull->faceCount; ++faceIndex )
+	{
+		const uint8_t start = faces[faceIndex].edge;
+		uint8_t edgeIndex = start;
+		uint32_t poly[256];
+		int count = 0;
+		for ( int n = 0; n < limit && count < 256; ++n )
+		{
+			const b3HullHalfEdge& edge = edges[edgeIndex];
+			if ( edge.origin >= hull->vertexCount ) break;
+			poly[count++] = base + (uint32_t)edge.origin;
+			edgeIndex = edge.next;
+			if ( edgeIndex == start ) break;
+		}
+		for ( int i = 1; i + 1 < count; ++i )
+		{
+			geo->indices.insert( geo->indices.end(), { poly[0], poly[i], poly[i + 1] } );
+		}
+	}
+}
+
+void appendMesh( DebugGeometry* geo, const b3MeshData* mesh, b3Vec3 scale, const b3Transform* xf )
+{
+	if ( mesh == nullptr || mesh->vertexCount <= 0 || mesh->triangleCount <= 0 ) return;
+	const b3Vec3* vertices = b3GetMeshVertices( mesh );
+	const b3MeshTriangle* triangles = b3GetMeshTriangles( mesh );
+	if ( vertices == nullptr || triangles == nullptr ) return;
+
+	const uint32_t base = (uint32_t)( geo->positions.size() / 3 );
+	for ( int i = 0; i < mesh->vertexCount; ++i )
+	{
+		b3Vec3 p = scaleVec( vertices[i], scale );
+		if ( xf ) p = b3TransformPoint( *xf, p );
+		pushVec3( geo->positions, p );
+	}
+	for ( int i = 0; i < mesh->triangleCount; ++i )
+	{
+		const b3MeshTriangle& tri = triangles[i];
+		if ( tri.index1 < 0 || tri.index2 < 0 || tri.index3 < 0 ) continue;
+		geo->indices.insert( geo->indices.end(), {
+			base + (uint32_t)tri.index1, base + (uint32_t)tri.index2, base + (uint32_t)tri.index3 } );
+	}
+}
+
+// Same grid split as b3GetHeightFieldTriangle, which is not a public function.
+// Hole cells (material 0xFF) are left out.
+void appendHeightField( DebugGeometry* geo, const b3HeightFieldData* hf )
+{
+	if ( hf == nullptr || hf->columnCount < 2 || hf->rowCount < 2 ) return;
+	const uint16_t* heights = b3GetHeightFieldCompressedHeights( hf );
+	if ( heights == nullptr ) return;
+	const uint8_t* materials = b3GetHeightFieldMaterialIndices( hf );
+
+	const int columns = hf->columnCount;
+	const int rows = hf->rowCount;
+	const uint32_t base = (uint32_t)( geo->positions.size() / 3 );
+	geo->positions.reserve( geo->positions.size() + (size_t)( columns * rows ) * 3 );
+	for ( int row = 0; row < rows; ++row )
+	{
+		for ( int column = 0; column < columns; ++column )
+		{
+			const int index = row * columns + column;
+			const float height = hf->minHeight + hf->heightScale * (float)heights[index];
+			pushVec3( geo->positions, scaleVec( b3Vec3{ (float)column, height, (float)row }, hf->scale ) );
+		}
+	}
+
+	for ( int row = 0; row < rows - 1; ++row )
+	{
+		for ( int column = 0; column < columns - 1; ++column )
+		{
+			const int cell = row * ( columns - 1 ) + column;
+			if ( materials != nullptr && materials[cell] == B3_HEIGHT_FIELD_HOLE ) continue;
+			const uint32_t i00 = base + (uint32_t)( row * columns + column );
+			const uint32_t i10 = i00 + 1;
+			const uint32_t i01 = base + (uint32_t)( ( row + 1 ) * columns + column );
+			const uint32_t i11 = i01 + 1;
+			geo->indices.insert( geo->indices.end(), { i00, i01, i10, i11, i10, i01 } );
+		}
+	}
+}
+
+void pushSphere( DebugGeometry* geo, b3Sphere sphere )
+{
+	geo->spheres.insert( geo->spheres.end(), { sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius } );
+}
+
+void pushCapsule( DebugGeometry* geo, b3Capsule capsule )
+{
+	geo->capsules.insert( geo->capsules.end(), {
+		capsule.center1.x, capsule.center1.y, capsule.center1.z,
+		capsule.center2.x, capsule.center2.y, capsule.center2.z,
+		capsule.radius } );
+}
+
+void buildDebugGeometry( DebugGeometry* geo, const b3DebugShape* shape )
+{
+	switch ( shape->type )
+	{
+		case b3_hullShape:
+			appendHull( geo, shape->hull, nullptr );
+			break;
+		case b3_meshShape:
+			if ( shape->mesh != nullptr ) appendMesh( geo, shape->mesh->data, shape->mesh->scale, nullptr );
+			break;
+		case b3_heightShape:
+			appendHeightField( geo, shape->heightField );
+			break;
+		case b3_sphereShape:
+			if ( shape->sphere != nullptr ) pushSphere( geo, *shape->sphere );
+			break;
+		case b3_capsuleShape:
+			if ( shape->capsule != nullptr ) pushCapsule( geo, *shape->capsule );
+			break;
+		case b3_compoundShape:
+			if ( shape->compound == nullptr ) break;
+			for ( int i = 0; i < shape->compound->hullCount; ++i )
+			{
+				b3CompoundHull child = b3GetCompoundHull( shape->compound, i );
+				appendHull( geo, child.hull, &child.transform );
+			}
+			for ( int i = 0; i < shape->compound->meshCount; ++i )
+			{
+				b3CompoundMesh child = b3GetCompoundMesh( shape->compound, i );
+				appendMesh( geo, child.meshData, child.scale, &child.transform );
+			}
+			for ( int i = 0; i < shape->compound->sphereCount; ++i )
+			{
+				pushSphere( geo, b3GetCompoundSphere( shape->compound, i ).sphere );
+			}
+			for ( int i = 0; i < shape->compound->capsuleCount; ++i )
+			{
+				pushCapsule( geo, b3GetCompoundCapsule( shape->compound, i ).capsule );
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+void* createDebugShapeCallback( const b3DebugShape* debugShape, void* )
+{
+	auto geo = std::make_unique<DebugGeometry>();
+	geo->id = g_nextDebugGeometryId++;
+	if ( g_nextDebugGeometryId == 0 ) g_nextDebugGeometryId = 1;
+	buildDebugGeometry( geo.get(), debugShape );
+	DebugGeometry* raw = geo.get();
+	g_debugGeometries.emplace( raw->id, std::move( geo ) );
+	return raw;
+}
+
+void destroyDebugShapeCallback( void* userShape, void* )
+{
+	if ( userShape == nullptr ) return;
+	const uint32_t id = static_cast<DebugGeometry*>( userShape )->id;
+	g_debugGeometries.erase( id );
+}
+
+val viewF32( const std::vector<float>& v )
+{
+	if ( v.empty() ) return val::global( "Float32Array" ).new_( 0 );
+	return val( typed_memory_view( v.size(), v.data() ) );
+}
+
+val viewU32( const std::vector<uint32_t>& v )
+{
+	if ( v.empty() ) return val::global( "Uint32Array" ).new_( 0 );
+	return val( typed_memory_view( v.size(), v.data() ) );
+}
+
+val getDebugGeometry( uint32_t id )
+{
+	auto it = g_debugGeometries.find( id );
+	if ( it == g_debugGeometries.end() ) return val::null();
+	const DebugGeometry* geo = it->second.get();
+	val o = val::object();
+	o.set( "positions", viewF32( geo->positions ) );
+	o.set( "indices", viewU32( geo->indices ) );
+	o.set( "spheres", viewF32( geo->spheres ) );
+	o.set( "capsules", viewF32( geo->capsules ) );
+	return o;
+}
+
+enum DebugPass
+{
+	DebugPass_shapes,
+	DebugPass_bounds,
+	DebugPass_joints,
+	DebugPass_mass,
+	DebugPass_contactPoints,
+	DebugPass_contactNormals,
+	DebugPass_contactForces,
+	DebugPass_contactFeatures,
+	DebugPass_islands,
+	DebugPass_graphColors,
+};
+
+inline void pushPos( std::vector<double>& v, b3Pos p )
+{
+	v.insert( v.end(), { (double)p.x, (double)p.y, (double)p.z } );
+}
+
+inline void pushWorldXf( std::vector<double>& v, b3WorldTransform xf )
+{
+	v.insert( v.end(), {
+		(double)xf.p.x, (double)xf.p.y, (double)xf.p.z,
+		(double)xf.q.v.x, (double)xf.q.v.y, (double)xf.q.v.z, (double)xf.q.s } );
+}
+
+inline uint32_t rgb( b3HexColor color )
+{
+	return (uint32_t)color & 0x00FFFFFFu;
+}
+
+struct DebugDrawBuffer
+{
+	std::vector<int32_t> shapeI32, segmentI32, pointI32, sphereI32, capsuleI32, boxI32, boundsI32, transformI32;
+	std::vector<float> pointF32, sphereF32, capsuleF32, boxF32;
+	std::vector<double> shapeF64, segmentF64, pointF64, sphereF64, capsuleF64, boxF64, boundsF64, transformF64;
+
+	DebugPass pass = DebugPass_shapes;
+	bool keepForces = false;
+	bool keepFriction = false;
+
+	void clear()
+	{
+		shapeI32.clear(); shapeF64.clear();
+		segmentI32.clear(); segmentF64.clear();
+		pointI32.clear(); pointF32.clear(); pointF64.clear();
+		sphereI32.clear(); sphereF32.clear(); sphereF64.clear();
+		capsuleI32.clear(); capsuleF32.clear(); capsuleF64.clear();
+		boxI32.clear(); boxF32.clear(); boxF64.clear();
+		boundsI32.clear(); boundsF64.clear();
+		transformI32.clear(); transformF64.clear();
+	}
+
+	void addShape( uint32_t geometryId, int state, uint32_t color, b3WorldTransform xf )
+	{
+		shapeI32.insert( shapeI32.end(), { (int32_t)geometryId, state, (int32_t)color } );
+		pushWorldXf( shapeF64, xf );
+	}
+	void addSegment( b3Pos p1, b3Pos p2, uint32_t color, int role )
+	{
+		pushPos( segmentF64, p1 );
+		pushPos( segmentF64, p2 );
+		segmentI32.insert( segmentI32.end(), { (int32_t)color, role } );
+	}
+	void addPoint( b3Pos p, float size, uint32_t color, int role )
+	{
+		pushPos( pointF64, p );
+		pointF32.push_back( size );
+		pointI32.insert( pointI32.end(), { (int32_t)color, role } );
+	}
+	void addSphere( b3Pos p, float radius, float alpha, uint32_t color, int role )
+	{
+		pushPos( sphereF64, p );
+		sphereF32.insert( sphereF32.end(), { radius, alpha } );
+		sphereI32.insert( sphereI32.end(), { (int32_t)color, role } );
+	}
+	void addCapsule( b3Pos p1, b3Pos p2, float radius, float alpha, uint32_t color, int role )
+	{
+		pushPos( capsuleF64, p1 );
+		pushPos( capsuleF64, p2 );
+		capsuleF32.insert( capsuleF32.end(), { radius, alpha } );
+		capsuleI32.insert( capsuleI32.end(), { (int32_t)color, role } );
+	}
+	void addBox( b3Vec3 extents, b3WorldTransform xf, uint32_t color, int role )
+	{
+		boxF32.insert( boxF32.end(), { extents.x, extents.y, extents.z } );
+		pushWorldXf( boxF64, xf );
+		boxI32.insert( boxI32.end(), { (int32_t)color, role } );
+	}
+	void addBounds( b3AABB aabb, uint32_t color, int role )
+	{
+		boundsF64.insert( boundsF64.end(), {
+			(double)aabb.lowerBound.x, (double)aabb.lowerBound.y, (double)aabb.lowerBound.z,
+			(double)aabb.upperBound.x, (double)aabb.upperBound.y, (double)aabb.upperBound.z } );
+		boundsI32.insert( boundsI32.end(), { (int32_t)color, role } );
+	}
+	void addTransform( b3WorldTransform xf, int role )
+	{
+		pushWorldXf( transformF64, xf );
+		transformI32.push_back( role );
+	}
+
+	int shapeCount() const { return (int)( shapeI32.size() / layout::debugShapeI32 ); }
+	int segmentCount() const { return (int)( segmentI32.size() / layout::debugSegmentI32 ); }
+	int pointCount() const { return (int)( pointI32.size() / layout::debugPointI32 ); }
+	int sphereCount() const { return (int)( sphereI32.size() / layout::debugSphereI32 ); }
+	int capsuleCount() const { return (int)( capsuleI32.size() / layout::debugCapsuleI32 ); }
+	int boxCount() const { return (int)( boxI32.size() / layout::debugBoxI32 ); }
+	int boundsCount() const { return (int)( boundsI32.size() / layout::debugBoundsI32 ); }
+	int transformCount() const { return (int)( transformI32.size() / layout::debugTransformI32 ); }
+
+	unsigned shapeI32Ptr() const { return shapeI32.empty() ? 0u : (unsigned)(size_t)shapeI32.data(); }
+	unsigned shapeF64Ptr() const { return shapeF64.empty() ? 0u : (unsigned)(size_t)shapeF64.data(); }
+	unsigned segmentI32Ptr() const { return segmentI32.empty() ? 0u : (unsigned)(size_t)segmentI32.data(); }
+	unsigned segmentF64Ptr() const { return segmentF64.empty() ? 0u : (unsigned)(size_t)segmentF64.data(); }
+	unsigned pointI32Ptr() const { return pointI32.empty() ? 0u : (unsigned)(size_t)pointI32.data(); }
+	unsigned pointF32Ptr() const { return pointF32.empty() ? 0u : (unsigned)(size_t)pointF32.data(); }
+	unsigned pointF64Ptr() const { return pointF64.empty() ? 0u : (unsigned)(size_t)pointF64.data(); }
+	unsigned sphereI32Ptr() const { return sphereI32.empty() ? 0u : (unsigned)(size_t)sphereI32.data(); }
+	unsigned sphereF32Ptr() const { return sphereF32.empty() ? 0u : (unsigned)(size_t)sphereF32.data(); }
+	unsigned sphereF64Ptr() const { return sphereF64.empty() ? 0u : (unsigned)(size_t)sphereF64.data(); }
+	unsigned capsuleI32Ptr() const { return capsuleI32.empty() ? 0u : (unsigned)(size_t)capsuleI32.data(); }
+	unsigned capsuleF32Ptr() const { return capsuleF32.empty() ? 0u : (unsigned)(size_t)capsuleF32.data(); }
+	unsigned capsuleF64Ptr() const { return capsuleF64.empty() ? 0u : (unsigned)(size_t)capsuleF64.data(); }
+	unsigned boxI32Ptr() const { return boxI32.empty() ? 0u : (unsigned)(size_t)boxI32.data(); }
+	unsigned boxF32Ptr() const { return boxF32.empty() ? 0u : (unsigned)(size_t)boxF32.data(); }
+	unsigned boxF64Ptr() const { return boxF64.empty() ? 0u : (unsigned)(size_t)boxF64.data(); }
+	unsigned boundsI32Ptr() const { return boundsI32.empty() ? 0u : (unsigned)(size_t)boundsI32.data(); }
+	unsigned boundsF64Ptr() const { return boundsF64.empty() ? 0u : (unsigned)(size_t)boundsF64.data(); }
+	unsigned transformI32Ptr() const { return transformI32.empty() ? 0u : (unsigned)(size_t)transformI32.data(); }
+	unsigned transformF64Ptr() const { return transformF64.empty() ? 0u : (unsigned)(size_t)transformF64.data(); }
+
+	void loadFrom( b3WorldId worldId, val options );
+};
+
+bool collectDrawShape( void* userShape, b3WorldTransform xf, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_shapes || userShape == nullptr ) return true;
+	const DebugGeometry* geo = static_cast<const DebugGeometry*>( userShape );
+	const uint32_t packed = (uint32_t)color;
+	buf->addShape( geo->id, debugShapeStateFromColor( packed ), packed, xf );
+	return true;
+}
+
+void collectDrawSegment( b3Pos p1, b3Pos p2, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr ) return;
+	const uint32_t packed = (uint32_t)color;
+	if ( buf->pass == DebugPass_joints )
+	{
+		buf->addSegment( p1, p2, packed, DebugDrawRole_joints );
+	}
+	else if ( buf->pass == DebugPass_contactNormals )
+	{
+		buf->addSegment( p1, p2, packed, DebugDrawRole_contactNormals );
+	}
+	else if ( buf->pass == DebugPass_contactForces )
+	{
+		// Friction is the yellow segment inside the contact-forces branch.
+		// Normal impulses are magenta. drawFrictionForces is never read.
+		if ( rgb( color ) == (uint32_t)b3_colorYellow )
+		{
+			if ( buf->keepFriction ) buf->addSegment( p1, p2, packed, DebugDrawRole_frictionForces );
+		}
+		else if ( buf->keepForces )
+		{
+			buf->addSegment( p1, p2, packed, DebugDrawRole_contactForces );
+		}
+	}
+}
+
+void collectDrawPoint( b3Pos p, float size, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr ) return;
+	const uint32_t packed = (uint32_t)color;
+	if ( buf->pass == DebugPass_graphColors )
+	{
+		// Contact graph points are size 10 or 15. Joint graph points are size 5.
+		// Motor-joint anchors are size 8 and belong to the joints pass.
+		if ( size == 5.0f || size == 10.0f || size == 15.0f )
+			buf->addPoint( p, size, packed, DebugDrawRole_graphColors );
+		return;
+	}
+	if ( buf->pass == DebugPass_contactForces )
+	{
+		if ( buf->keepFriction && rgb( color ) == (uint32_t)b3_colorYellow )
+			buf->addPoint( p, size, packed, DebugDrawRole_frictionForces );
+		return;
+	}
+	if ( buf->pass == DebugPass_contactPoints )
+		buf->addPoint( p, size, packed, DebugDrawRole_contactPoints );
+	else if ( buf->pass == DebugPass_joints )
+		buf->addPoint( p, size, packed, DebugDrawRole_joints );
+}
+
+void collectDrawString( b3Pos p, const char*, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_contactFeatures ) return;
+	// Feature ids are text. A point at the anchor is what the toggle can show.
+	buf->addPoint( p, 6.0f, (uint32_t)color, DebugDrawRole_contactFeatures );
+}
+
+void collectDrawSphere( b3Pos p, float radius, b3HexColor color, float alpha, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_joints ) return;
+	buf->addSphere( p, radius, alpha, (uint32_t)color, DebugDrawRole_joints );
+}
+
+void collectDrawCapsule( b3Pos p1, b3Pos p2, float radius, b3HexColor color, float alpha, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_joints ) return;
+	buf->addCapsule( p1, p2, radius, alpha, (uint32_t)color, DebugDrawRole_joints );
+}
+
+void collectDrawBox( b3Vec3 extents, b3WorldTransform xf, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_joints ) return;
+	buf->addBox( extents, xf, (uint32_t)color, DebugDrawRole_joints );
+}
+
+void collectDrawBounds( b3AABB aabb, b3HexColor color, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr ) return;
+	if ( buf->pass == DebugPass_bounds )
+		buf->addBounds( aabb, (uint32_t)color, DebugDrawRole_bounds );
+	else if ( buf->pass == DebugPass_islands )
+		buf->addBounds( aabb, (uint32_t)color, DebugDrawRole_islands );
+}
+
+void collectDrawTransform( b3WorldTransform xf, void* context )
+{
+	DebugDrawBuffer* buf = static_cast<DebugDrawBuffer*>( context );
+	if ( buf == nullptr || buf->pass != DebugPass_mass ) return;
+	buf->addTransform( xf, DebugDrawRole_mass );
+}
+
+bool readDebugFlag( val options, const char* key )
+{
+	val v = options[key];
+	if ( v.isUndefined() || v.isNull() ) return false;
+	return v.as<bool>();
+}
+
+float readDebugFloat( val options, const char* key, float fallback )
+{
+	val v = options[key];
+	if ( v.isUndefined() || v.isNull() ) return fallback;
+	return (float)v.as<double>();
+}
+
+void DebugDrawBuffer::loadFrom( b3WorldId worldId, val options )
+{
+	clear();
+	if ( options.isUndefined() || options.isNull() ) options = val::object();
+
+	b3AABB bounds;
+	val drawingBounds = options["drawingBounds"];
+	if ( drawingBounds.isUndefined() || drawingBounds.isNull() )
+	{
+		bounds.lowerBound = b3Vec3{ -1.0e30f, -1.0e30f, -1.0e30f };
+		bounds.upperBound = b3Vec3{ 1.0e30f, 1.0e30f, 1.0e30f };
+	}
+	else
+	{
+		bounds = drawingBounds.as<b3AABB>();
+	}
+
+	uint64_t maskBits = B3_DEFAULT_MASK_BITS;
+	val mask = options["maskBits"];
+	if ( !mask.isUndefined() && !mask.isNull() )
+	{
+		const double d = mask.as<double>();
+		if ( std::isfinite( d ) && d >= 0.0 ) maskBits = (uint64_t)d;
+	}
+
+	const float forceScale = readDebugFloat( options, "forceScale", 1.0f );
+	const float jointScale = readDebugFloat( options, "jointScale", 1.0f );
+	const bool jointExtras = readDebugFlag( options, "jointExtras" );
+	keepForces = readDebugFlag( options, "contactForces" );
+	keepFriction = readDebugFlag( options, "frictionForces" );
+
+	const DebugPass passes[] = {
+		DebugPass_shapes,
+		DebugPass_bounds,
+		DebugPass_joints,
+		DebugPass_mass,
+		DebugPass_contactPoints,
+		DebugPass_contactNormals,
+		DebugPass_contactForces,
+		DebugPass_contactFeatures,
+		DebugPass_islands,
+		DebugPass_graphColors,
+	};
+	const bool enabled[] = {
+		readDebugFlag( options, "shapes" ),
+		readDebugFlag( options, "bounds" ),
+		readDebugFlag( options, "joints" ),
+		readDebugFlag( options, "mass" ),
+		readDebugFlag( options, "contacts" ),
+		readDebugFlag( options, "contactNormals" ),
+		keepForces || keepFriction,
+		readDebugFlag( options, "contactFeatures" ),
+		readDebugFlag( options, "islands" ),
+		readDebugFlag( options, "graphColors" ),
+	};
+
+	for ( int i = 0; i < 10; ++i )
+	{
+		if ( !enabled[i] ) continue;
+		pass = passes[i];
+		b3DebugDraw dd = b3DefaultDebugDraw();
+		dd.context = this;
+		dd.drawingBounds = bounds;
+		dd.forceScale = forceScale;
+		dd.jointScale = jointScale;
+		dd.DrawShapeFcn = collectDrawShape;
+		dd.DrawSegmentFcn = collectDrawSegment;
+		dd.DrawPointFcn = collectDrawPoint;
+		dd.DrawSphereFcn = collectDrawSphere;
+		dd.DrawCapsuleFcn = collectDrawCapsule;
+		dd.DrawBoxFcn = collectDrawBox;
+		dd.DrawBoundsFcn = collectDrawBounds;
+		dd.DrawTransformFcn = collectDrawTransform;
+		dd.DrawStringFcn = collectDrawString;
+		dd.drawShapes = pass == DebugPass_shapes;
+		dd.drawBounds = pass == DebugPass_bounds;
+		dd.drawJoints = pass == DebugPass_joints || pass == DebugPass_graphColors;
+		dd.drawJointExtras = pass == DebugPass_joints && jointExtras;
+		dd.drawMass = pass == DebugPass_mass;
+		dd.drawContacts = pass == DebugPass_contactPoints || pass == DebugPass_contactNormals
+			|| pass == DebugPass_contactForces || pass == DebugPass_contactFeatures || pass == DebugPass_graphColors;
+		dd.drawContactNormals = pass == DebugPass_contactNormals;
+		dd.drawContactForces = pass == DebugPass_contactForces;
+		dd.drawContactFeatures = pass == DebugPass_contactFeatures;
+		dd.drawGraphColors = pass == DebugPass_graphColors;
+		dd.drawIslands = pass == DebugPass_islands;
+		dd.drawFrictionForces = false;
+		dd.drawBodyNames = false;
+		b3World_Draw( worldId, &dd, maskBits );
+	}
+}
+
 // ---- convex decomposition (V-HACD) ----------------------------------------
 // A decomposition crosses the boundary in one packed form, both directions:
 // { points: Float32Array (xyz per vertex, all pieces back to back),
@@ -843,6 +1518,33 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.value( "b3_meshShape", b3_meshShape )
 		.value( "b3_sphereShape", b3_sphereShape );
 
+	enum_<DebugShapeState>( "DebugShapeState" )
+		.value( "static", DebugShapeState_static )
+		.value( "kinematic", DebugShapeState_kinematic )
+		.value( "kinematicSleeping", DebugShapeState_kinematicSleeping )
+		.value( "awake", DebugShapeState_awake )
+		.value( "sleeping", DebugShapeState_sleeping )
+		.value( "sensor", DebugShapeState_sensor )
+		.value( "disabled", DebugShapeState_disabled )
+		.value( "fast", DebugShapeState_fast )
+		.value( "bullet", DebugShapeState_bullet )
+		.value( "speedCapped", DebugShapeState_speedCapped )
+		.value( "timeOfImpact", DebugShapeState_timeOfImpact )
+		.value( "invalidMass", DebugShapeState_invalidMass )
+		.value( "custom", DebugShapeState_custom );
+
+	enum_<DebugDrawRole>( "DebugDrawRole" )
+		.value( "bounds", DebugDrawRole_bounds )
+		.value( "joints", DebugDrawRole_joints )
+		.value( "mass", DebugDrawRole_mass )
+		.value( "contactPoints", DebugDrawRole_contactPoints )
+		.value( "contactNormals", DebugDrawRole_contactNormals )
+		.value( "contactForces", DebugDrawRole_contactForces )
+		.value( "frictionForces", DebugDrawRole_frictionForces )
+		.value( "contactFeatures", DebugDrawRole_contactFeatures )
+		.value( "islands", DebugDrawRole_islands )
+		.value( "graphColors", DebugDrawRole_graphColors );
+
 	enum_<b3JointType>( "b3JointType" )
 		.value( "b3_parallelJoint", b3_parallelJoint )
 		.value( "b3_distanceJoint", b3_distanceJoint )
@@ -943,6 +1645,26 @@ EMSCRIPTEN_BINDINGS( box3d )
 		o.set( "joint", layout::joint );
 		o.set( "plane", layout::plane );
 		o.set( "shapeId", layout::shapeId );
+		o.set( "debugShapeI32", layout::debugShapeI32 );
+		o.set( "debugShapeF64", layout::debugShapeF64 );
+		o.set( "debugSegmentF64", layout::debugSegmentF64 );
+		o.set( "debugSegmentI32", layout::debugSegmentI32 );
+		o.set( "debugPointF64", layout::debugPointF64 );
+		o.set( "debugPointF32", layout::debugPointF32 );
+		o.set( "debugPointI32", layout::debugPointI32 );
+		o.set( "debugSphereF64", layout::debugSphereF64 );
+		o.set( "debugSphereF32", layout::debugSphereF32 );
+		o.set( "debugSphereI32", layout::debugSphereI32 );
+		o.set( "debugCapsuleF64", layout::debugCapsuleF64 );
+		o.set( "debugCapsuleF32", layout::debugCapsuleF32 );
+		o.set( "debugCapsuleI32", layout::debugCapsuleI32 );
+		o.set( "debugBoxF32", layout::debugBoxF32 );
+		o.set( "debugBoxF64", layout::debugBoxF64 );
+		o.set( "debugBoxI32", layout::debugBoxI32 );
+		o.set( "debugBoundsF64", layout::debugBoundsF64 );
+		o.set( "debugBoundsI32", layout::debugBoundsI32 );
+		o.set( "debugTransformF64", layout::debugTransformF64 );
+		o.set( "debugTransformI32", layout::debugTransformI32 );
 		return o;
 	} );
 
@@ -1064,7 +1786,15 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3DefaultFilter()", &b3DefaultFilter );
 	function( "b3DefaultSurfaceMaterial()", &b3DefaultSurfaceMaterial );
 
-	function( "b3CreateWorld(worldDef)", +[]( b3WorldDef def ) { return b3CreateWorld( &def ); } );
+	function( "b3CreateWorld(worldDef)", +[]( b3WorldDef def ) {
+		// Exact shape outlines. shape.c calls destroyDebugShape with no NULL check
+		// once a user shape exists, so both callbacks are always installed.
+		// b3DestroyWorld releases leftovers through b3DestroyShapeAllocations.
+		def.createDebugShape = createDebugShapeCallback;
+		def.destroyDebugShape = destroyDebugShapeCallback;
+		def.userDebugShapeContext = nullptr;
+		return b3CreateWorld( &def );
+	} );
 	function( "b3DestroyWorld(worldId)", &b3DestroyWorld );
 	function( "b3World_IsValid(worldId)", &b3World_IsValid );
 	function( "b3World_Step(worldId, timeStep, subStepCount)", &b3World_Step );
@@ -2437,4 +3167,40 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3RecPlayer_SetWorkerCount(player, count)", +[]( uintptr_t p, int count ) { b3RecPlayer_SetWorkerCount( reinterpret_cast<b3RecPlayer*>( p ), count ); } );
 
 	function( "b3World_Draw(worldId, handler)", &worldDraw );
+
+	// Buffered debug draw. The facade owns the JS object and reads these tiers
+	// in place. getDebugGeometry returns wasm-heap views; copy them to cache.
+	class_<DebugDrawBuffer>( "DebugDrawBufferImpl" )
+		.constructor<>()
+		.function( "loadFrom", &DebugDrawBuffer::loadFrom )
+		.function( "shapeCount", &DebugDrawBuffer::shapeCount )
+		.function( "segmentCount", &DebugDrawBuffer::segmentCount )
+		.function( "pointCount", &DebugDrawBuffer::pointCount )
+		.function( "sphereCount", &DebugDrawBuffer::sphereCount )
+		.function( "capsuleCount", &DebugDrawBuffer::capsuleCount )
+		.function( "boxCount", &DebugDrawBuffer::boxCount )
+		.function( "boundsCount", &DebugDrawBuffer::boundsCount )
+		.function( "transformCount", &DebugDrawBuffer::transformCount )
+		.function( "shapeI32Ptr", &DebugDrawBuffer::shapeI32Ptr )
+		.function( "shapeF64Ptr", &DebugDrawBuffer::shapeF64Ptr )
+		.function( "segmentI32Ptr", &DebugDrawBuffer::segmentI32Ptr )
+		.function( "segmentF64Ptr", &DebugDrawBuffer::segmentF64Ptr )
+		.function( "pointI32Ptr", &DebugDrawBuffer::pointI32Ptr )
+		.function( "pointF32Ptr", &DebugDrawBuffer::pointF32Ptr )
+		.function( "pointF64Ptr", &DebugDrawBuffer::pointF64Ptr )
+		.function( "sphereI32Ptr", &DebugDrawBuffer::sphereI32Ptr )
+		.function( "sphereF32Ptr", &DebugDrawBuffer::sphereF32Ptr )
+		.function( "sphereF64Ptr", &DebugDrawBuffer::sphereF64Ptr )
+		.function( "capsuleI32Ptr", &DebugDrawBuffer::capsuleI32Ptr )
+		.function( "capsuleF32Ptr", &DebugDrawBuffer::capsuleF32Ptr )
+		.function( "capsuleF64Ptr", &DebugDrawBuffer::capsuleF64Ptr )
+		.function( "boxI32Ptr", &DebugDrawBuffer::boxI32Ptr )
+		.function( "boxF32Ptr", &DebugDrawBuffer::boxF32Ptr )
+		.function( "boxF64Ptr", &DebugDrawBuffer::boxF64Ptr )
+		.function( "boundsI32Ptr", &DebugDrawBuffer::boundsI32Ptr )
+		.function( "boundsF64Ptr", &DebugDrawBuffer::boundsF64Ptr )
+		.function( "transformI32Ptr", &DebugDrawBuffer::transformI32Ptr )
+		.function( "transformF64Ptr", &DebugDrawBuffer::transformF64Ptr );
+
+	ret_function( "getDebugGeometry(id): DebugGeometry | null", &getDebugGeometry );
 }

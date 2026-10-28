@@ -234,6 +234,14 @@ npm install box3d.js
       </a>
     </td>
     <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
+        <img src="./examples/public/screenshots/example-debug-draw.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Debug Draw
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-replay">
         <img src="./examples/public/screenshots/example-replay.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Replay
@@ -253,6 +261,7 @@ npm install box3d.js
 - [Joints](#joints)
 - [Queries](#queries)
 - [Events](#events)
+- [Debug Draw](#debug-draw)
 - [Multithreading](#multithreading)
 - [Building from Source](#building-from-source)
 
@@ -1430,6 +1439,54 @@ b3.b3World_SetPreSolveCallback(world, (shapeIdA: b3ShapeId, _shapeIdB: b3ShapeId
     return true;
 });
 ```
+
+## Debug Draw
+
+box3d can draw the world it is simulating: shape outlines, contacts, joints, mass axes, bounds, and islands. `getDebugDraw` runs one `b3World_Draw` pass per enabled role into a reusable wasm buffer, the same pattern as contacts and events. Readers (`getDebugShapeAt`, and one per other tier) fill a scratch object in place.
+
+Shape triangles are built once, the first time that shape is drawn, and freed when the shape or the world is destroyed. `getDebugGeometry` returns views of that cache (or `null`). Copy them out; they alias the wasm heap. Hulls, meshes, and height fields come back as triangles. Spheres and capsules come back as parameters. A compound is one triangle list plus a parameter list for its sphere and capsule children.
+
+`box3d.js/three` turns the buffer into Three.js objects. It does not import `three`. Pass the same `THREE` namespace the rest of the page uses, so `three` and `three/webgpu` both work. `null` in `colors` keeps box3d's own colour. Mass has no box3d colour, so `colors.mass: null` is white.
+
+```ts
+// `THREE` is the page's own three build (`three` or `three/webgpu`). `scene` is
+// any Object3D. This module does not import three itself.
+declare const THREE: Parameters<typeof createDebugRenderer>[2]['THREE'];
+declare const scene: Parameters<typeof createDebugRenderer>[2]['parent'];
+
+const debug = createDebugRenderer(b3, world, {
+    THREE,
+    parent: scene,
+    settings: { shapes: true, contacts: true, colors: { sensor: 0xffd400 } },
+});
+
+b3.b3World_Step(world, 1 / 60, 4);
+debug.update();
+debug.settings.contactNormals = true;
+
+// The buffer API is there when you draw it yourself. One buffer, refilled in place.
+const draw = b3.createDebugDrawBuffer();
+const shape = b3.createDebugShapeRecord();
+b3.getDebugDraw(draw, world, { shapes: true });
+for (let i = 0, n = b3.getNumDebugShapes(draw); i < n; i++) {
+    b3.getDebugShapeAt(shape, draw, i);
+    const geometry = b3.getDebugGeometry(shape.geometryId); // wasm views; copy to cache
+    console.log(shape.state, geometry?.indices.length);
+}
+b3.destroyDebugDrawBuffer(draw);
+debug.dispose();
+```
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
+      <img src="./examples/public/screenshots/example-debug-draw.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Debug Draw</strong>
+    </a>
+  </td>
+  </tr>
+</table>
 
 ## Multithreading
 
