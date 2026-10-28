@@ -52,6 +52,7 @@ const DEFAULTS = {
 	forceScale: 1,
 	jointScale: 1,
 	pointSize: 1,
+	normalScale: 1,
 	opacity: 1,
 	depthTest: true,
 	renderOrder: 0,
@@ -582,7 +583,21 @@ export function createDebugRenderer(b3, worldId, options) {
 		for (let i = 0; i < segments; i++) {
 			b3.getDebugSegmentAt(segmentRec, buf, i);
 			paint(segmentRec.role, segmentRec.color);
-			segment(segmentRec.p1[0], segmentRec.p1[1], segmentRec.p1[2], segmentRec.p2[0], segmentRec.p2[1], segmentRec.p2[2]);
+			let x2 = segmentRec.p2[0];
+			let y2 = segmentRec.p2[1];
+			let z2 = segmentRec.p2[2];
+			// box3d's contact normals are 0.3 length units. Scale them so a wide
+			// scene can still show the direction.
+			if (segmentRec.role === role.contactNormals) {
+				const scale = settings.normalScale ?? 1;
+				const x1 = segmentRec.p1[0];
+				const y1 = segmentRec.p1[1];
+				const z1 = segmentRec.p1[2];
+				x2 = x1 + (x2 - x1) * scale;
+				y2 = y1 + (y2 - y1) * scale;
+				z2 = z1 + (z2 - z1) * scale;
+			}
+			segment(segmentRec.p1[0], segmentRec.p1[1], segmentRec.p1[2], x2, y2, z2);
 		}
 		for (let i = 0; i < boundsN; i++) {
 			b3.getDebugBoundsAt(boundsRec, buf, i);

@@ -105,6 +105,8 @@ export interface DebugRendererSettings {
 	jointScale?: number;
 	/** Multiplier on box3d's point sizes. */
 	pointSize?: number;
+	/** Stretches contact-normal segments. box3d draws them at 0.3 length units. */
+	normalScale?: number;
 	maskBits?: number;
 	drawingBounds?: b3AABB;
 	opacity?: number;
