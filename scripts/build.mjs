@@ -465,6 +465,19 @@ export interface Box3DFacade {
   getContactHitEventAt(out: ContactHitEvent, eb: EventsBuffer, i: number): ContactHitEvent;
   createBodyMoveEvent(): BodyMoveEvent;
   getBodyMoveEventAt(out: BodyMoveEvent, eb: EventsBuffer, i: number): BodyMoveEvent;
+  /** Every body move event of the last getEvents in one copied array, 11 numbers per event:
+   * index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep (0/1). */
+  getBodyMoveEventsPacked(eb: EventsBuffer): Float64Array;
+  /** Rule ids for b3World_SetMixingRules. robloxWeighted reads Roblox weights packed into each
+   * shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000. */
+  readonly b3MixingRule: {
+    readonly geometric: 0;
+    readonly average: 1;
+    readonly min: 2;
+    readonly max: 3;
+    readonly multiply: 4;
+    readonly robloxWeighted: 5;
+  };
   createSensorTouchEvent(): SensorTouchEvent;
   getSensorBeginEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
   getSensorEndEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
@@ -531,6 +544,8 @@ const valParamSigs = {
 	b3CreateConvexDecompositionShapes: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions',
 	b3CreateConvexDecompositionShapesFromPacked: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number',
 	b3CreateDecompositionCompound: 'packed: b3ConvexDecomposition, material?: b3SurfaceMaterial',
+	b3Body_SetConstantForce: 'bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null',
+	b3Body_GetTransformsPacked: 'ids: Int32Array',
 };
 for ( const [ method, params ] of Object.entries( valParamSigs ) )
 {

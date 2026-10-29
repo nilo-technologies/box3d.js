@@ -395,6 +395,30 @@ function getBodyMoveEventAt( out, eb, i )
 	return out;
 }
 
+// All body move events in one copied Float64Array (for callers that can't read the wasm
+// heap, e.g. a sandbox membrane), 11 per event: index1 world0 generation px py pz qx qy qz qw fellAsleep.
+const BODY_MOVE_PACKED_STRIDE = 11;
+function getBodyMoveEventsPacked( eb )
+{
+	const n = eb.bodyMoveCount;
+	const out = new Float64Array( n * BODY_MOVE_PACKED_STRIDE );
+	const a = eb.i32;
+	const f = eb.f64;
+	for ( let i = 0; i < n; i++ )
+	{
+		const s = eb.bodyMoveI32Base + i * BODY_MOVE_STRIDE_I;
+		const fs = eb.bodyMoveF64Base + i * BODY_MOVE_STRIDE_F;
+		const o = i * BODY_MOVE_PACKED_STRIDE;
+		out[ o ] = a[ s ]; out[ o + 1 ] = a[ s + 1 ]; out[ o + 2 ] = a[ s + 2 ];
+		for ( let k = 0; k < 7; k++ ) out[ o + 3 + k ] = f[ fs + k ];
+		out[ o + 10 ] = a[ s + 3 ] !== 0 ? 1 : 0;
+	}
+	return out;
+}
+
+// Rule ids for b3World_SetMixingRules; the order matches MixingRule in src/bindings.cpp.
+const b3MixingRule = Object.freeze( { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, robloxWeighted: 5 } );
+
 // sensor begin/end touch events: { sensorShapeId, visitorShapeId }
 function createSensorTouchEvent()
 {
@@ -1149,7 +1173,8 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		getNumBodyMoveEvents, getNumSensorBeginEvents, getNumSensorEndEvents, getNumJointEvents,
 		createContactTouchEvent, getContactBeginEventAt, getContactEndEventAt,
 		createContactHitEvent, getContactHitEventAt,
-		createBodyMoveEvent, getBodyMoveEventAt,
+		createBodyMoveEvent, getBodyMoveEventAt, getBodyMoveEventsPacked,
+		b3MixingRule,
 		createSensorTouchEvent, getSensorBeginEventAt, getSensorEndEventAt,
 		createJointEvent, getJointEventAt,
 		getNumPlaneResults, createPlaneResult, getPlaneResultAt,

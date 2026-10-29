@@ -684,6 +684,365 @@ function debugDraw( b3 )
 	} );
 }
 
+const IDENTITY_FRAME = () => ( { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
+
+function zeroGravityWorld( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, 0, 0 ];
+	return b3.b3CreateWorld( worldDef );
+}
+
+function staticBody( b3, world, position = [ 0, 0, 0 ] )
+{
+	const def = b3.b3DefaultBodyDef();
+	def.type = b3.b3BodyType.b3_staticBody;
+	def.position = position;
+	return b3.b3CreateBody( world, def );
+}
+
+function dynamicBox( b3, world, position, halfExtent = 0.5, shapeDef = b3.b3DefaultShapeDef() )
+{
+	const def = b3.b3DefaultBodyDef();
+	def.type = b3.b3BodyType.b3_dynamicBody;
+	def.position = position;
+	const body = b3.b3CreateBody( world, def );
+	const shape = b3.b3CreateBoxShape( body, shapeDef, halfExtent, halfExtent, halfExtent );
+	return { body, shape };
+}
+
+function near( actual, expected, tolerance, label )
+{
+	assert.ok( Math.abs( actual - expected ) <= tolerance, `${label}: expected ${expected} ± ${tolerance}, got ${actual}` );
+}
+
+// Cylindrical joint: body B slides along and spins about frame A's x-axis, with
+// both the linear and the angular motor driving into their limits.
+function cylindricalJoint( b3 )
+{
+	const world = zeroGravityWorld( b3 );
+	const ground = staticBody( b3, world );
+	// density 1 kg/m^3: 1 kg boxes, so modest motor limits accelerate them quickly
+	const lightDef = b3.b3DefaultShapeDef();
+	lightDef.density = 1;
+	const { body } = dynamicBox( b3, world, [ 0, 4, 0 ], 0.5, lightDef );
+
+	const def = b3.b3DefaultCylindricalJointDef();
+	assert.deepEqual( Array.from( def.localSlideAxisA ), [ 1, 0, 0 ], 'default slide axis is frame A x' );
+	def.base.bodyIdA = ground;
+	def.base.bodyIdB = body;
+	def.base.localFrameA = { position: [ 0, 4, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	def.base.localFrameB = IDENTITY_FRAME();
+	def.enableMotor = true;
+	def.motorSpeed = 1;
+	def.maxMotorForce = 50;
+	def.enableAngularMotor = true;
+	def.angularMotorSpeed = 2;
+	def.maxMotorTorque = 5;
+	const joint = b3.b3CreateCylindricalJoint( world, def );
+	assert.equal( b3.b3Joint_GetType( joint ).value, b3.b3JointType.b3_cylindricalJoint.value, 'joint type is cylindrical' );
+
+	// Free: both motors run at speed, coaxially
+	for ( let i = 0; i < 15; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetSpeed( joint ), 1, 0.02, 'linear motor speed' );
+	near( b3.b3CylindricalJoint_GetAngularSpeed( joint ), 2, 0.02, 'angular motor speed' );
+	const [ p, q ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], body );
+	near( p[ 1 ], 4, 1e-3, 'stays on the axis (y)' );
+	near( p[ 2 ], 0, 1e-3, 'stays on the axis (z)' );
+	near( q[ 1 ], 0, 1e-3, 'rotates only about x (qy)' );
+	near( q[ 2 ], 0, 1e-3, 'rotates only about x (qz)' );
+	near( p[ 0 ], b3.b3CylindricalJoint_GetTranslation( joint ), 1e-4, 'translation reads the slide' );
+	near( 2 * Math.atan2( q[ 0 ], q[ 3 ] ), b3.b3CylindricalJoint_GetAngle( joint ), 1e-4, 'angle reads the spin' );
+
+	// Limits stop both motors
+	b3.b3CylindricalJoint_EnableLimit( joint, true );
+	b3.b3CylindricalJoint_SetLimits( joint, -0.25, 0.5 );
+	b3.b3CylindricalJoint_EnableAngularLimit( joint, true );
+	b3.b3CylindricalJoint_SetAngularLimits( joint, -0.5, 1.0 );
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetTranslation( joint ), 0.5, 0.02, 'linear limit holds' );
+	near( b3.b3CylindricalJoint_GetAngle( joint ), 1.0, 0.02, 'angular limit holds' );
+	near( b3.b3CylindricalJoint_GetMotorForce( joint ), 50, 0.05, 'linear motor saturates against the limit' );
+	near( b3.b3CylindricalJoint_GetMotorTorque( joint ), 5, 0.05, 'angular motor saturates against the limit' );
+
+	// Springs replace the motors. Joint setters don't wake the bodies, which may be
+	// asleep resting against the limits.
+	b3.b3Joint_WakeBodies( joint );
+	b3.b3CylindricalJoint_EnableMotor( joint, false );
+	b3.b3CylindricalJoint_EnableAngularMotor( joint, false );
+	b3.b3CylindricalJoint_EnableSpring( joint, true );
+	b3.b3CylindricalJoint_SetSpringHertz( joint, 2 );
+	b3.b3CylindricalJoint_SetSpringDampingRatio( joint, 1 );
+	b3.b3CylindricalJoint_SetTargetTranslation( joint, 0.1 );
+	b3.b3CylindricalJoint_EnableAngularSpring( joint, true );
+	b3.b3CylindricalJoint_SetAngularSpringHertz( joint, 2 );
+	b3.b3CylindricalJoint_SetAngularSpringDampingRatio( joint, 1 );
+	b3.b3CylindricalJoint_SetTargetAngle( joint, -0.3 );
+	for ( let i = 0; i < 300; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetTranslation( joint ), 0.1, 0.01, 'linear spring settles at the target' );
+	near( b3.b3CylindricalJoint_GetAngle( joint ), -0.3, 0.01, 'angular spring settles at the target' );
+
+	// A slide axis off the rotation axis: slides along frame A y, still spins about x
+	const { body: slider } = dynamicBox( b3, world, [ 5, 4, 0 ], 0.5, lightDef );
+	const tilted = b3.b3DefaultCylindricalJointDef();
+	tilted.base.bodyIdA = ground;
+	tilted.base.bodyIdB = slider;
+	tilted.base.localFrameA = { position: [ 5, 4, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	tilted.base.localFrameB = IDENTITY_FRAME();
+	tilted.localSlideAxisA = [ 0, 2, 0 ];
+	tilted.enableMotor = true;
+	tilted.motorSpeed = 1;
+	tilted.maxMotorForce = 100;
+	tilted.enableAngularMotor = true;
+	tilted.angularMotorSpeed = 1;
+	tilted.maxMotorTorque = 100;
+	const tiltedJoint = b3.b3CreateCylindricalJoint( world, tilted );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const [ tp, tq ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], slider );
+	near( tp[ 0 ], 5, 1e-3, 'tilted: no motion along x' );
+	near( tp[ 1 ] - 4, b3.b3CylindricalJoint_GetTranslation( tiltedJoint ), 1e-4, 'tilted: translation is along y' );
+	near( tp[ 1 ] - 4, 0.5, 0.02, 'tilted: slid along y at the motor speed' );
+	near( tq[ 1 ], 0, 1e-3, 'tilted: rotates only about x (qy)' );
+	near( tq[ 2 ], 0, 1e-3, 'tilted: rotates only about x (qz)' );
+	near( b3.b3CylindricalJoint_GetAngle( tiltedJoint ), 0.5, 0.02, 'tilted: spun about x' );
+
+	b3.b3DestroyWorld( world );
+}
+
+// Measure the friction coefficient of a box sliding over the ground: mu = deceleration / g.
+function slidingFriction( b3, rules, groundFriction, groundMaterialId, boxFriction, boxMaterialId )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	if ( rules ) b3.b3World_SetMixingRules( world, rules[ 0 ], rules[ 1 ] );
+
+	const groundShapeDef = b3.b3DefaultShapeDef();
+	groundShapeDef.baseMaterial.friction = groundFriction;
+	groundShapeDef.baseMaterial.userMaterialId = groundMaterialId;
+	b3.b3CreateBoxShape( staticBody( b3, world ), groundShapeDef, 50, 0.5, 50 );
+
+	const boxShapeDef = b3.b3DefaultShapeDef();
+	boxShapeDef.baseMaterial.friction = boxFriction;
+	boxShapeDef.baseMaterial.userMaterialId = boxMaterialId;
+	const { body } = dynamicBox( b3, world, [ 0, 1, 0 ], 0.5, boxShapeDef );
+
+	// settle onto the ground, then launch
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	b3.b3Body_SetLinearVelocity( body, [ 10, 0, 0 ] );
+	const v = [ 0, 0, 0 ];
+	b3.b3World_Step( world, 1 / 60, 4 );
+	const v0 = b3.b3Body_GetLinearVelocity( v, body )[ 0 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const v1 = b3.b3Body_GetLinearVelocity( v, body )[ 0 ];
+	b3.b3DestroyWorld( world );
+	return ( v0 - v1 ) / ( 10 * 30 / 60 );
+}
+
+// Roblox weights: bits 0-31 friction weight * 1000, bits 32-63 elasticity weight * 1000
+const robloxWeights = ( friction, elasticity ) => BigInt( Math.round( friction * 1000 ) ) | ( BigInt( Math.round( elasticity * 1000 ) ) << 32n );
+
+function mixingRules( b3 )
+{
+	const R = b3.b3MixingRule;
+	assert.deepEqual( { ...R }, { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, robloxWeighted: 5 }, 'b3MixingRule values' );
+
+	const weighted = [ R.robloxWeighted, R.robloxWeighted ];
+	// (0.2 * 1 + 1.0 * 3) / (1 + 3) = 0.8
+	near( slidingFriction( b3, weighted, 0.2, robloxWeights( 1, 1 ), 1.0, robloxWeights( 3, 1 ) ), 0.8, 0.03, 'weighted friction' );
+	// zero weights fall back to a plain average
+	near( slidingFriction( b3, weighted, 0.2, robloxWeights( 0, 1 ), 1.0, robloxWeights( 0, 1 ) ), 0.6, 0.03, 'zero weights average' );
+	// a shape without packed weights uses box3d's default geometric mean
+	near( slidingFriction( b3, weighted, 0.2, 0n, 1.0, robloxWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'unweighted shape falls back' );
+	near( slidingFriction( b3, null, 0.2, 0n, 1.0, 0n ), Math.sqrt( 0.2 ), 0.03, 'default rule is geometric' );
+	near( slidingFriction( b3, [ R.min, R.max ], 0.2, 0n, 1.0, 0n ), 0.2, 0.03, 'min rule' );
+	near( slidingFriction( b3, [ R.average, R.max ], 0.2, 0n, 1.0, 0n ), 0.6, 0.03, 'average rule' );
+
+	const world = zeroGravityWorld( b3 );
+	assert.throws( () => b3.b3World_SetMixingRules( world, 6, 0 ), RangeError, 'unknown rule throws' );
+	b3.b3DestroyWorld( world );
+}
+
+// Packed body move events and packed transforms match the per-item readers.
+function packedReads( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const bodies = [];
+	for ( let i = 0; i < 5; i++ )
+	{
+		const { body } = dynamicBox( b3, world, [ i * 2, 5 + i, 0 ] );
+		b3.b3Body_SetAngularVelocity( body, [ 0.3 * i, 1, 0 ] );
+		bodies.push( body );
+	}
+	const eb = b3.createEventsBuffer();
+	for ( let i = 0; i < 3; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	b3.getEvents( eb, world );
+
+	const n = b3.getNumBodyMoveEvents( eb );
+	assert.equal( n, bodies.length, 'every falling body moved' );
+	const packed = b3.getBodyMoveEventsPacked( eb );
+	assert.ok( packed instanceof Float64Array && packed.length === n * 11, 'packed events: 11 per event' );
+	const ev = b3.createBodyMoveEvent();
+	for ( let i = 0; i < n; i++ )
+	{
+		b3.getBodyMoveEventAt( ev, eb, i );
+		const o = i * 11;
+		const expected = [ ev.bodyId.index1, ev.bodyId.world0, ev.bodyId.generation, ...ev.position, ...ev.rotation, ev.fellAsleep ? 1 : 0 ];
+		assert.deepEqual( Array.from( packed.subarray( o, o + 11 ) ), expected, `packed event ${i} matches getBodyMoveEventAt` );
+	}
+	b3.destroyEventsBuffer( eb );
+
+	// Packed transforms, with a destroyed body reading as NaN
+	const gone = bodies.pop();
+	b3.b3DestroyBody( gone );
+	const ids = new Int32Array( [ ...bodies, gone ].flatMap( ( id ) => [ id.index1, id.world0, id.generation ] ) );
+	const transforms = b3.b3Body_GetTransformsPacked( ids );
+	assert.ok( transforms instanceof Float64Array && transforms.length === ( bodies.length + 1 ) * 7, 'packed transforms: 7 per body' );
+	bodies.forEach( ( body, i ) =>
+	{
+		const [ p, q ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], body );
+		assert.deepEqual( Array.from( transforms.subarray( i * 7, i * 7 + 7 ) ), [ ...p, ...q ], `packed transform ${i} matches b3Body_GetTransform` );
+	} );
+	assert.ok( transforms.subarray( bodies.length * 7 ).every( Number.isNaN ), 'invalid id reads as NaN' );
+
+	b3.b3DestroyWorld( world );
+}
+
+// A constant force balancing gravity holds a body still across steps; torques persist too.
+function constantForces( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const { body } = dynamicBox( b3, world, [ 0, 5, 0 ] );
+	const m = b3.b3Body_GetMass( body );
+
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], null );
+	const p = [ 0, 0, 0 ];
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 5, 1e-4, 'balanced body holds still' );
+
+	// Off-center force at a body-local point also spins the body
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], [ 0.5, 0, 0 ] );
+	for ( let i = 0; i < 10; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetAngularVelocity( p, body )[ 2 ] > 0.1, 'off-center force applies a torque' );
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], null );
+	b3.b3Body_SetAngularVelocity( body, [ 0, 0, 0 ] );
+
+	b3.b3Body_SetConstantTorque( body, [ 0, m, 0 ] );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetAngularVelocity( p, body )[ 1 ] > 0.5, 'constant torque spins the body' );
+
+	b3.b3Body_ClearConstantForces( body );
+	const y0 = b3.b3Body_GetPosition( p, body )[ 1 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetPosition( p, body )[ 1 ] < y0 - 1, 'cleared forces: the body falls' );
+
+	// Setting a force wakes a sleeping body once
+	b3.b3Body_SetAwake( body, false );
+	b3.b3Body_SetConstantForce( body, [ 0, 20 * m, 0 ], null );
+	assert.ok( b3.b3Body_IsAwake( body ), 'non-zero constant force wakes the body' );
+
+	// Destroying the body drops its entry; stepping must not touch the stale id
+	b3.b3DestroyBody( body );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	assert.throws( () => b3.b3Body_SetConstantForce( body, [ 0, 1, 0 ], null ), /body is not valid/, 'stale id is rejected' );
+	b3.b3DestroyWorld( world );
+}
+
+// A distance-joint spring in stiffness units stretches by m*g/k whatever the mass.
+function stiffnessSpring( b3, density )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const anchor = staticBody( b3, world, [ 0, 10, 0 ] );
+	const shapeDef = b3.b3DefaultShapeDef();
+	shapeDef.density = density;
+	const { body } = dynamicBox( b3, world, [ 0, 8, 0 ], 0.25, shapeDef );
+	const m = b3.b3Body_GetMass( body );
+
+	const k = 400;
+	const def = b3.b3DefaultDistanceJointDef();
+	assert.equal( def.springStiffness, 0, 'stiffness defaults to 0' );
+	assert.equal( def.springDamping, 0, 'damping defaults to 0' );
+	def.base.bodyIdA = anchor;
+	def.base.bodyIdB = body;
+	def.length = 2;
+	def.enableSpring = true;
+	def.springStiffness = k;
+	def.springDamping = 0.5 * 2 * Math.sqrt( k * m );
+	const joint = b3.b3CreateDistanceJoint( world, def );
+	for ( let i = 0; i < 600; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const extension = b3.b3DistanceJoint_GetCurrentLength( joint ) - 2;
+
+	b3.b3DistanceJoint_SetSpringStiffness( joint, 2 * k, def.springDamping );
+	b3.b3Joint_WakeBodies( joint ); // the settled body may be asleep
+	assert.equal( b3.b3DistanceJoint_GetSpringStiffness( joint ), 2 * k, 'stiffness setter' );
+	for ( let i = 0; i < 600; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const stifferExtension = b3.b3DistanceJoint_GetCurrentLength( joint ) - 2;
+	b3.b3DestroyWorld( world );
+	return { m, k, extension, stifferExtension };
+}
+
+function distanceStiffness( b3 )
+{
+	for ( const density of [ 100, 800 ] )
+	{
+		const { m, k, extension, stifferExtension } = stiffnessSpring( b3, density );
+		near( extension, m * 10 / k, 0.01 * m * 10 / k + 1e-4, `spring settles at mg/k (m=${m})` );
+		near( stifferExtension, m * 10 / ( 2 * k ), 0.01 * m * 10 / ( 2 * k ) + 1e-4, `setter: mg/2k (m=${m})` );
+	}
+}
+
+// b3Shape_SetHull resizes a shape in place; b3Shape_Disable takes it out of contacts and queries.
+function shapeEditing( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const ground = staticBody( b3, world );
+	const groundShape = b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+	const { body, shape } = dynamicBox( b3, world, [ 0, 2, 0 ], 0.5 );
+	const mass = b3.b3Body_GetMass( body );
+
+	const unitCube = b3.b3CreateHull( [ -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5,
+		-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5 ] );
+	assert.ok( b3.b3Shape_SetHull( shape, unitCube, { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] }, [ 2, 3, 4 ], true ), 'SetHull succeeds' );
+	b3.b3DestroyHull( unitCube );
+	const aabb = b3.b3Shape_GetAABB( [ 0, 0, 0, 0, 0, 0 ], shape );
+	near( aabb[ 3 ] - aabb[ 0 ], 2, 0.05, 'resized x extent' );
+	near( aabb[ 4 ] - aabb[ 1 ], 3, 0.05, 'resized y extent' );
+	near( aabb[ 5 ] - aabb[ 2 ], 4, 0.05, 'resized z extent' );
+	near( b3.b3Body_GetMass( body ), mass * 24, mass * 0.01, 'updateBodyMass recomputes the mass' );
+
+	// Rest on the ground, then disable the ground: no contact, no ray hit, the body falls
+	const p = [ 0, 0, 0 ];
+	for ( let i = 0; i < 90; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 0.5 + 1.5, 0.05, 'box rests on the ground' );
+	const down = () => b3.b3World_CastRayClosest( world, [ 10, 5, 10 ], [ 0, -10, 0 ], b3.b3DefaultQueryFilter() );
+	assert.ok( down().hit, 'ground is hit by a ray' );
+
+	assert.ok( b3.b3Shape_IsEnabled( groundShape ), 'shapes start enabled' );
+	b3.b3Shape_Disable( groundShape );
+	assert.equal( b3.b3Shape_IsEnabled( groundShape ), false, 'IsEnabled reports disabled' );
+	assert.equal( down().hit, false, 'disabled shape is skipped by queries' );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetPosition( p, body )[ 1 ] < 1, 'body falls through the disabled ground' );
+
+	// Enable restores contacts and queries
+	b3.b3Body_SetTransform( body, [ 0, 3, 0 ], [ 0, 0, 0, 1 ] );
+	b3.b3Body_SetLinearVelocity( body, [ 0, 0, 0 ] );
+	b3.b3Shape_Enable( groundShape );
+	assert.ok( down().hit, 'enabled shape is hit again' );
+	for ( let i = 0; i < 90; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 0.5 + 1.5, 0.05, 'box lands on the re-enabled ground' );
+
+	b3.b3DestroyWorld( world );
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -701,6 +1060,13 @@ async function check( label, importPath, decompositionOptions )
 	assert.ok( worstNormalErr < 1e-3, `manifold normal is unit-length (err ${worstNormalErr.toExponential( 1 )})` );
 
 	const { planeCount } = eventsAndPlanes( b3 );
+
+	cylindricalJoint( b3 );
+	mixingRules( b3 );
+	packedReads( b3 );
+	constantForces( b3 );
+	distanceStiffness( b3 );
+	shapeEditing( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
