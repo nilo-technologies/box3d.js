@@ -186,7 +186,7 @@
   },
   "example-dynamic-mover": {
     "title": "Dynamic Mover",
-    "description": "a capsule character on an obstacle course: stair flights, ramps up to too-steep, a bridge, stepping posts, props, a seesaw, a sweeper arm, and moving platforms it rides (box3d.js/character)",
+    "description": "a capsule character on an obstacle course: stair flights, ramps including one too steep to climb, a bridge, stepping posts, props, a seesaw, a sweeper arm, and moving platforms it rides (box3d.js/character)",
     "tags": [
       "character",
       "mover",

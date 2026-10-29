@@ -248,26 +248,28 @@ interface MovingPlatform {
 	path: (t: number, out: b3Vec3) => void;
 }
 const platforms: MovingPlatform[] = [];
-// A 0.2 m thick slab tagged with PLATFORM_MATERIAL that follows `path`.
+// A 0.2 m thick slab tagged with PLATFORM_MATERIAL that follows `path`, starting where
+// the path is at t = 0 so the first step doesn't jump it across the course.
 function kinematicPlatform(
-	position: b3Vec3,
 	hx: number,
 	hz: number,
 	path: MovingPlatform['path'],
 ): void {
-	const b = body('kinematic', position);
+	const start: b3Vec3 = [0, 0, 0];
+	path(0, start);
+	const b = body('kinematic', start);
 	b3.b3CreateBoxShape(b, shapeDef(1, true), hx, 0.1, hz);
 	platforms.push({ body: b, path });
 }
 
 // slider: back and forth along x
-kinematicPlatform([11, 0.25, 5], 1.5, 1.5, (t, out) => {
+kinematicPlatform(1.5, 1.5, (t, out) => {
 	out[0] = 11 + 3 * Math.sin(0.5 * t);
 	out[1] = 0.25;
 	out[2] = 5;
 });
 // elevator: from the ground up to a 3.3 m deck
-kinematicPlatform([18, 0.25, 5], 1.5, 1.5, (t, out) => {
+kinematicPlatform(1.5, 1.5, (t, out) => {
 	out[0] = 18;
 	out[1] = 0.25 + 1.5 * (1 - Math.cos(0.4 * t));
 	out[2] = 5;
@@ -284,7 +286,7 @@ staticBox(21.5, 1.65, 5, 2, 1.65, 2);
 	b3.b3Body_SetAngularVelocity(sweeper, [0, 0.9, 0]);
 }
 // ferry: a loop that rises and falls
-kinematicPlatform([19, 0.25, 15], 1.3, 1.3, (t, out) => {
+kinematicPlatform(1.3, 1.3, (t, out) => {
 	out[0] = 19 + 2.5 * Math.cos(0.35 * t);
 	out[1] = 0.25 + 0.8 * (1 - Math.cos(0.7 * t));
 	out[2] = 15 + 4 * Math.sin(0.35 * t);
@@ -388,6 +390,7 @@ const keys = new Set<string>();
 window.addEventListener('keydown', (e) => {
 	const key = e.key.toLowerCase();
 	if (key === 'r' && !e.repeat) reset();
+	if (key === ' ' && !e.repeat) jumpQueued = true;
 	keys.add(key);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -403,6 +406,7 @@ const forward: b3Vec3 = [0, 0, 0];
 const right: b3Vec3 = [0, 0, 0];
 const throttle: [number, number] = [0, 0];
 let jumpReleased = true;
+let jumpQueued = false;
 let elapsed = 0;
 let accumulator = 0;
 
@@ -434,12 +438,13 @@ app.onFrame((dt) => {
 				b3.b3Body_SetTargetTransform(m.body, target, TIME_STEP, true);
 			}
 
-			// jumping again needs a fresh press
-			if (keys.has(' ')) {
-				if (jumpReleased && mover.jump()) jumpReleased = false;
-			} else {
-				jumpReleased = true;
+			// jumping again needs a fresh press. jumpQueued keeps a tap that was released
+			// between two steps.
+			if ((jumpQueued || keys.has(' ')) && jumpReleased && mover.jump()) {
+				jumpReleased = false;
 			}
+			jumpQueued = false;
+			if (!keys.has(' ')) jumpReleased = true;
 
 			mover.update(
 				TIME_STEP,
