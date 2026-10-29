@@ -1,4 +1,4 @@
-import type { b3Vec3, b3VehicleDef, Box3DModule } from 'box3d.js';
+import type { Box3DModule, b3Vec3, b3VehicleDef } from 'box3d.js';
 
 export type VehiclePresetName = 'fwd' | 'rwd' | 'awd' | 'offroad';
 
@@ -12,4 +12,7 @@ export interface VehiclePreset {
 
 export const vehiclePresets: Record<VehiclePresetName, VehiclePreset>;
 
-export function createPresetVehicleDef(b3: Box3DModule, name: VehiclePresetName): b3VehicleDef;
+export function createPresetVehicleDef(
+	b3: Box3DModule,
+	name: VehiclePresetName,
+): b3VehicleDef;

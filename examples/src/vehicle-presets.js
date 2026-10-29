@@ -201,7 +201,11 @@ export const vehiclePresets = {
 	fwd: { title: 'FWD hatchback', halfExtents: [0.72, 0.32, 1.95], apply: fwd },
 	rwd: { title: 'RWD sports car', halfExtents: [0.82, 0.28, 2.15], apply: rwd },
 	awd: { title: 'AWD road car', halfExtents: [0.82, 0.32, 2.15], apply: awd },
-	offroad: { title: 'AWD off-roader', halfExtents: [0.9, 0.45, 2.3], apply: offroad },
+	offroad: {
+		title: 'AWD off-roader',
+		halfExtents: [0.9, 0.45, 2.3],
+		apply: offroad,
+	},
 };
 
 export function createPresetVehicleDef(b3, name) {
