@@ -260,7 +260,7 @@ npm install box3d.js
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [How Does This Compare to Jolt / Rapier / Others?](#how-does-this-compare-to-jolt-rapier-others)
+- [What Is box3d?](#what-is-box3d)
 - [Physics World](#physics-world)
 - [Rigid Bodies](#rigid-bodies)
 - [Shapes](#shapes)
@@ -314,11 +314,9 @@ console.log(`sphere landed at y = ${pos[1].toFixed(2)}`);
 b3.b3DestroyWorld(world);
 ```
 
-## How Does This Compare to Jolt / Rapier / Others?
+## What Is box3d?
 
 box3d is Erin Catto's 3D rigid body engine — the 3D sibling of Box2D, from the author of Box2D itself.
-
-For comparisons across engines (box3d.js, Jolt, Rapier, and others), see the **[JS physics benchmarks](https://isaac-mason.github.io/js-physics-benchmarks/)**.
 
 ## Physics World
 

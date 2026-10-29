@@ -61,7 +61,7 @@
   "bugs": {
     "url": "https://github.com/nilo-technologies/box3d.js/issues"
   },
-  "author": "Isaac Mason",
+  "author": "Nilo Technologies",
   "license": "MIT",
   "packageManager": "pnpm@10.32.1"
 }
