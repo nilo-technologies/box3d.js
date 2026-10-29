@@ -12,6 +12,7 @@ Wheeled vehicles. The [nilo-technologies/box3d](https://github.com/nilo-technolo
   - The car rides on moving and dynamic ground, and pushes back on what it drives over.
 - `b3Vehicle_SetInput` takes `{ forward, brake, steer, handbrake }`. `b3Vehicle_SetGear`, `b3Vehicle_Reset`, and `b3Vehicle_Set*`/`Get*` for the chassis, each wheel, the engine, transmission, drivetrain, anti-roll, steering and assists change any setting while driving.
 - `createVehicleStateBuffer` / `getVehicleStateData` read the vehicle and all wheels in one call. Decode with `getVehicleStateAt` and `getVehicleWheelAt` into reusable records. `b3Vehicle_GetWheelTransform(outPosition, outRotation, vehicleId, i)` returns one wheel's transform. `b3Vehicle_GetState`, `b3Vehicle_GetWheelState` and `b3Vehicle_GetSprungMass` are also bound.
+  - `getVehicleWheelAt` throws a `RangeError` for an index past the packed wheel count (none after the vehicle is destroyed) instead of reading unrelated memory. `destroyVehicleStateBuffer` can be called twice, and a destroyed buffer throws when refilled.
 - 50 cars step in about 0.55 ms in Node.
 - New examples: Vehicle FWD hatchback, RWD sports car, AWD road car and AWD off-roader, with a shared settings panel and telemetry.
 

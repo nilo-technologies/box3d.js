@@ -1098,6 +1098,7 @@ function createVehicleStateBuffer()
 function getVehicleStateData( buf, vehicleId )
 {
 	const impl = buf._impl;
+	if ( impl === null ) throw new Error( 'getVehicleStateData: the vehicle state buffer was destroyed' );
 	impl.load( vehicleId );
 	buf.wheelCount = impl.wheelCount();
 	buf.i32 = HEAP32; buf.i32Base = impl.i32Ptr() >> 2;
@@ -1108,8 +1109,11 @@ function getVehicleStateData( buf, vehicleId )
 
 function destroyVehicleStateBuffer( buf )
 {
+	if ( buf._impl === null ) return;
 	buf._impl.delete();
 	buf._impl = null;
+	buf.wheelCount = 0;
+	buf.i32 = null; buf.f32 = null; buf.f64 = null;
 }
 
 function getNumVehicleWheels( buf ) { return buf.wheelCount; }
@@ -1121,6 +1125,7 @@ function createVehicleStateRecord()
 
 function getVehicleStateAt( out, buf )
 {
+	if ( buf.i32 === null ) throw new Error( 'getVehicleStateAt: call getVehicleStateData first' );
 	const a = buf.i32; const is = buf.i32Base;
 	const f = buf.f32; const fs = buf.f32Base;
 	out.gear = a[ is ];
@@ -1150,6 +1155,8 @@ function createVehicleWheelRecord()
 
 function getVehicleWheelAt( out, buf, i )
 {
+	// Only wheelCount records were packed, so a larger index would read unrelated wasm memory
+	if ( !( i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
 	const a = buf.i32; const is = buf.i32Base + VEHICLE_I32 + i * VEHICLE_WHEEL_I32;
 	const f = buf.f32; const fs = buf.f32Base + VEHICLE_F32 + i * VEHICLE_WHEEL_F32;
 	const d = buf.f64; const ds = buf.f64Base + i * VEHICLE_WHEEL_F64;

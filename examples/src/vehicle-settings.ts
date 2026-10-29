@@ -324,10 +324,23 @@ export function createVehicleSettings(
 		},
 	};
 	transmissionFolder.add(mode, 'automatic').onChange(applyTransmission);
+	// The presets leave the ratios of unused gears at 0, and a gear with no ratio transmits no
+	// torque. Give every newly enabled gear a ratio a little shorter than the one below it.
+	const ratioControllers: { updateDisplay(): unknown }[] = [];
+	const fillGearRatios = () => {
+		const ratios = transmission.gearRatios;
+		for (let i = 1; i < transmission.gearCount; i++) {
+			if (ratios[i] <= 0) ratios[i] = Math.max(ratios[i - 1] * 0.8, 0.3);
+		}
+		for (const c of ratioControllers) c.updateDisplay();
+	};
 	transmissionFolder
 		.add(transmission, 'gearCount', 1, 8, 1)
 		.name('gears')
-		.onChange(applyTransmission);
+		.onChange(() => {
+			fillGearRatios();
+			applyTransmission();
+		});
 	transmissionFolder
 		.add(transmission, 'finalDrive', 1, 8, 0.05)
 		.name('final drive')
@@ -370,10 +383,12 @@ export function createVehicleSettings(
 				transmission.gearRatios[i] = v;
 			},
 		};
-		ratiosFolder
-			.add(gear, 'ratio', 0.3, 6, 0.01)
-			.name(`gear ${i + 1}`)
-			.onChange(applyTransmission);
+		ratioControllers.push(
+			ratiosFolder
+				.add(gear, 'ratio', 0.3, 6, 0.01)
+				.name(`gear ${i + 1}`)
+				.onChange(applyTransmission),
+		);
 	}
 
 	// ---- Drivetrain
@@ -571,9 +586,15 @@ export function createVehicleSettings(
 	}
 
 	function copyAll(
-		source: Omit<
+		source: Pick<
 			b3VehicleDef,
-			'chassisId' | 'wheelCount' | 'userData' | 'internalValue'
+			| 'chassis'
+			| 'engine'
+			| 'transmission'
+			| 'drivetrain'
+			| 'antiRoll'
+			| 'steering'
+			| 'assists'
 		>,
 	): void {
 		const pairs: [object, object][] = [
@@ -596,7 +617,6 @@ export function createVehicleSettings(
 	function sync(): void {
 		copyAll({
 			chassis: b3.b3Vehicle_GetChassis(vehicle),
-			wheels: defaults.wheels,
 			engine: b3.b3Vehicle_GetEngine(vehicle),
 			transmission: b3.b3Vehicle_GetTransmission(vehicle),
 			drivetrain: b3.b3Vehicle_GetDrivetrain(vehicle),

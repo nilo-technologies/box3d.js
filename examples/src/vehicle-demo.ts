@@ -391,6 +391,29 @@ export async function runVehicleDemo(
 	const vehicle = b3.b3CreateVehicle(world, def);
 	const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
 
+	// The settings panel edits the live vehicle, so anything drawn from its settings reads this
+	// cache instead of the preset. Reading them through embind builds a fresh object each time,
+	// so refresh a few times a second rather than every frame.
+	const live = {
+		maxRpm: defaults.engine.maxRpm,
+		manual: false,
+		tractionControl: false,
+		abs: false,
+		wheels: defaults.wheels.slice(0, wheelCount),
+	};
+	function refreshLive(): void {
+		live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
+		live.manual =
+			b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
+			b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
+		const assists = b3.b3Vehicle_GetAssists(vehicle);
+		live.tractionControl = assists.tractionControl;
+		live.abs = assists.abs;
+		for (let i = 0; i < wheelCount; i++)
+			live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
+	}
+	refreshLive();
+
 	const stateBuffer = b3.createVehicleStateBuffer();
 	const state = b3.createVehicleStateRecord();
 	const wheelRecord: VehicleWheelRecord = b3.createVehicleWheelRecord();
@@ -481,6 +504,9 @@ export async function runVehicleDemo(
 	type WheelVisual = {
 		group: THREE.Group;
 		tire: THREE.MeshStandardMaterial;
+		/** Radius and width the meshes were built with, to scale them to the live wheel */
+		radius: number;
+		width: number;
 		localY: number;
 		initialized: boolean;
 	};
@@ -523,7 +549,14 @@ export async function runVehicleDemo(
 			group.add(spoke);
 		}
 		car.add(group);
-		wheelVisuals.push({ group, tire, localY: 0, initialized: false });
+		wheelVisuals.push({
+			group,
+			tire,
+			radius: w.radius,
+			width: w.width,
+			localY: 0,
+			initialized: false,
+		});
 	}
 
 	// ---- Skid marks: instanced quads dropped under sliding tires
@@ -605,9 +638,7 @@ export async function runVehicleDemo(
 	window.addEventListener('keyup', (e) => keys.delete(e.code));
 	window.addEventListener('blur', () => keys.clear());
 
-	const isManual = () =>
-		b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
-		b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
+	const isManual = () => live.manual;
 
 	function setManual(manual: boolean): void {
 		const transmission = b3.b3Vehicle_GetTransmission(vehicle);
@@ -616,6 +647,7 @@ export async function runVehicleDemo(
 			: b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto;
 		b3.b3Vehicle_SetTransmission(vehicle, transmission);
 		settings.sync();
+		refreshLive();
 	}
 
 	function shift(delta: number): void {
@@ -714,19 +746,17 @@ export async function runVehicleDemo(
 	const hudFlags = hud.querySelector('#hud-flags') as HTMLElement;
 
 	function updateHud(): void {
-		const engine = defaults.engine;
 		hudSpeed.textContent = Math.abs(state.speed * 3.6).toFixed(0);
 		hudGear.textContent =
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
-		const rpm = Math.min(state.engineRpm / engine.maxRpm, 1);
+		const rpm = Math.min(state.engineRpm / live.maxRpm, 1);
 		hudRpm.style.width = `${(rpm * 100).toFixed(1)}%`;
 		hudRpm.style.background = rpm > 0.9 ? '#ff6b6b' : '#4d96ff';
-		const assists = b3.b3Vehicle_GetAssists(vehicle);
 		const flags = [
 			isManual() ? 'MANUAL' : 'AUTO',
 			`${state.engineRpm.toFixed(0)} rpm`,
-			assists.tractionControl ? 'TC' : '',
-			assists.abs ? 'ABS' : '',
+			live.tractionControl ? 'TC' : '',
+			live.abs ? 'ABS' : '',
 			state.stuck ? 'stuck: press R' : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
@@ -791,7 +821,8 @@ export async function runVehicleDemo(
 				accumulator -= STEP;
 				steps++;
 			}
-			if (steps === 4) accumulator = 0;
+			// Drop the backlog only when the catch-up cap left a whole step unsimulated
+			if (accumulator >= STEP) accumulator = 0;
 		});
 		if (currPos.y < -30) resetCar(true);
 
@@ -820,7 +851,12 @@ export async function runVehicleDemo(
 			visual.group.position.set(wheelPos.x, visual.localY, wheelPos.z);
 			visual.group.quaternion.copy(wheelQuat);
 
-			const wheelDef = defaults.wheels[i];
+			const wheelDef = live.wheels[i];
+			visual.group.scale.set(
+				wheelDef.width / visual.width,
+				wheelDef.radius / visual.radius,
+				wheelDef.radius / visual.radius,
+			);
 			const slide = wheelRecord.hasContact
 				? Math.max(
 						Math.abs(wheelRecord.slipRatio) /
@@ -867,6 +903,7 @@ export async function runVehicleDemo(
 		if (telemetryTimer > 0.1) {
 			telemetryTimer = 0;
 			settings.update();
+			refreshLive();
 		}
 	});
 	app.start();

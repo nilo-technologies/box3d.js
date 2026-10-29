@@ -971,13 +971,56 @@ async function vehicleScenarios( b3 )
 			for ( const car of cars ) b3.getVehicleStateData( buf, car.vehicle );
 		}
 		results.perf = ( performance.now() - t0 ) / steps;
-		assert.ok( results.perf < 1, `50 vehicles step in ${results.perf.toFixed( 3 )} ms` );
+		// Wall-clock time depends on the machine and the build (the multithreaded one pays for its workers), so
+		// this only catches a gross regression. Typical is about 0.5 ms on a desktop.
+		assert.ok( results.perf < 10, `50 vehicles step in ${results.perf.toFixed( 3 )} ms` );
 		assert.equal( b3.b3World_GetVehicleCount( world ), 50, 'world counts its vehicles' );
 		b3.b3DestroyWorld( world );
 	}
 
+	// Reading an invalid vehicle packs no wheels, and the wheel reader refuses indices that were not packed
+	{
+		const world = createWorld();
+		const { vehicle } = createCar( world );
+		b3.getVehicleStateData( buf, vehicle );
+		assert.equal( b3.getNumVehicleWheels( buf ), 4, 'valid vehicle packs its wheels' );
+		b3.b3DestroyVehicle( vehicle );
+		b3.getVehicleStateData( buf, vehicle );
+		assert.equal( b3.getNumVehicleWheels( buf ), 0, 'destroyed vehicle packs no wheels' );
+		b3.getVehicleStateAt( state, buf );
+		assert.equal( state.wheelsInContact, 0, 'destroyed vehicle reads as empty' );
+		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 0 ), RangeError, 'no wheel to read after destroy' );
+		b3.getVehicleStateData( buf, createCar( world ).vehicle );
+		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
+		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
+		b3.b3DestroyWorld( world );
+
+		const spare = b3.createVehicleStateBuffer();
+		b3.destroyVehicleStateBuffer( spare );
+		b3.destroyVehicleStateBuffer( spare );
+		assert.throws( () => b3.getVehicleStateData( spare, vehicle ), /destroyed/, 'a destroyed buffer cannot be refilled' );
+	}
+
 	b3.destroyVehicleStateBuffer( buf );
 	return results;
+}
+
+// Triangle first collide functions: the manifold normal points from the triangle to the other shape,
+// and a triangle only collides from its front (counter clockwise) side.
+function triangleCollision( b3 )
+{
+	const tri = [ [ -2, 0, -2 ], [ -2, 0, 2 ], [ 2, 0, 0 ] ];
+	const sphere = { center: [ 0, 0.3, 0 ], radius: 0.5 };
+	const hit = b3.b3CollideTriangleAndSphere( ...tri, sphere );
+	assert.equal( hit.points.length, 1, 'sphere touches the triangle' );
+	assert.deepEqual( hit.normal, [ 0, 1, 0 ], 'normal points from the triangle to the sphere' );
+	assert.ok( hit.points[ 0 ].separation < 0, 'sphere penetrates' );
+	assert.equal( b3.b3CollideTriangleAndSphere( tri[ 0 ], tri[ 2 ], tri[ 1 ], sphere ).points.length, 0, 'back face does not collide' );
+	assert.equal( b3.b3CollideTriangleAndSphere( ...tri, { center: [ 0, 5, 0 ], radius: 0.5 } ).points.length, 0, 'distant sphere misses' );
+
+	const capsule = b3.b3CollideTriangleAndCapsule( ...tri, { center1: [ -0.2, 0.3, 0 ], center2: [ 0.2, 0.3, 0 ], radius: 0.5 } );
+	assert.equal( capsule.points.length, 2, 'capsule lying on the triangle gives two points' );
+	assert.deepEqual( capsule.normal, [ 0, 1, 0 ], 'normal points from the triangle to the capsule' );
 }
 
 async function check( label, importPath, decompositionOptions )
@@ -1001,6 +1044,8 @@ async function check( label, importPath, decompositionOptions )
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
 	debugDraw( b3 );
+
+	triangleCollision( b3 );
 
 	const vehicle = await vehicleScenarios( b3 );
 	const presets = Object.entries( vehicle.presets ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' );
