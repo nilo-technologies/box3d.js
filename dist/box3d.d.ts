@@ -35,7 +35,7 @@ export type DebugDrawRole = DebugDrawRoleValue<0>|DebugDrawRoleValue<1>|DebugDra
 export interface b3JointTypeValue<T extends number> {
   value: T;
 }
-export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>|b3JointTypeValue<11>;
+export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>|b3JointTypeValue<11>|b3JointTypeValue<12>;
 
 export interface b3HullData extends ClassHandle {
 }
@@ -644,7 +644,7 @@ interface EmbindModule {
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
   DebugShapeState: {static: DebugShapeStateValue<0>, kinematic: DebugShapeStateValue<1>, kinematicSleeping: DebugShapeStateValue<2>, awake: DebugShapeStateValue<3>, sleeping: DebugShapeStateValue<4>, sensor: DebugShapeStateValue<5>, disabled: DebugShapeStateValue<6>, fast: DebugShapeStateValue<7>, bullet: DebugShapeStateValue<8>, speedCapped: DebugShapeStateValue<9>, timeOfImpact: DebugShapeStateValue<10>, invalidMass: DebugShapeStateValue<11>, custom: DebugShapeStateValue<12>};
   DebugDrawRole: {bounds: DebugDrawRoleValue<0>, joints: DebugDrawRoleValue<1>, mass: DebugDrawRoleValue<2>, contactPoints: DebugDrawRoleValue<3>, contactNormals: DebugDrawRoleValue<4>, contactForces: DebugDrawRoleValue<5>, frictionForces: DebugDrawRoleValue<6>, contactFeatures: DebugDrawRoleValue<7>, islands: DebugDrawRoleValue<8>, graphColors: DebugDrawRoleValue<9>};
-  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>, b3_cylindricalJoint: b3JointTypeValue<11>};
+  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>, b3_vehicleWheelJoint: b3JointTypeValue<11>, b3_cylindricalJoint: b3JointTypeValue<12>};
   b3HullData: {};
   b3MeshData: {};
   b3CompoundData: {};
@@ -1168,6 +1168,7 @@ interface EmbindModule {
   b3World_CastShape(worldId: b3WorldId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, callback: any): void;
   b3Body_CastShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, maxFraction: number, canEncroach: boolean, bodyTransform: b3Transform): b3BodyCastResult;
   b3Body_OverlapShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, filter: b3QueryFilter, bodyTransform: b3Transform): boolean;
+  b3Body_CollideMover(bodyId: b3BodyId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, bodyTransform: b3Transform): BodyPlaneResultBuffer;
   b3Body_SetConstantForce(bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null): void;
   b3Shape_GetHullVertices(shapeId: b3ShapeId): any;
   b3DistanceJoint_GetSpringForceRange(jointId: b3JointId): any;
@@ -1226,6 +1227,10 @@ export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
 export interface PlaneResultBuffer { count: number; data: Float32Array; }
 export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+/** Packed planes returned by b3Body_CollideMover: PlaneResultBuffer plus the shape id
+ * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
+export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }
+export interface BodyPlaneResult { shapeId: b3ShapeId; result: PlaneResult; }
 /** Triangle positions/indices plus sphere (xyz, radius) and capsule (c1, c2, radius) parameters.
  * Views alias the wasm heap until the shape is destroyed or changed. Copy them to cache. */
 export interface DebugGeometry {
@@ -1397,6 +1402,9 @@ export interface Box3DFacade {
   getNumPlaneResults(buf: PlaneResultBuffer): number;
   createPlaneResult(): PlaneResult;
   getPlaneResultAt(out: PlaneResult, buf: PlaneResultBuffer, i: number): PlaneResult;
+  getNumBodyPlaneResults(buf: BodyPlaneResultBuffer): number;
+  createBodyPlaneResult(): BodyPlaneResult;
+  getBodyPlaneResultAt(out: BodyPlaneResult, buf: BodyPlaneResultBuffer, i: number): BodyPlaneResult;
   /** Reusable wasm buffer filled by getDebugDraw. Free it with destroyDebugDrawBuffer. */
   createDebugDrawBuffer(): DebugDrawBuffer;
   /** One b3World_Draw pass per enabled role. Refreshes the heap views; allocates nothing. */

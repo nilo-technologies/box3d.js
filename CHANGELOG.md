@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nilo-technologies/box3d` `feat/roblox-physics`, which is box3d's current `main` (mover and pogo joints, broad-phase and solver work, recording format 6) plus the cylindrical joint, shape enable/disable, and distance-joint springs in stiffness units (recording format 7).
+Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nilo-technologies/box3d` `feat/roblox-physics`, which is box3d's current `main` (mover and pogo joints, the wheeled vehicle controller, broad-phase and solver work, recording format 6) plus the cylindrical joint, shape enable/disable, and distance-joint springs in stiffness units (recording format 7). The vehicle controller is not bound yet.
 
 **Breaking**, following box3d's API changes:
 
@@ -11,7 +11,7 @@ Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nil
 - The triangle manifold helpers put the triangle first and their normal now points from the triangle to the other shape: `b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)`, `b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)`, `b3CollideTriangleAndSphere(v1, v2, v3, sphereB)` replace `b3CollideCapsuleAndTriangle`, `b3CollideHullAndTriangle`, `b3CollideSphereAndTriangle`.
 - `b3RecPlayer_Destroy` is now `b3DestroyPlayer`. `b3Profile.applyRestitution` is now `restitution`.
 - `b3World_RebuildStaticTree` and `b3World_DumpShapeBounds` are gone (box3d removed them).
-- New def fields with box3d's defaults: `b3WorldDef.restitutionIterations`, `enableRestitutionPropagation`, `isotropicInertiaTolerance`; `b3BodyDef.safetyFactor`; `b3ShapeDef.enableSpeculativeContact`. `b3PlaneResult` gains `triangleIndex`, `childIndex`, `materialIndex`. `b3JointType` gains `b3_moverJoint` and `b3_pogoJoint`.
+- New def fields with box3d's defaults: `b3WorldDef.restitutionIterations`, `enableRestitutionPropagation`, `isotropicInertiaTolerance`; `b3BodyDef.safetyFactor`; `b3ShapeDef.enableSpeculativeContact`. `b3PlaneResult` gains `triangleIndex`, `childIndex`, `materialIndex`. `b3JointType` gains `b3_moverJoint`, `b3_pogoJoint` and `b3_vehicleWheelJoint` (the internal per-wheel joint of a vehicle).
 
 New:
 
@@ -29,6 +29,7 @@ New:
 - The build normalizes Emscripten's output to LF, so dist files built on Windows match the other hosts.
 - `b3Body_ClearConstantForces` / `b3DestroyBody` range-check the world slot of the id before touching the constant-force table.
 - The Debug Draw example has a cylindrical joint in its joint row.
+- `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
 ## v0.3.0
 

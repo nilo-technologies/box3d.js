@@ -192,6 +192,26 @@ function eventsAndPlanes( b3 )
 	assert.ok( planeCount >= 1, `CollideMover reported plane results via the buffer (got ${planeCount})` );
 	assert.ok( worstNormalErr < 1e-3, 'plane-result normal is unit-length' );
 
+	// Body CollideMover: the same mover against a dynamic body at a caller-given
+	// transform. The body sits far away; its transform is overridden to the mover.
+	const dynDef = b3.b3DefaultBodyDef();
+	dynDef.type = b3.b3BodyType.b3_dynamicBody;
+	dynDef.position = [ -50, 0, 0 ];
+	dynDef.gravityScale = 0;
+	const dynBody = b3.b3CreateBody( world, dynDef );
+	const dynShape = b3.b3CreateSphereShape( dynBody, b3.b3DefaultShapeDef(), { center: [ 0, 0, 0 ], radius: 0.6 } );
+	b3.b3CreateSphereShape( dynBody, b3.b3DefaultShapeDef(), { center: [ 0, 5, 0 ], radius: 0.1 } ); // out of reach
+	const bodyPlanes = b3.b3Body_CollideMover( dynBody, [ 0, 0, 0 ], capsule, b3.b3DefaultQueryFilter(),
+		{ position: [ 0.5, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
+	assert.equal( b3.getNumBodyPlaneResults( bodyPlanes ), 1, 'body CollideMover reports one plane for the touching shape' );
+	const bodyPlane = b3.getBodyPlaneResultAt( b3.createBodyPlaneResult(), bodyPlanes, 0 );
+	assert.deepEqual( bodyPlane.shapeId, { index1: dynShape.index1, world0: dynShape.world0, generation: dynShape.generation },
+		'body plane result carries the touching shape id' );
+	assert.ok( bodyPlane.result.plane.normal[ 0 ] < -0.9, `body plane normal points from the shape to the mover (got ${bodyPlane.result.plane.normal})` );
+	const missed = b3.b3Body_CollideMover( dynBody, [ 0, 0, 0 ], capsule, b3.b3DefaultQueryFilter(),
+		{ position: [ 0, -50, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
+	assert.equal( b3.getNumBodyPlaneResults( missed ), 0, 'body CollideMover reports nothing when out of reach' );
+
 	b3.b3DestroyWorld( world );
 	return { sawSensor, planeCount };
 }

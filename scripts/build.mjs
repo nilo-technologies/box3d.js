@@ -320,6 +320,10 @@ export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
 export interface PlaneResultBuffer { count: number; data: Float32Array; }
 export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+/** Packed planes returned by b3Body_CollideMover: PlaneResultBuffer plus the shape id
+ * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
+export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }
+export interface BodyPlaneResult { shapeId: b3ShapeId; result: PlaneResult; }
 /** Triangle positions/indices plus sphere (xyz, radius) and capsule (c1, c2, radius) parameters.
  * Views alias the wasm heap until the shape is destroyed or changed. Copy them to cache. */
 export interface DebugGeometry {
@@ -491,6 +495,9 @@ export interface Box3DFacade {
   getNumPlaneResults(buf: PlaneResultBuffer): number;
   createPlaneResult(): PlaneResult;
   getPlaneResultAt(out: PlaneResult, buf: PlaneResultBuffer, i: number): PlaneResult;
+  getNumBodyPlaneResults(buf: BodyPlaneResultBuffer): number;
+  createBodyPlaneResult(): BodyPlaneResult;
+  getBodyPlaneResultAt(out: BodyPlaneResult, buf: BodyPlaneResultBuffer, i: number): BodyPlaneResult;
   /** Reusable wasm buffer filled by getDebugDraw. Free it with destroyDebugDrawBuffer. */
   createDebugDrawBuffer(): DebugDrawBuffer;
   /** One b3World_Draw pass per enabled role. Refreshes the heap views; allocates nothing. */
