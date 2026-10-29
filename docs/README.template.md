@@ -297,9 +297,11 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./vehicle.ts" select="tune" />
 
-The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
 
-<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad" />
+The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class.
+
+<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad,example-vehicle-showcase" />
 
 ## Queries
 
