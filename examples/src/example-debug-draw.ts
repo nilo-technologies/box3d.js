@@ -1,9 +1,10 @@
 // Debug Draw — one of every shape type, every joint type, and every body-state
-// colour box3d can hold, drawn by box3d.js/three. Each Debug checkbox changes the
-// overlay. The Filter folder hides the category-2 post (mask 1) and drops the
-// joint row (it sits past drawingBounds.minZ). Disabled bodies leave the
-// broadphase, and a time-of-impact colour lasts a single frame, so those two
-// states are not in the scene.
+// colour box3d can hold, drawn by box3d.js/three. A decomposed pipe bounces on
+// its own pad from restitution alone. Each Debug checkbox changes the overlay.
+// The Filter folder hides the category-2 post (mask 1) and drops the joint row
+// (it sits past drawingBounds.minZ). Disabled bodies leave the broadphase, and
+// a time-of-impact colour lasts a single frame, so those two states are not in
+// the scene.
 
 import type { Box3DModule, b3Quat, b3Vec3 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -228,6 +229,65 @@ b3.b3CreateBoxShape(slide, slideDef, 0.28, 0.28, 0.28);
 const postDef = b3.b3DefaultShapeDef();
 postDef.filter.categoryBits = 2n;
 b3.b3CreateBoxShape(staticBody([12.2, 1.7, 3.4]), postDef, 0.28, 1.7, 0.28);
+
+// Hollow pipe in front of the gallery. The body stays disabled until V-HACD has
+// attached one hull per piece, then it is dropped. Nothing writes its velocity:
+// restitution on the pipe is what bounces it.
+function pipeMesh(outerR: number, innerR: number, length: number, slices = 16) {
+	const positions: number[] = [];
+	const indices: number[] = [];
+	const y0 = -length / 2;
+	const y1 = length / 2;
+	const ring = (y: number, r: number) => {
+		const base = positions.length / 3;
+		for (let i = 0; i < slices; i++) {
+			const a = (i / slices) * Math.PI * 2;
+			positions.push(r * Math.cos(a), y, r * Math.sin(a));
+		}
+		return base;
+	};
+	const o0 = ring(y0, outerR);
+	const o1 = ring(y1, outerR);
+	const i0 = ring(y0, innerR);
+	const i1 = ring(y1, innerR);
+	const quad = (a: number, b: number, c: number, d: number) => {
+		indices.push(a, b, c, a, c, d);
+	};
+	for (let i = 0; i < slices; i++) {
+		const j = (i + 1) % slices;
+		quad(o0 + i, o0 + j, o1 + j, o1 + i);
+		quad(i0 + i, i1 + i, i1 + j, i0 + j);
+		quad(o0 + i, i0 + i, i0 + j, o0 + j);
+		quad(o1 + i, o1 + j, i1 + j, i1 + i);
+	}
+	return {
+		positions: new Float32Array(positions),
+		indices: new Uint32Array(indices),
+	};
+}
+
+const pipeMeshData = pipeMesh(0.62, 0.36, 0.42);
+const padShape = b3.b3DefaultShapeDef();
+padShape.baseMaterial.friction = 0.45;
+b3.b3CreateBoxShape(staticBody([0, -0.1, 7.35]), padShape, 2.3, 0.1, 1.7);
+
+const pipeDef = b3.b3DefaultBodyDef();
+pipeDef.type = b3.b3BodyType.b3_dynamicBody;
+pipeDef.position = [0, 2.8, 7.35];
+pipeDef.enableSleep = false;
+pipeDef.isAwake = true;
+pipeDef.isEnabled = false;
+const pipe = b3.b3CreateBody(world, pipeDef);
+const pipeShape = b3.b3DefaultShapeDef();
+pipeShape.baseMaterial.restitution = 0.9;
+pipeShape.baseMaterial.friction = 0.45;
+const pipePieces = b3.b3CreateConvexDecompositionShapesAsync(
+	pipe,
+	pipeShape,
+	pipeMeshData.positions,
+	pipeMeshData.indices,
+	{ maxConvexHulls: 8, resolution: 20000 },
+);
 
 // --- body-state colours, z = 0.6 --------------------------------------------
 
@@ -495,6 +555,7 @@ makeLabel('sphere', 2.72, 1.41, 4, 0.5);
 makeLabel('capsule', 4.87, 1.69, 4, 0.5);
 makeLabel('friction', 8.23, 1.62, 2.2, 0.5);
 makeLabel('category 2', 11.99, 3.78, 3.4, 0.52);
+makeLabel('pipe', 1.7, 0.55, 8.5, 0.5);
 
 // Body-state colours. The fast box shuttles behind this row, so its tag sits on the lane.
 makeLabel('sensor', -10.77, 1.76, 0.6, 0.42);
@@ -656,6 +717,9 @@ filter.add(filterProxy, 'maxX', -40, 40, 0.5).onChange(applyFilter);
 filter.add(filterProxy, 'maxY', -40, 40, 0.5).onChange(applyFilter);
 filter.add(filterProxy, 'maxZ', -40, 40, 0.5).onChange(applyFilter);
 filter.close();
+
+await pipePieces;
+b3.b3Body_Enable(pipe);
 
 const scratch: b3Vec3 = [0, 0, 0];
 let time = 0;
