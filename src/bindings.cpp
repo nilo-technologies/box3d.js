@@ -2228,6 +2228,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "invokeContactCreation", &b3ShapeDef::invokeContactCreation )
 		.field( "updateBodyMass", &b3ShapeDef::updateBodyMass )
 		.field( "enableSpeculativeContact", &b3ShapeDef::enableSpeculativeContact )
+		.field( "meshRestOffset", &b3ShapeDef::meshRestOffset )
 		.field( "internalValue", &b3ShapeDef::internalValue );
 
 	function( "b3DefaultWorldDef()", &b3DefaultWorldDef );
@@ -3065,6 +3066,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Shape_SetSurfaceMaterial(shapeId, surfaceMaterial)", &b3Shape_SetSurfaceMaterial );
 	function( "b3Shape_SetMeshMaterial(shapeId, surfaceMaterial, index)", &b3Shape_SetMeshMaterial );
 	function( "b3Shape_GetSurfaceMaterial(shapeId)", &b3Shape_GetSurfaceMaterial );
+	function( "b3Shape_SetMeshRestOffset(shapeId, restOffset)", &b3Shape_SetMeshRestOffset );
+	function( "b3Shape_GetMeshRestOffset(shapeId)", &b3Shape_GetMeshRestOffset );
 	function( "b3Shape_GetFilter(shapeId)", &b3Shape_GetFilter );
 	function( "b3Shape_SetFilter(shapeId, filter, invokeContacts)", &b3Shape_SetFilter );
 

@@ -396,6 +396,7 @@ export type b3ShapeDef = {
   invokeContactCreation: boolean,
   updateBodyMass: boolean,
   enableSpeculativeContact: boolean,
+  meshRestOffset: number,
   internalValue: number
 };
 
@@ -1203,6 +1204,8 @@ interface EmbindModule {
   b3Shape_GetFriction(shapeId: b3ShapeId): number;
   b3Shape_SetRestitution(shapeId: b3ShapeId, restitution: number): void;
   b3Shape_GetRestitution(shapeId: b3ShapeId): number;
+  b3Shape_SetMeshRestOffset(shapeId: b3ShapeId, restOffset: number): void;
+  b3Shape_GetMeshRestOffset(shapeId: b3ShapeId): number;
   b3Shape_ApplyWind(shapeId: b3ShapeId, wind: b3Vec3, drag: number, lift: number, maxSpeed: number, wake: boolean): void;
   b3DefaultFilterJointDef(): b3FilterJointDef;
   b3CreateFilterJoint(worldId: b3WorldId, def: b3FilterJointDef): b3JointId;
