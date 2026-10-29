@@ -107,4 +107,48 @@ wheelDef.suspensionDampingRatio = 0.7;  // 0 = undamped, 1 = critically damped
 b3.b3CreateWheelJoint(world, wheelDef);
 /* SNIPPET_END: wheel */
 
+/* SNIPPET_START: cylindrical */
+// Cylindrical joint: B rotates about frame A's X-axis and slides along localSlideAxisA
+// (frame A X by default, so it slides along the same axis it spins about).
+const cylindricalDef = b3.b3DefaultCylindricalJointDef();
+cylindricalDef.base.bodyIdA = anchor;
+cylindricalDef.base.bodyIdB = pendulum;
+cylindricalDef.base.localFrameA = { position: [0, -2, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.base.localFrameB = { position: [0,  0, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.enableLimit = true;          // translation limit, metres
+cylindricalDef.lowerTranslation = -0.5;
+cylindricalDef.upperTranslation =  0.5;
+cylindricalDef.enableAngularMotor = true;   // spin about the axis
+cylindricalDef.angularMotorSpeed = 2.0;     // rad/s
+cylindricalDef.maxMotorTorque = 100;
+const cylindrical = b3.b3CreateCylindricalJoint(world, cylindricalDef);
+
+// Linear and angular springs, limits and motors each have setters; read the state back
+b3.b3CylindricalJoint_EnableSpring(cylindrical, true);
+b3.b3CylindricalJoint_SetTargetTranslation(cylindrical, 0.25);
+b3.b3CylindricalJoint_EnableAngularLimit(cylindrical, true);
+b3.b3CylindricalJoint_SetAngularLimits(cylindrical, -Math.PI / 2, Math.PI / 2);
+b3.b3Joint_WakeBodies(cylindrical); // setters don't wake sleeping bodies
+const slide = b3.b3CylindricalJoint_GetTranslation(cylindrical);
+const spin = b3.b3CylindricalJoint_GetAngle(cylindrical);
+
+// Slide along a different direction in frame A (e.g. a tilted wheel suspension)
+cylindricalDef.localSlideAxisA = [0, 1, 0];
+b3.b3CreateCylindricalJoint(world, cylindricalDef);
+/* SNIPPET_END: cylindrical */
+
+/* SNIPPET_START: distance-stiffness */
+// Distance-joint spring in physical units: force = -stiffness * stretch - damping * stretchSpeed,
+// independent of the attached masses. Overrides hertz / dampingRatio when either is positive.
+const springDef = b3.b3DefaultDistanceJointDef();
+springDef.base.bodyIdA = anchor;
+springDef.base.bodyIdB = pendulum;
+springDef.length = 2.0;
+springDef.enableSpring = true;
+springDef.springStiffness = 400; // N/m
+springDef.springDamping = 20;    // N*s/m
+const spring = b3.b3CreateDistanceJoint(world, springDef);
+b3.b3DistanceJoint_SetSpringStiffness(spring, 800, 20);
+/* SNIPPET_END: distance-stiffness */
+
 b3.b3DestroyWorld(world);

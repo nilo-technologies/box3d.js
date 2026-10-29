@@ -178,4 +178,24 @@ const pieces = b3.b3UnpackConvexDecomposition(loaded);
 const repacked = b3.b3PackConvexDecomposition(pieces);
 /* SNIPPET_END: decomposition-cache */
 
+/* SNIPPET_START: resize-disable */
+// Resize or reshape a hull shape in place: the hull is baked with a transform and a
+// (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to
+// batch several changes and call b3Body_ApplyMassFromShapes once.
+const crate = b3.b3CreateBoxShape(body, sd, 0.5, 0.5, 0.5);
+const unitCube = b3.b3CreateHull([
+    -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
+    -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
+])!;
+const resized = b3.b3Shape_SetBakedHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+if (!resized) console.warn('degenerate hull; the shape is unchanged');
+b3.b3DestroyHull(unitCube);
+
+// Take a shape out of the simulation without destroying it: no contacts, sensor
+// overlaps or query hits while disabled (its mass still counts).
+b3.b3Shape_Disable(crate);
+b3.b3Shape_IsEnabled(crate); // false
+b3.b3Shape_Enable(crate);
+/* SNIPPET_END: resize-disable */
+
 b3.b3DestroyWorld(world);

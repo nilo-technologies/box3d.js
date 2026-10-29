@@ -589,6 +589,23 @@ b3.b3Body_ApplyLinearImpulse(dynamicBody, [0, mass * 5, 0], [0.3, 5, 0], true);
   </tr>
 </table>
 
+### Constant Forces
+
+`b3Body_ApplyForce` lasts one step. A constant force or torque is kept by the bindings and re-applied by every `b3World_Step` (without waking the body) until it is changed, cleared, or the body is destroyed.
+
+```ts
+// Persistent forces: set once, re-applied by every b3World_Step until changed or cleared
+// (plain b3Body_ApplyForce is cleared after each step). Force and torque are world-space;
+// the point is body-local, null = centre of mass. A new force replaces the previous one.
+const hovering = b3.b3CreateBody(world, dynamicDef);
+b3.b3CreateBoxShape(hovering, b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5);
+const hoverMass = b3.b3Body_GetMass(hovering);
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], null);     // cancels gravity
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], [0.5, 0, 0]); // ... off-centre
+b3.b3Body_SetConstantTorque(hovering, [0, 2, 0]);
+b3.b3Body_ClearConstantForces(hovering); // also dropped when the body is destroyed
+```
+
 ### Damping
 
 ```ts
@@ -710,6 +727,25 @@ const mat = b3.b3DefaultSurfaceMaterial();
 mat.friction = 0.1;
 mat.restitution = 0.9;
 b3.b3Shape_SetSurfaceMaterial(shape, mat);
+```
+
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a weighted average with per-shape weights. The weighted rule reads the weights from `userMaterialId`, so while it is active that field can't double as a material tag.
+
+```ts
+// Friction/restitution mixing for every contact in the world, as native callbacks.
+// Rules: geometric (default friction), average, min, max (default restitution), multiply,
+// and weighted, which mixes (a*wA + b*wB) / (wA + wB) with per-shape weights packed into each
+// shape's userMaterialId: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000,
+// bit 63 set = weights present. While this rule is active, userMaterialId holds the weights, so
+// it can't double as a material tag. A shape without bit 63 uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.weighted, b3.b3MixingRule.weighted);
+const weightedDef = b3.b3DefaultShapeDef();
+weightedDef.baseMaterial.friction = 0.7;
+weightedDef.baseMaterial.restitution = 0.2;
+const frictionWeight = 3, restitutionWeight = 1;
+weightedDef.baseMaterial.userMaterialId = (1n << 63n) |
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(restitutionWeight * 1000)) << 32n);
+b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
 ```
 
 <table>
@@ -1041,6 +1077,28 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
   </tr>
 </table>
 
+### Resizing and Disabling Shapes
+
+```ts
+// Resize or reshape a hull shape in place: the hull is baked with a transform and a
+// (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to
+// batch several changes and call b3Body_ApplyMassFromShapes once.
+const crate = b3.b3CreateBoxShape(body, sd, 0.5, 0.5, 0.5);
+const unitCube = b3.b3CreateHull([
+    -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
+    -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
+])!;
+const resized = b3.b3Shape_SetBakedHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+if (!resized) console.warn('degenerate hull; the shape is unchanged');
+b3.b3DestroyHull(unitCube);
+
+// Take a shape out of the simulation without destroying it: no contacts, sensor
+// overlaps or query hits while disabled (its mass still counts).
+b3.b3Shape_Disable(crate);
+b3.b3Shape_IsEnabled(crate); // false
+b3.b3Shape_Enable(crate);
+```
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -1048,6 +1106,7 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 **Axis conventions:**
 - Revolute: rotates about the joint frame's local **Z**-axis
 - Prismatic: slides along the joint frame's local **X**-axis
+- Cylindrical: rotates about frame A's local **X**-axis and slides along `localSlideAxisA` (also **X** by default)
 - Spherical: cone centered on frame **Z**
 
 <table>
@@ -1119,6 +1178,22 @@ distanceDef.length = 2.0; // desired distance in metres
 b3.b3CreateDistanceJoint(world, distanceDef);
 ```
 
+Springs can also be given in physical units (stiffness and damping), which keeps the force independent of the body masses:
+
+```ts
+// Distance-joint spring in physical units: force = -stiffness * stretch - damping * stretchSpeed,
+// independent of the attached masses. Overrides hertz / dampingRatio when either is positive.
+const springDef = b3.b3DefaultDistanceJointDef();
+springDef.base.bodyIdA = anchor;
+springDef.base.bodyIdB = pendulum;
+springDef.length = 2.0;
+springDef.enableSpring = true;
+springDef.springStiffness = 400; // N/m
+springDef.springDamping = 20;    // N*s/m
+const spring = b3.b3CreateDistanceJoint(world, springDef);
+b3.b3DistanceJoint_SetSpringStiffness(spring, 800, 20);
+```
+
 ### Spherical (Ball and Socket)
 
 ```ts
@@ -1145,6 +1220,38 @@ prismaticDef.enableLimit = true;
 prismaticDef.lowerTranslation = -2.0;
 prismaticDef.upperTranslation =  2.0;
 b3.b3CreatePrismaticJoint(world, prismaticDef);
+```
+
+### Cylindrical (Slide and Spin)
+
+```ts
+// Cylindrical joint: B rotates about frame A's X-axis and slides along localSlideAxisA
+// (frame A X by default, so it slides along the same axis it spins about).
+const cylindricalDef = b3.b3DefaultCylindricalJointDef();
+cylindricalDef.base.bodyIdA = anchor;
+cylindricalDef.base.bodyIdB = pendulum;
+cylindricalDef.base.localFrameA = { position: [0, -2, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.base.localFrameB = { position: [0,  0, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.enableLimit = true;          // translation limit, metres
+cylindricalDef.lowerTranslation = -0.5;
+cylindricalDef.upperTranslation =  0.5;
+cylindricalDef.enableAngularMotor = true;   // spin about the axis
+cylindricalDef.angularMotorSpeed = 2.0;     // rad/s
+cylindricalDef.maxMotorTorque = 100;
+const cylindrical = b3.b3CreateCylindricalJoint(world, cylindricalDef);
+
+// Linear and angular springs, limits and motors each have setters; read the state back
+b3.b3CylindricalJoint_EnableSpring(cylindrical, true);
+b3.b3CylindricalJoint_SetTargetTranslation(cylindrical, 0.25);
+b3.b3CylindricalJoint_EnableAngularLimit(cylindrical, true);
+b3.b3CylindricalJoint_SetAngularLimits(cylindrical, -Math.PI / 2, Math.PI / 2);
+b3.b3Joint_WakeBodies(cylindrical); // setters don't wake sleeping bodies
+const slide = b3.b3CylindricalJoint_GetTranslation(cylindrical);
+const spin = b3.b3CylindricalJoint_GetAngle(cylindrical);
+
+// Slide along a different direction in frame A (e.g. a tilted wheel suspension)
+cylindricalDef.localSlideAxisA = [0, 1, 0];
+b3.b3CreateCylindricalJoint(world, cylindricalDef);
 ```
 
 ### Wheel (Suspension)
@@ -1419,6 +1526,36 @@ const customFilter = b3.b3DefaultQueryFilter();
 customFilter.maskBits = 1n; // only hit shapes in category 0x0001
 ```
 
+### Filtered Queries
+
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively. `b3World_CollideMoverPacked` and the closest-hit variants return one copied `Float64Array`; `b3World_CastMoverFiltered` returns the sweep fraction, like `b3World_CastMover`.
+
+```ts
+// Skip candidates natively instead of with a JS callback per shape: list bodies and shapes as
+// Int32Array (index1, world0, generation) triples, and/or drop sensors.
+const playerBody = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+const options: b3QueryOptions = {
+    ignoreBodies: new Int32Array([playerBody.index1, playerBody.world0, playerBody.generation]),
+    excludeSensors: true,
+};
+
+// Closest hit: empty array on a miss, else 14 numbers:
+// shape id (3), body id (3), point (3), normal (3), fraction, 0
+const hit = b3.b3World_CastRayClosestFiltered(world, origin, translation, filter, options);
+if (hit.length > 0) console.log('hit body', hit[3], 'at y', hit[7], 'fraction', hit[12]);
+const sweep = b3.b3World_CastShapeClosestFiltered(world, origin, [0, 0, 0], 0.25, translation, filter, options);
+
+// Character mover: the sweep fraction, and every plane in one array, 14 numbers each:
+// shape id (3), body id (3), body type, normal (3), offset, point (3, relative to origin)
+const capsule = { center1: [0, -0.5, 0] as b3Vec3, center2: [0, 0.5, 0] as b3Vec3, radius: 0.3 };
+const moveFraction = b3.b3World_CastMoverFiltered(world, origin, capsule, translation, filter, options);
+const planes = b3.b3World_CollideMoverPacked(world, origin, capsule, filter, null);
+for (let o = 0; o < planes.length; o += 14) {
+    const normal: b3Vec3 = [planes[o + 7], planes[o + 8], planes[o + 9]];
+    console.log('plane', normal, 'offset', planes[o + 10]);
+}
+```
+
 ## Events
 
 box3d surfaces physics events (contacts, sensors, body moves, joints) each `b3World_Step`. Events are opt-in per shape. Rather than allocating a JS object per event every step — which does not scale — box3d.js reads them through a **reusable, wasm-backed events buffer**: allocate the buffer (and small reader scratch objects) once, refill it each step with `getEvents`, and read it back with zero allocation. Free it with `destroyEventsBuffer` when done.
@@ -1567,6 +1704,28 @@ for (let i = 0, n = b3.getNumSensorEndEvents(eventsBuffer); i < n; i++) {
   </td>
   </tr>
 </table>
+
+### Packed Reads
+
+Callers that can't read the wasm heap directly (a sandbox, a worker membrane) can take body move events and body poses as one copied typed array each.
+
+```ts
+// One call, one copied array -- for callers that can't read the wasm heap (e.g. a sandbox).
+// Body move events: 11 numbers each (index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep).
+const moves = b3.createEventsBuffer();
+b3.b3World_Step(world, 1 / 60, 4);
+b3.getEvents(moves, world);
+const packedMoves = b3.getBodyMoveEventsPacked(moves);
+for (let o = 0; o < packedMoves.length; o += 11) {
+    console.log('body', packedMoves[o], 'y', packedMoves[o + 4], 'asleep', packedMoves[o + 10] === 1);
+}
+b3.destroyEventsBuffer(moves);
+
+// Poses of chosen bodies: Int32Array of id triples in, Float64Array of 7 per body out
+// (px, py, pz, qx, qy, qz, qw; NaN for an invalid id).
+const ids = new Int32Array([body.index1, body.world0, body.generation]);
+const poses = b3.b3Body_GetTransformsPacked(ids);
+```
 
 ### Pre-Solve Callback
 
