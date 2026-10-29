@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `import { DynamicMover } from 'box3d.js/character'` is a JavaScript port of box3d's dynamic character mover (`samples/dynamic_mover.cpp`). A capsule body with locked rotation is driven by a mover joint and held above the ground by a pogo joint, with a skirt of rays for ledges and steep slopes, and it rides kinematic platforms tagged with `platformMaterialId`. Call `update(timeStep, forward, right, throttle, speedScale?)` before each `b3World_Step`; `jump()`, `launch()`, `setGravityScale()` and `destroy()` match the sample, and every tuning value is a public field. It is not compiled into the wasm.
+- The `b3World_CastRay` and `b3World_CastShape` callbacks receive the hit shape's `userMaterialId` (a `bigint`) as a fifth argument. The README's ray-cast snippet now names the callback arguments correctly.
+- New example: Dynamic Mover, an obstacle course for the capsule character (stair flights, ramps, a bridge, stepping posts, props, a seesaw, a sweeper arm, and a slider, an elevator and a ferry to ride).
+- `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
+
 Wheeled vehicles. The [nilo-technologies/box3d](https://github.com/nilo-technologies/box3d) fork adds a vehicle controller to box3d, and box3d.js binds all of it.
 
 - `b3CreateVehicle(worldId, def)` drives an existing dynamic chassis body. `b3DefaultVehicleDef()` is a 1300 kg rear wheel drive sedan.
@@ -44,7 +49,6 @@ New upstream API:
   - `b3Joint_IsAwake`.
   - Mover and pogo joints: `b3CreateMoverJoint`, `b3CreatePogoJoint`, their default defs and accessors. These are what upstream uses for dynamic character movers.
 - Replay: `b3RecPlayer_SubStepFrame` and `b3RecPlayer_IsAtPreStep`.
-- `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
 ## v0.3.0
 

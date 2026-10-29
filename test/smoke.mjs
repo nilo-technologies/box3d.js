@@ -2,6 +2,7 @@
 // build variants (separate-wasm and inlined single-file).
 
 import assert from 'node:assert/strict';
+import { DynamicMover } from '../dist/character.mjs';
 
 function fallingBox( b3 )
 {
@@ -769,7 +770,13 @@ async function vehicleScenarios( b3 )
 		for ( let i = 0; i < b3.getNumVehicleWheels( buf ); i++ )
 		{
 			b3.getVehicleWheelAt( wheel, buf, i );
-			wheels.push( { ...wheel } );
+			// The record is reused, so copy its nested arrays and id rather than aliasing them
+			wheels.push( {
+				...wheel,
+				position: [ ...wheel.position ], rotation: [ ...wheel.rotation ],
+				contactPoint: [ ...wheel.contactPoint ], contactNormal: [ ...wheel.contactNormal ],
+				groundShapeId: { ...wheel.groundShapeId },
+			} );
 		}
 		return { ...state, wheels };
 	}
@@ -789,6 +796,7 @@ async function vehicleScenarios( b3 )
 		const { vehicle, chassis } = createCar( world );
 		step( world, 120 );
 		const s = readState( vehicle );
+		assert.ok( s.wheels[ 0 ].position[ 0 ] > 0 && s.wheels[ 1 ].position[ 0 ] < 0, 'each stored wheel keeps its own position' );
 		const sprung = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3Vehicle_GetSprungMass( vehicle, i ), 0 );
 		assert.ok( Math.abs( sprung - 1300 ) < 1, `sprung masses sum to the chassis mass (${sprung.toFixed( 1 )})` );
 		assert.equal( s.wheelsInContact, 4, 'all four wheels touch the ground' );
@@ -993,6 +1001,7 @@ async function vehicleScenarios( b3 )
 		b3.getVehicleStateData( buf, createCar( world ).vehicle );
 		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
 		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
+		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 1.5 ), RangeError, 'fractional wheel index is refused' );
 		b3.b3DestroyWorld( world );
 
 		const spare = b3.createVehicleStateBuffer();
@@ -1021,6 +1030,100 @@ function triangleCollision( b3 )
 	const capsule = b3.b3CollideTriangleAndCapsule( ...tri, { center1: [ -0.2, 0.3, 0 ], center2: [ 0.2, 0.3, 0 ], radius: 0.5 } );
 	assert.equal( capsule.points.length, 2, 'capsule lying on the triangle gives two points' );
 	assert.deepEqual( capsule.normal, [ 0, 1, 0 ], 'normal points from the triangle to the capsule' );
+}
+
+// box3d.js/character: stand, walk, climb a step, jump, and ride a tagged kinematic platform.
+function dynamicMover( b3 )
+{
+	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
+	const staticBox = ( x, y, z, hx, hy, hz ) =>
+	{
+		const def = b3.b3DefaultBodyDef();
+		def.position = [ x, y, z ];
+		b3.b3CreateBoxShape( b3.b3CreateBody( world, def ), b3.b3DefaultShapeDef(), hx, hy, hz );
+	};
+	staticBox( 0, -0.5, 0, 30, 0.5, 30 ); // ground, top at y = 0
+	staticBox( 14, 0.15, 0, 6, 0.15, 2 ); // 0.3 high step at x = 8..20
+
+	const PLATFORM = 7n;
+	const platformDef = b3.b3DefaultBodyDef();
+	platformDef.type = b3.b3BodyType.b3_kinematicBody;
+	platformDef.position = [ -10, 0.25, 0 ];
+	const platform = b3.b3CreateBody( world, platformDef );
+	const platformShape = b3.b3DefaultShapeDef();
+	platformShape.baseMaterial.userMaterialId = PLATFORM;
+	b3.b3CreateBoxShape( platform, platformShape, 2, 0.25, 2 );
+
+	const dt = 1 / 60;
+	const forward = [ 1, 0, 0 ];
+	const right = [ 0, 0, 1 ];
+	const pos = [ 0, 0, 0 ];
+	const vel = [ 0, 0, 0 ];
+	const run = ( mover, frames, throttle ) =>
+	{
+		for ( let i = 0; i < frames; i++ )
+		{
+			mover.update( dt, forward, right, throttle );
+			b3.b3World_Step( world, dt, 4 );
+		}
+		return b3.b3Body_GetPosition( pos, mover.bodyId );
+	};
+
+	const mover = new DynamicMover( b3, world, { position: [ 0, 1.5, 0 ] } );
+	run( mover, 120, [ 0, 0 ] );
+	const standY = pos[ 1 ];
+	assert.ok( mover.onGround && mover.walkable, 'mover stands on the ground' );
+	assert.ok( standY > 1 && standY < 1.6, `pogo holds the capsule above the ground (y=${standY.toFixed( 2 )})` );
+	assert.ok( Math.abs( pos[ 0 ] ) < 1e-3 && Math.abs( pos[ 2 ] ) < 1e-3, 'mover stays put without input' );
+
+	run( mover, 60, [ 1, 0 ] );
+	b3.b3Body_GetLinearVelocity( vel, mover.bodyId );
+	assert.ok( vel[ 0 ] > 0.9 * mover.maxSpeed, `mover reaches max speed (vx=${vel[ 0 ].toFixed( 2 )})` );
+
+	run( mover, 60, [ 1, 0 ] );
+	assert.ok( pos[ 0 ] > 9 && pos[ 0 ] < 18, `mover walked onto the step (x=${pos[ 0 ].toFixed( 2 )})` );
+	const stepY = run( mover, 10, [ 0, 0 ] )[ 1 ];
+	assert.ok( stepY > standY + 0.2, `mover climbed the 0.3 step (y=${stepY.toFixed( 2 )})` );
+
+	assert.equal( mover.jump(), true, 'jump from the ground' );
+	run( mover, 5, [ 0, 0 ] );
+	b3.b3Body_GetLinearVelocity( vel, mover.bodyId );
+	assert.ok( vel[ 1 ] > 3 && mover.jumping, `mover rises after jumping (vy=${vel[ 1 ].toFixed( 2 )})` );
+	assert.equal( mover.jump(), false, 'no jump while airborne' );
+	run( mover, 120, [ 0, 0 ] );
+	assert.ok( mover.onGround && !mover.jumping, 'mover lands' );
+
+	const bodyId = { ...mover.bodyId };
+	mover.destroy();
+	assert.equal( b3.b3Body_IsValid( bodyId ), false, 'destroy removes the mover body' );
+	mover.update( dt, forward, right, [ 1, 0 ] );
+	assert.equal( mover.jump(), false, 'update and jump do nothing after destroy' );
+
+	// Platform: the mover joint attaches to a kinematic body tagged with platformMaterialId.
+	// A number id is converted to bigint, so it still matches the ray's userMaterialId.
+	const rider = new DynamicMover( b3, world, { position: [ -10, 2, 0 ] } );
+	rider.platformMaterialId = Number( PLATFORM );
+	assert.equal( rider.platformMaterialId, PLATFORM, 'platformMaterialId converts numbers to bigint' );
+	run( rider, 90, [ 0, 0 ] );
+	const bodyA = b3.b3Joint_GetBodyA( rider.moverJointId );
+	assert.deepEqual( bodyA, platform, 'mover joint attaches to the tagged platform' );
+	assert.equal( rider.castResult.userMaterialId, PLATFORM, 'ray cast reports the user material id' );
+	let shapeCastMaterial = null;
+	b3.b3World_CastShape( world, [ -11.5, 3, 1.5 ], [ 0, 0, 0 ], 0.2, [ 0, -5, 0 ], b3.b3DefaultQueryFilter(),
+		( _shapeId, _point, _normal, fraction, userMaterialId ) =>
+		{
+			shapeCastMaterial = userMaterialId;
+			return fraction;
+		} );
+	assert.equal( shapeCastMaterial, PLATFORM, 'shape cast reports the user material id' );
+	b3.b3Body_SetLinearVelocity( platform, [ 0, 0, 1 ] );
+	const startZ = run( rider, 1, [ 0, 0 ] )[ 2 ];
+	const endZ = run( rider, 60, [ 0, 0 ] )[ 2 ];
+	assert.ok( endZ - startZ > 0.8, `mover rides the moving platform (dz=${( endZ - startZ ).toFixed( 2 )})` );
+	rider.destroy();
+
+	b3.b3DestroyWorld( world );
+	return { standY, stepY, rideZ: endZ - startZ };
 }
 
 async function check( label, importPath, decompositionOptions )
@@ -1053,10 +1156,13 @@ async function check( label, importPath, decompositionOptions )
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
 
+	const mover = dynamicMover( b3 );
+
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
-		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}` );
+		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
+		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform` );
 }
 
 console.log( 'box3d.js smoke test' );

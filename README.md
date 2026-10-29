@@ -128,19 +128,25 @@ npm install box3d.js
       </a>
     </td>
     <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-dynamic-mover">
+        <img src="./examples/public/screenshots/example-dynamic-mover.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Dynamic Mover
+      </a>
+    </td>
+    <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-static-compound">
         <img src="./examples/public/screenshots/example-static-compound.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Static Compound
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-convex-decomposition">
         <img src="./examples/public/screenshots/example-convex-decomposition.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Convex Decomposition
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-triangle-mesh">
         <img src="./examples/public/screenshots/example-triangle-mesh.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -153,14 +159,14 @@ npm install box3d.js
         Mesh Generators
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-cast-ray">
         <img src="./examples/public/screenshots/example-cast-ray.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Cast Ray
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-cast-shape">
         <img src="./examples/public/screenshots/example-cast-shape.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -173,14 +179,14 @@ npm install box3d.js
         Hinge Motor
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-gjk">
         <img src="./examples/public/screenshots/example-gjk.png" width="180" height="120" style="object-fit:cover;"/><br/>
         GJK Distance
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-manifold">
         <img src="./examples/public/screenshots/example-manifold.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -193,14 +199,14 @@ npm install box3d.js
         Dynamic Tree
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-explosion">
         <img src="./examples/public/screenshots/example-explosion.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Explosion
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-geometry">
         <img src="./examples/public/screenshots/example-geometry.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -213,14 +219,14 @@ npm install box3d.js
         Sensor
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-events">
         <img src="./examples/public/screenshots/example-events.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Events
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-contacts">
         <img src="./examples/public/screenshots/example-contacts.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -233,14 +239,14 @@ npm install box3d.js
         Multithreading
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
         <img src="./examples/public/screenshots/example-debug-draw.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Debug Draw
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-replay">
         <img src="./examples/public/screenshots/example-replay.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -289,6 +295,7 @@ npm install box3d.js
 - [Queries](#queries)
 - [Events](#events)
 - [Debug Draw](#debug-draw)
+- [Character Controller](#character-controller)
 - [Multithreading](#multithreading)
 - [Building from Source](#building-from-source)
 
@@ -1302,12 +1309,20 @@ if (rayResult.hit) {
 
 ```ts
 // Collect every hit along a ray via callback (called once per shape, unordered).
-// Return false from the callback to stop traversal early.
+// The callback gets the hit point, normal, fraction and the shape's userMaterialId
+// (a bigint). Return 1 to keep going, the fraction to clip the ray there, -1 to
+// ignore this shape, or 0 to stop.
 const hits: b3ShapeId[] = [];
-b3.b3World_CastRay(world, origin, translation, filter, (shapeId: b3ShapeId, _fraction: number, _normal: unknown) => {
-    hits.push(shapeId);
-    return true;
-});
+b3.b3World_CastRay(
+    world,
+    origin,
+    translation,
+    filter,
+    (shapeId: b3ShapeId, _point: b3Vec3, _normal: b3Vec3, _fraction: number, _userMaterialId: bigint) => {
+        hits.push(shapeId);
+        return 1;
+    },
+);
 console.log(`ray hit ${hits.length} shapes`);
 ```
 
@@ -1318,8 +1333,9 @@ Sweep a sphere proxy through the world and find the closest hit.
 ```ts
 // Sweep a convex proxy through the world and find the closest hit (shapecast).
 // The proxy is a flat [x,y,z, ...] array of points; convexRadius rounds the edges.
-// The callback returns the current best fraction -- return a smaller value to narrow
-// the search, or Infinity to collect all hits.
+// The callback gets the same arguments as b3World_CastRay's (shape, point, normal,
+// fraction, userMaterialId) and returns the current best fraction -- return a smaller
+// value to narrow the search, or Infinity to collect all hits.
 const halfE = 0.3;
 const boxProxy = [
     -halfE, -halfE, -halfE,  halfE, -halfE, -halfE,
@@ -1615,6 +1631,47 @@ debug.dispose();
     <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
       <img src="./examples/public/screenshots/example-debug-draw.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Debug Draw</strong>
+    </a>
+  </td>
+  </tr>
+</table>
+
+## Character Controller
+
+`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it. As in upstream, only the platform's linear velocity is matched, so translating platforms carry the character and spinning ones don't.
+
+It is plain JavaScript on top of the bindings, not part of the wasm. Upstream intends this controller to be changed for each game, so every tuning value is a public field, and the class is small enough to subclass or copy.
+
+```ts
+const PLATFORM = 1n; // shapes with this userMaterialId carry the mover when kinematic
+
+const mover = new DynamicMover(b3, world, {
+    position: [0, 1.5, 0],
+    platformMaterialId: PLATFORM,
+});
+
+// Every step, before b3World_Step. forward/right are horizontal (e.g. from the camera),
+// throttle is [forward, right] on [-1, 1], and the last argument scales maxSpeed.
+const forward: [number, number, number] = [0, 0, -1];
+const right: [number, number, number] = [1, 0, 0];
+if (mover.jump()) console.log('jumped'); // false while airborne
+mover.update(1 / 60, forward, right, [1, 0], 1.5);
+b3.b3World_Step(world, 1 / 60, 4);
+
+// Tuning values are public fields, read every update.
+mover.maxSpeed = 8;
+mover.setGravityScale(2); // also resizes the pogo forces
+console.log(mover.onGround, mover.walkable, mover.pogoLength, mover.probes[mover.selectedProbe]);
+
+mover.destroy();
+```
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-dynamic-mover">
+      <img src="./examples/public/screenshots/example-dynamic-mover.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Dynamic Mover</strong>
     </a>
   </td>
   </tr>
