@@ -48,10 +48,10 @@
     "emscripten",
     "embind"
   ],
-  "repository": "github:isaac-mason/box3d.js",
-  "homepage": "https://github.com/isaac-mason/box3d.js",
+  "repository": "github:nilo-technologies/box3d.js",
+  "homepage": "https://github.com/nilo-technologies/box3d.js",
   "bugs": {
-    "url": "https://github.com/isaac-mason/box3d.js/issues"
+    "url": "https://github.com/nilo-technologies/box3d.js/issues"
   },
   "author": "Isaac Mason",
   "license": "MIT",
