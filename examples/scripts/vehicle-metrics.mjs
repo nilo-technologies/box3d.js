@@ -5,7 +5,8 @@
 //   node examples/scripts/vehicle-metrics.mjs --car super            all 15 supercar presets
 //   node examples/scripts/vehicle-metrics.mjs --all                  all 45 matrix presets
 //   node examples/scripts/vehicle-metrics.mjs --file my-car.mjs      a preset module (see below)
-//   add --json for machine readable output, --quick to skip the top speed run
+//   add --json for machine readable output, --quick to skip the top speed run, and --perturb
+//   to rerun each car with the mass 3% and the tire grip 2% off each way
 //
 // A --file module exports `preset` ({ title, halfExtents, apply(def) }, the same shape as the
 // entries in examples/src/vehicle-presets.js) and `target`

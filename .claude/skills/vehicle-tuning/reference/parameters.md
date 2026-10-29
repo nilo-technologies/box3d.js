@@ -7,7 +7,7 @@ Each field, its default from `b3DefaultVehicleDef()`, and what the engine actual
 | Field | Default | Notes |
 | --- | --- | --- |
 | `mass` | 1300 | Overrides the body's mass. The yaw, pitch and roll inertia are the chassis shapes' inertia scaled to this mass, so the collision box size (`halfExtents`) sets how lazily the car rotates. |
-| `autoCenterOfMass` | true | Puts the center of mass at the average resting axle height, which is lower than a real car's (about 0.15 m lower). Keep it on and raise the car with `centerOfMassOffset` y for realism. |
+| `autoCenterOfMass` | true | Puts the center of mass at the average resting axle height, which is lower than a real car's (about 0.15 m lower). Keep it on and raise the car with `centerOfMassOffset` y for realism. It only moves the height: front to back, the center stays at the shapes' centroid, which for one box is the body origin (z = 0). |
 | `centerOfMassOffset` | [0,0,0] | Added after the auto placement. y: height (a real road car ≈ +0.1 to +0.16 over auto). z: weight distribution, + forward. Moving z by 0.15 m on a 2.55 m wheelbase moves about 6% of the weight. Moving the center of mass does not change the inertia. |
 | `maxSlopeAngle` | 80° | Wheels ignore steeper ground. |
 | `castFilter` | default | Filter for the wheel casts. |

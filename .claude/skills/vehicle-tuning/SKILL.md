@@ -49,14 +49,14 @@ export const preset = {
 Rules for `apply(def)`:
 
 - `def` comes from `b3DefaultVehicleDef()`: 4 wheels in the order front left, front right, rear left, rear right, +z forward, +y up, left is +x.
-- Fixed size arrays stay fixed size: `wheels` has 8 slots, `transmission.gearRatios` 8, `drivetrain.differentials` 4 and `antiRoll.bars` 4. Set `def.transmission.gearRatios[i]` and `gearCount`, `def.drivetrain.differentials[i]` and `differentialCount`, `def.antiRoll.bars[i]` and `barCount`. Fill unused differentials with `{ leftWheel: -1, rightWheel: -1, torqueRatio: 0, leftRightSplit: 0.5, limitedSlipRatio: 1 }` and unused bars with `{ leftWheel: -1, rightWheel: -1, stiffness: 0 }`.
+- Fixed size arrays stay fixed size: `wheels` has 8 slots, `transmission.gearRatios` 8, `drivetrain.differentials` 4 and `antiRoll.bars` 4. Unused gear slots are 0. Set `def.transmission.gearRatios[i]` and `gearCount`, `def.drivetrain.differentials[i]` and `differentialCount`, `def.antiRoll.bars[i]` and `barCount`. Fill unused differentials with `{ leftWheel: -1, rightWheel: -1, torqueRatio: 0, leftRightSplit: 0.5, limitedSlipRatio: 1 }` and unused bars with `{ leftWheel: -1, rightWheel: -1, stiffness: 0 }`.
 - Replace vector fields whole: `def.chassis.centerOfMassOffset = [0, -0.1, 0.05]`, not `[1] = ...`.
 - Angles are radians.
 - Plain object writes only: no imports from the repo and no globals, so the module runs anywhere.
 
 ## What the metrics measure
 
-All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range.
+All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 19 checks at 50% realism and below and 15 or 16 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
 
 | Metric | Test | Realistic means |
 | --- | --- | --- |
@@ -77,6 +77,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | 0-100 too slow, wheels spinning (rpm at the limiter, slip ≫ peak) | more weight on the driven axle (`centerOfMassOffset` z), limited slip on the driven diff | shorter first gear does not help: it is traction limited. TC on a two wheel drive car costs time too, see findings |
 | 0-100 too slow, no wheelspin | `engine.maxTorque`, `finalDrive`, lower `engine.inertia` | `peakTorqueRpm` closer to the launch rpm |
 | top speed low, and the output shows a gear below the top one at the limiter | `shiftUpRpm` at least 5% under `maxRpm` | see findings: the shift uses road rpm, which trails the engine |
+| tops out a gear below the top one, below the limiter | fine if it passes: the road rpm in that gear sits just under `shiftUpRpm`. To use the top gear, lower `shiftUpRpm` a little | |
 | top speed low, top gear, below the limiter (drag limited) | `assists.drag`, more power (`maxTorque`, a higher `peakTorqueRpm`) | a top gear that puts the engine nearer its power peak at top speed |
 | top speed low, top gear, at the limiter (gearing limited) | taller top gear or `finalDrive`, or a higher `maxRpm` | |
 | top speed high | `assists.drag` up, or a taller limiter: `maxRpm` with the top gear | |
@@ -85,8 +86,8 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | lateral g low | `lateralPeakFriction` and `lateralSlideFriction` | lower `rollInfluence` does not add grip; downforce only helps at speed |
 | understeer (front slides first, FWD) | stiffer rear bar, softer front bar | front `lateralPeakFriction`, front weight (z) |
 | snap oversteer, spins in the step steer | softer rear bar or stiffer front, rear LSD lower, `counterSteer` (arcade only) | rear tire `lateralSlideFriction` closer to the peak |
-| too much body roll | anti-roll bars, then spring `frequency`, lower `comHeight` | `rollInfluence` (an assist: realism 50 and below) |
-| no body roll at 100% realism | softer bars, `rollInfluence` 0 | |
+| too much body roll | anti-roll bars, then spring `frequency`, lower `centerOfMassOffset` y | `rollInfluence` (an assist: realism 50 and below) |
+| too little body roll at 100% or 75% | softer bars, `rollInfluence` 0 | the FWD layer adds bar stiffness overall (×0.8 front, ×1.6 rear), so an FWD car rolls less than the archetype's RWD figure |
 | flips in corners | lower center of mass, `rollInfluence` up, `maxTiltAngle` | never on a realistic car on flat ground: fix the geometry first |
 | handbrake does nothing | `maxHandBrakeTorque` above the rear peak torque at 100% grip, `driftGripScale` < 1 | test with full steer, not a little. At the arcade levels the handbrake need not lock the rears: `driftGripScale` already cuts their side grip |
 | handbrake rotates less on the arcade level | `counterSteer` too high: it catches the slide | keep `counterSteer` ≤ 0.6 with `driftGripScale` ≤ 0.4 |
@@ -99,11 +100,11 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 - **Axle load** ≈ mass × 9.81 × axle share ÷ 2 per wheel. The share comes from `centerOfMassOffset` z: 0.15 m on a 2.55 m wheelbase moves about 6%.
 - **Tire peak torque** per wheel ≈ load × μ × radius, where μ is the longitudinal peak friction × the level's tire grip.
-- **Brakes**: with ABS, the front `maxBrakeTorque` should be about 1.15-1.25x the front peak torque at the grip of the level you build (static load). That is about 1.6x at 100% grip when one brake size has to serve every level up to arcade. Far above it the fronts lock on a brake step and ABS cannot release them. Without ABS, a stronger brake just locks: braking is then set by the sliding friction. Rear brakes about half to two thirds of the front.
-- **Handbrake**: above the rear peak torque at 100% grip, so it locks the rears.
+- **Brakes**: the risk is a front wheel locking at the brake step, before the weight has moved forward; with ABS on it then stays locked (findings #7). So size the front brake against the static front peak torque at the grip of the level you build: start at 1.15-1.25x for a single level car. Then measure. If braking is long, look at the front slip: if the fronts did not lock, a stronger brake shortens the stop (a soft, tall rally car stopped 2 m shorter at 1.7x); if they locked, go back down. The archetype brake values are the committed cars', which serve every level from 100% to arcade with one brake size, so they read high (about 1.6x) against 100% grip. Without ABS, a stronger brake just locks the wheels and braking is set by the sliding friction. Rear brakes are usually half to two thirds of the front; a rear heavy mid engine car runs nearer 90%.
+- **Handbrake**: about the rear peak torque at 100% grip or more, so it can lock the rears. Slightly under is fine: weight comes off the rear under braking, and below 100% realism `driftGripScale` cuts the rear side grip anyway.
 - **Launch**: wheel force in first gear = `maxTorque` × gear × `finalDrive` ÷ radius. If this is several times the driven axle's grip (load × μ), the launch is traction limited and gearing will not help.
 - **Speed at the limiter** in gear n = `maxRpm` ÷ (gear n × `finalDrive`) × 2π ÷ 60 × radius.
-- **Top speed**: decide which limits it. Drag limited (sports, super, hatch): the top gear's limiter speed sits above the target and v ≈ (0.58 × P ÷ `drag`)^(1/3), with P the engine power in watts at the rpm the top gear gives at that speed (P = torque at that rpm × rpm × 2π ÷ 60). Only about 58% of the engine power reaches the drag; rolling resistance (raised by downforce), wheel and engine damping and clutch slip take the rest. Gearing limited (rally): with 400 N·m and drag 0.45 the drag limit is far above 215 km/h, so put the top gear's limiter speed in the target range instead.
+- **Top speed**: decide which limits it, then read the gear and rpm the metrics print next to the top speed. Drag limited (sports, super, hatch): the top gear's limiter speed sits above the target and v ≈ (0.58 × P ÷ `drag`)^(1/3), with P the engine power in watts at the rpm the top gear gives at that speed (P = torque at that rpm × rpm × 2π ÷ 60). Only about 58% of the engine power reaches the drag; rolling resistance (raised by downforce), wheel and engine damping and clutch slip take the rest. The engine runs about 300-400 rpm above the road speed rpm because of the clutch slip. Gearing limited (rally): with 400 N·m and drag 0.45 the drag limit is far above 215 km/h, so put the top gear's limiter speed in the target range instead.
 - **AWD shares** (`torqueRatio`) must add up to 1.
 
 ## Writing back

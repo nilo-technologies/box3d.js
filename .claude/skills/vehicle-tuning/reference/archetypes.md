@@ -25,7 +25,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | center of mass z, before the FWD layer's +0.15 | 0 to +0.08 | +0.05 to +0.1 | -0.2 to -0.3 (mid engine) | +0.08 to +0.12 (about 60/40 front once the FWD layer adds its +0.15) |
 | half track, wheelbase (m) | 0.8, 2.55 | 0.8, 2.5 | 0.86, 2.7 | 0.77, 2.6 |
 | wheel `position` | [±0.8, -0.02, +1.3 / -1.25] | [±0.8, -0.05, +1.25 / -1.25] | [±0.86, 0, +1.4 / -1.3] | [±0.77, -0.04, +1.3 / -1.3] |
-| wheel radius (m) | 0.33 | 0.32-0.33 | 0.35 | 0.32 |
+| wheel radius (m) | 0.33 | 0.32-0.33 (0.32 keeps 6th under 215 km/h) | 0.35 | 0.32 |
 | spring frequency F/R (Hz) | 2.0 / 2.2 | 1.5 / 1.6 | 2.5 / 2.7 | 1.9 / 2.1 |
 | travel min/max (m) | 0.17 / 0.33 | 0.12 / 0.45 | 0.18 / 0.30 | 0.17 / 0.34 |
 | tire peak slip, lateral peak angle | 0.1, 7° | 0.18, 11° | 0.09, 6.5° | 0.1, 7° |
@@ -41,7 +41,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | engine inertia | 0.2 | 0.12 | 0.15 | 0.15-0.2 |
 | anti-roll F/R (N/m) | 16000 / 13000 | 16000 / 12000 | 30000 / 26000 | 20000 / 14000 |
 | brakes F/R (N·m) | 2600 / 1500 | 2300 / 1500 | 2400 / 2200 | 1800 / 1200 |
-| handbrake (N·m) | 2500 | 4000 (hydraulic) | 2000 | 2500 |
+| handbrake (N·m) | 2500 | 4000 (hydraulic) | 2000-2200 | 2500 |
 | steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
 | own TC / ABS | off / on | off / off | on / on | on / on |
@@ -52,4 +52,4 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 - **Sports**: balanced, progressive. Roll you can see (about 2°/g). Without TC at 100% it spins the rears on a flat out launch and can spin in a full lock step steer at 120 km/h: that is the realistic result.
 - **Rally**: soft and tall, long travel, gravel tires (late, broad peak, low slide drop), hydraulic handbrake, short gearing. On tarmac it brakes long (no ABS, gravel tires) and rolls the most. Its taller body needs more `selfRighting` at the arcade levels.
 - **Super**: stiff, low, sticky, mid engine (rear heavy), real downforce. Gear the top gear so drag, not the limiter, sets the top speed, and keep `shiftUpRpm` well under the limiter. Size the front brake near the front tires' peak torque (about 1.15x) or ABS braking can lock the fronts.
-- **Hatch**: front heavy (60/40 as FWD), softer than a sports car, torque low in the rev range (turbo), modest tires. FWD understeers: balance it with a stiff rear bar. Its power is close to what the top speed floor needs, so keep drag at the low end and torque at the high end. These hatch values come from the first blind test of this skill, not from a committed preset.
+- **Hatch**: front heavy (60/40 as FWD), softer than a sports car, torque low in the rev range (turbo), modest tires. FWD understeers: balance it with a stiff rear bar. Its power is close to what the top speed floor needs, so keep drag at the low end and torque at the high end, and mass and `maxRpm` mid range or better: the heavy, low revving corner of the ranges reaches only 234 km/h against a 232 floor and brakes within 0.3 m of the limit. These hatch values come from the first blind test of this skill, not from a committed preset.
