@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- The README example gallery and tables now link to this repo's examples at `nilo-technologies.github.io/box3d.js` instead of the original fork's.
+- The README example gallery and tables now link to this repo's examples at `nilo-technologies.github.io/box3d.js` instead of the original fork's. The README no longer links to the original author's JS physics benchmarks page (its "compare" section is now "What Is box3d?"), and `package.json` lists Nilo Technologies as the author. `LICENSE` keeps the original MIT copyright notice.
 - `import { DynamicMover } from 'box3d.js/character'` is a JavaScript port of box3d's dynamic character mover (`samples/dynamic_mover.cpp`). A capsule body with locked rotation is driven by a mover joint and held above the ground by a pogo joint, with a skirt of rays for ledges and steep slopes, and it rides kinematic platforms tagged with `platformMaterialId`. Call `update(timeStep, forward, right, throttle, speedScale?)` before each `b3World_Step`; `jump()`, `launch()`, `setGravityScale()` and `destroy()` match the sample, and every tuning value is a public field. It is not compiled into the wasm.
 - The `b3World_CastRay` and `b3World_CastShape` callbacks receive the hit shape's `userMaterialId` (a `bigint`) as a fifth argument. The README's ray-cast snippet now names the callback arguments correctly.
 - New example: Dynamic Mover, an obstacle course for the capsule character (stair flights, ramps, a bridge, stepping posts, props, a seesaw, a sweeper arm, and a slider, an elevator and a ferry to ride).
