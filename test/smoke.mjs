@@ -196,6 +196,122 @@ function eventsAndPlanes( b3 )
 	return { sawSensor, planeCount };
 }
 
+// Natively filtered queries: ignored bodies, ignored shapes and sensors are skipped inside the
+// query, and the results match the callback versions filtering the same candidates in JS.
+function filteredQueries( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, 0, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const staticAt = ( y ) =>
+	{
+		const def = b3.b3DefaultBodyDef();
+		def.position = [ 0, y, 0 ];
+		return b3.b3CreateBody( world, def );
+	};
+	// From the top: a sensor slab (y 3), a shelf (y 2), the ground (top at y 0.5)
+	const sensorBody = staticAt( 3 );
+	const sensorDef = b3.b3DefaultShapeDef();
+	sensorDef.isSensor = true;
+	const sensorShape = b3.b3CreateBoxShape( sensorBody, sensorDef, 1, 0.1, 1 );
+	const shelf = staticAt( 2 );
+	const shelfShape = b3.b3CreateBoxShape( shelf, b3.b3DefaultShapeDef(), 1, 0.1, 1 );
+	const ground = staticAt( 0 );
+	const groundShape = b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 5, 0.5, 5 );
+	b3.b3World_Step( world, 1 / 60, 4 );
+
+	const triples = ( ...ids ) => new Int32Array( ids.flatMap( ( id ) => [ id.index1, id.world0, id.generation ] ) );
+	const same = ( a, index1, world0, generation ) => a.index1 === index1 && a.world0 === world0 && a.generation === generation;
+	const filter = b3.b3DefaultQueryFilter();
+	// JS reference for the same skip rule, fed to the callback APIs
+	const skips = ( options, shapeId ) =>
+	{
+		const listed = ( arr, id ) => arr !== undefined && [ ...Array( arr.length / 3 ).keys() ].some( ( i ) => same( id, arr[ 3 * i ], arr[ 3 * i + 1 ], arr[ 3 * i + 2 ] ) );
+		return listed( options?.ignoreShapes, shapeId ) || listed( options?.ignoreBodies, b3.b3Shape_GetBody( shapeId ) ) ||
+			( options?.excludeSensors === true && b3.b3Shape_IsSensor( shapeId ) );
+	};
+	const cases = [
+		{ name: 'no options', options: null },
+		{ name: 'excludeSensors', options: { excludeSensors: true } },
+		{ name: 'ignored body', options: { ignoreBodies: triples( shelf ), excludeSensors: true } },
+		{ name: 'ignored shape', options: { ignoreShapes: triples( shelfShape, sensorShape ) } },
+		{ name: 'everything ignored', options: { ignoreShapes: triples( shelfShape, groundShape ), excludeSensors: true } },
+	];
+	const expected = { 'excludeSensors': shelfShape, 'ignored body': groundShape, 'ignored shape': groundShape, 'everything ignored': null };
+
+	const origin = [ 0, 5, 0 ];
+	const down = [ 0, -10, 0 ];
+	const points = new Float32Array( [ 0, 0, 0 ] );
+	for ( const { name, options } of cases )
+	{
+		// Ray and shape casts: closest non-skipped hit, same as a clipping JS callback
+		for ( const [ label, filtered, reference ] of [
+			[ 'ray', () => b3.b3World_CastRayClosestFiltered( world, origin, down, filter, options ),
+				( cb ) => b3.b3World_CastRay( world, origin, down, filter, cb ) ],
+			[ 'shape', () => b3.b3World_CastShapeClosestFiltered( world, origin, points, 0.2, down, filter, options ),
+				( cb ) => b3.b3World_CastShape( world, origin, points, 0.2, down, filter, cb ) ],
+		] )
+		{
+			let best = null;
+			reference( ( shapeId, point, normal, fraction ) =>
+			{
+				if ( skips( options, shapeId ) ) return -1;
+				best = { shapeId, point, normal, fraction };
+				return fraction;
+			} );
+			const hit = filtered();
+			assert.ok( hit instanceof Float64Array, `${label} (${name}): returns a Float64Array` );
+			if ( best === null )
+			{
+				assert.equal( hit.length, 0, `${label} (${name}): no hit is an empty array` );
+				continue;
+			}
+			assert.equal( hit.length, 14, `${label} (${name}): 14 numbers per hit` );
+			assert.ok( same( best.shapeId, hit[ 0 ], hit[ 1 ], hit[ 2 ] ), `${label} (${name}): same shape as the callback cast` );
+			assert.ok( same( b3.b3Shape_GetBody( best.shapeId ), hit[ 3 ], hit[ 4 ], hit[ 5 ] ), `${label} (${name}): body id` );
+			near( hit[ 7 ], best.point[ 1 ], 1e-5, `${label} (${name}): point` );
+			near( hit[ 10 ], best.normal[ 1 ], 1e-5, `${label} (${name}): normal` );
+			near( hit[ 12 ], best.fraction, 1e-6, `${label} (${name}): fraction` );
+			assert.equal( hit[ 13 ], 0, `${label} (${name}): spare slot` );
+			if ( name in expected ) assert.ok( same( expected[ name ], hit[ 0 ], hit[ 1 ], hit[ 2 ] ), `${label} (${name}): expected shape` );
+		}
+		if ( name in expected && expected[ name ] === null )
+		{
+			assert.equal( b3.b3World_CastRayClosestFiltered( world, origin, down, filter, options ).length, 0, `${name}: ray misses` );
+		}
+
+		// Mover cast: same fraction as the callback filter
+		const mover = { center1: [ 0, -0.5, 0 ], center2: [ 0, 0.5, 0 ], radius: 0.35 };
+		const fraction = b3.b3World_CastMoverFiltered( world, origin, mover, down, filter, options );
+		const referenceFraction = b3.b3World_CastMover( world, origin, mover, down, filter, ( shapeId ) => !skips( options, shapeId ) );
+		assert.equal( fraction, referenceFraction, `CastMoverFiltered (${name}) matches the callback filter` );
+
+		// Mover planes: a capsule overlapping the shelf and the sensor
+		const moverOrigin = [ 0, 2.3, 0 ];
+		let referencePlanes = 0;
+		b3.b3World_CollideMover( world, moverOrigin, mover, filter, ( shapeId, buf ) =>
+		{
+			if ( !skips( options, shapeId ) ) referencePlanes += b3.getNumPlaneResults( buf );
+			return true;
+		} );
+		const planes = b3.b3World_CollideMoverPacked( world, moverOrigin, mover, filter, options );
+		assert.ok( planes instanceof Float64Array && planes.length % 14 === 0, `CollideMoverPacked (${name}): stride 14` );
+		assert.equal( planes.length / 14, referencePlanes, `CollideMoverPacked (${name}): same plane count as the callback` );
+		for ( let o = 0; o < planes.length; o += 14 )
+		{
+			const shapeId = { index1: planes[ o ], world0: planes[ o + 1 ], generation: planes[ o + 2 ] };
+			assert.ok( !skips( options, shapeId ), `CollideMoverPacked (${name}): skipped shape not reported` );
+			assert.ok( same( b3.b3Shape_GetBody( shapeId ), planes[ o + 3 ], planes[ o + 4 ], planes[ o + 5 ] ), `CollideMoverPacked (${name}): body id` );
+			assert.equal( planes[ o + 6 ], b3.b3BodyType.b3_staticBody.value, `CollideMoverPacked (${name}): body type` );
+			near( Math.hypot( planes[ o + 7 ], planes[ o + 8 ], planes[ o + 9 ] ), 1, 1e-3, `CollideMoverPacked (${name}): unit normal` );
+		}
+		if ( name === 'ignored body' ) assert.equal( planes.length, 0, 'CollideMoverPacked: ignored shelf body gives no planes' );
+		if ( name === 'no options' ) assert.ok( planes.length >= 14, 'CollideMoverPacked: the shelf gives planes' );
+	}
+
+	b3.b3DestroyWorld( world );
+}
+
 // Indexed torus around the y axis: concave, so V-HACD has to split it.
 function torusMesh( radius = 1, tube = 0.35, radial = 24, tubular = 12 )
 {
@@ -1063,6 +1179,7 @@ async function check( label, importPath, decompositionOptions )
 	assert.ok( worstNormalErr < 1e-3, `manifold normal is unit-length (err ${worstNormalErr.toExponential( 1 )})` );
 
 	const { planeCount } = eventsAndPlanes( b3 );
+	filteredQueries( b3 );
 
 	cylindricalJoint( b3 );
 	mixingRules( b3 );

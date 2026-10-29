@@ -338,6 +338,12 @@ Sweep a sphere proxy through the world and find the closest hit.
 
 <Snippet source="./queries.ts" select="query-filter" />
 
+### Filtered Queries
+
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively, returning one copied array.
+
+<Snippet source="./queries.ts" select="filtered-queries" />
+
 ## Events
 
 box3d surfaces physics events (contacts, sensors, body moves, joints) each `b3World_Step`. Events are opt-in per shape. Rather than allocating a JS object per event every step — which does not scale — box3d.js reads them through a **reusable, wasm-backed events buffer**: allocate the buffer (and small reader scratch objects) once, refill it each step with `getEvents`, and read it back with zero allocation. Free it with `destroyEventsBuffer` when done.

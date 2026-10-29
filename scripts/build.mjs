@@ -275,6 +275,10 @@ const retMeta = probe._retMeta();
 // Types for the packed query buffers and the src/facade.js reader helpers,
 // intersected into Box3DModule below so `b3.getContactAt(...)` etc. are typed.
 const facadeTypes = `export interface ShapeIdBuffer { count: number; data: Int32Array; }
+/** Native candidate filter for the *Filtered / *Packed world queries. A shape is skipped when it or
+ * its body is listed (Int32Array of index1, world0, generation triples), or when it is a sensor and
+ * excludeSensors is set. No JS callback runs per candidate. */
+export interface b3QueryOptions { ignoreBodies?: Int32Array; ignoreShapes?: Int32Array; excludeSensors?: boolean; }
 export interface ContactBuffer {
   count: number;
   contactsI32: Int32Array;
@@ -548,6 +552,10 @@ const valParamSigs = {
 	b3CreateDecompositionCompound: 'packed: b3ConvexDecomposition, material?: b3SurfaceMaterial',
 	b3Body_SetConstantForce: 'bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null',
 	b3Body_GetTransformsPacked: 'ids: Int32Array',
+	b3World_CollideMoverPacked: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastMoverFiltered: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastRayClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastShapeClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, points: Float32Array | number[], radius: number, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
 };
 for ( const [ method, params ] of Object.entries( valParamSigs ) )
 {

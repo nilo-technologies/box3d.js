@@ -1379,6 +1379,36 @@ const customFilter = b3.b3DefaultQueryFilter();
 customFilter.maskBits = 1n; // only hit shapes in category 0x0001
 ```
 
+### Filtered Queries
+
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively, returning one copied array.
+
+```ts
+// Skip candidates natively instead of with a JS callback per shape: list bodies and shapes as
+// Int32Array (index1, world0, generation) triples, and/or drop sensors.
+const playerBody = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+const options: b3QueryOptions = {
+    ignoreBodies: new Int32Array([playerBody.index1, playerBody.world0, playerBody.generation]),
+    excludeSensors: true,
+};
+
+// Closest hit: empty array on a miss, else 14 numbers:
+// shape id (3), body id (3), point (3), normal (3), fraction, 0
+const hit = b3.b3World_CastRayClosestFiltered(world, origin, translation, filter, options);
+if (hit.length > 0) console.log('hit body', hit[3], 'at y', hit[7], 'fraction', hit[12]);
+const sweep = b3.b3World_CastShapeClosestFiltered(world, origin, [0, 0, 0], 0.25, translation, filter, options);
+
+// Character mover: the sweep fraction, and every plane in one array, 14 numbers each:
+// shape id (3), body id (3), body type, normal (3), offset, point (3, relative to origin)
+const capsule = { center1: [0, -0.5, 0] as b3Vec3, center2: [0, 0.5, 0] as b3Vec3, radius: 0.3 };
+const moveFraction = b3.b3World_CastMoverFiltered(world, origin, capsule, translation, filter, options);
+const planes = b3.b3World_CollideMoverPacked(world, origin, capsule, filter, null);
+for (let o = 0; o < planes.length; o += 14) {
+    const normal: b3Vec3 = [planes[o + 7], planes[o + 8], planes[o + 9]];
+    console.log('plane', normal, 'offset', planes[o + 10]);
+}
+```
+
 ## Events
 
 box3d surfaces physics events (contacts, sensors, body moves, joints) each `b3World_Step`. Events are opt-in per shape. Rather than allocating a JS object per event every step — which does not scale — box3d.js reads them through a **reusable, wasm-backed events buffer**: allocate the buffer (and small reader scratch objects) once, refill it each step with `getEvents`, and read it back with zero allocation. Free it with `destroyEventsBuffer` when done.

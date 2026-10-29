@@ -1682,6 +1682,162 @@ val getBodyTransformsPacked( val ids )
 	return result;
 }
 
+// --- natively filtered queries ---
+// b3QueryOptions { ignoreBodies?, ignoreShapes?: Int32Array of (index1, world0, generation)
+// triples, excludeSensors?: boolean }. The skip test runs inside the box3d query callback,
+// so filtering a candidate never calls into JS (each JS callback is a sandbox crossing).
+struct QueryOptions
+{
+	std::vector<int32_t> ignoreBodies;
+	std::vector<int32_t> ignoreShapes;
+	bool excludeSensors = false;
+
+	static bool listed( const std::vector<int32_t>& triples, int32_t index1, int32_t world0, int32_t generation )
+	{
+		for ( size_t i = 0; i + 2 < triples.size(); i += 3 )
+		{
+			if ( triples[i] == index1 && triples[i + 1] == world0 && triples[i + 2] == generation ) return true;
+		}
+		return false;
+	}
+
+	bool skips( b3ShapeId shapeId ) const
+	{
+		if ( listed( ignoreShapes, shapeId.index1, shapeId.world0, shapeId.generation ) ) return true;
+		if ( !ignoreBodies.empty() )
+		{
+			b3BodyId bodyId = b3Shape_GetBody( shapeId );
+			if ( listed( ignoreBodies, bodyId.index1, bodyId.world0, bodyId.generation ) ) return true;
+		}
+		return excludeSensors && b3Shape_IsSensor( shapeId );
+	}
+};
+
+QueryOptions readQueryOptions( val options )
+{
+	QueryOptions q;
+	if ( options.isUndefined() || options.isNull() ) return q;
+	val bodies = options["ignoreBodies"];
+	if ( !bodies.isUndefined() && !bodies.isNull() ) q.ignoreBodies = convertJSArrayToNumberVector<int32_t>( bodies );
+	val shapes = options["ignoreShapes"];
+	if ( !shapes.isUndefined() && !shapes.isNull() ) q.ignoreShapes = convertJSArrayToNumberVector<int32_t>( shapes );
+	val sensors = options["excludeSensors"];
+	q.excludeSensors = !sensors.isUndefined() && !sensors.isNull() && sensors.as<bool>();
+	return q;
+}
+
+val toF64( const std::vector<double>& v )
+{
+	val result = val::global( "Float64Array" ).new_( v.size() );
+	if ( !v.empty() ) result.call<void>( "set", val( typed_memory_view( v.size(), v.data() ) ) );
+	return result;
+}
+
+inline void pushShapeAndBody( std::vector<double>& out, b3ShapeId shapeId, b3BodyId bodyId )
+{
+	out.insert( out.end(), { (double)shapeId.index1, (double)shapeId.world0, (double)shapeId.generation, (double)bodyId.index1,
+							 (double)bodyId.world0, (double)bodyId.generation } );
+}
+
+// Stride 14: shape id(3), body id(3), body type, plane normal(3), plane offset, point(3) relative to origin.
+constexpr int kMoverPlaneStride = 6 + 1 + 4 + 3;
+static_assert( kMoverPlaneStride == 14, "b3World_CollideMoverPacked stride is part of the public contract" );
+
+val collideMoverPacked( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, val options )
+{
+	struct Context
+	{
+		QueryOptions options;
+		std::vector<double> out;
+	} context{ readQueryOptions( options ), {} };
+
+	b3World_CollideMover( worldId, origin, &mover, filter,
+		[]( b3ShapeId shapeId, const b3PlaneResult* planes, int planeCount, void* ctx ) -> bool
+		{
+			Context* c = static_cast<Context*>( ctx );
+			if ( c->options.skips( shapeId ) ) return true;
+			b3BodyId bodyId = b3Shape_GetBody( shapeId );
+			double bodyType = (double)b3Body_GetType( bodyId );
+			c->out.reserve( c->out.size() + (size_t)planeCount * kMoverPlaneStride );
+			for ( int i = 0; i < planeCount; ++i )
+			{
+				const b3PlaneResult& pr = planes[i];
+				pushShapeAndBody( c->out, shapeId, bodyId );
+				c->out.insert( c->out.end(), { bodyType, (double)pr.plane.normal.x, (double)pr.plane.normal.y,
+											   (double)pr.plane.normal.z, (double)pr.plane.offset, (double)pr.point.x,
+											   (double)pr.point.y, (double)pr.point.z } );
+			}
+			return true;
+		},
+		&context );
+	return toF64( context.out );
+}
+
+float castMoverFiltered( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3Vec3 translation, b3QueryFilter filter, val options )
+{
+	QueryOptions q = readQueryOptions( options );
+	return b3World_CastMover( worldId, origin, &mover, translation, filter,
+		[]( b3ShapeId shapeId, void* ctx ) -> bool { return static_cast<QueryOptions*>( ctx )->skips( shapeId ) == false; }, &q );
+}
+
+// Closest-hit cast state: 14 numbers when hit, shape id(3), body id(3), point(3), normal(3), fraction, spare 0.
+constexpr int kClosestHitStride = 14;
+
+struct ClosestHitContext
+{
+	QueryOptions options;
+	bool hit = false;
+	b3ShapeId shapeId = {};
+	b3Pos point = {};
+	b3Vec3 normal = {};
+	float fraction = 1.0f;
+};
+
+float closestHitCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* ctx )
+{
+	ClosestHitContext* c = static_cast<ClosestHitContext*>( ctx );
+	if ( c->options.skips( shapeId ) ) return -1.0f;
+	c->hit = true;
+	c->shapeId = shapeId;
+	c->point = point;
+	c->normal = normal;
+	c->fraction = fraction;
+	// clip the cast so only closer hits are reported from here on
+	return fraction;
+}
+
+val packClosestHit( const ClosestHitContext& c )
+{
+	std::vector<double> out;
+	if ( c.hit )
+	{
+		out.reserve( kClosestHitStride );
+		pushShapeAndBody( out, c.shapeId, b3Shape_GetBody( c.shapeId ) );
+		out.insert( out.end(), { (double)c.point.x, (double)c.point.y, (double)c.point.z, (double)c.normal.x, (double)c.normal.y,
+								 (double)c.normal.z, (double)c.fraction, 0.0 } );
+	}
+	return toF64( out );
+}
+
+val castRayClosestFiltered( b3WorldId worldId, b3Vec3 origin, b3Vec3 translation, b3QueryFilter filter, val options )
+{
+	ClosestHitContext c;
+	c.options = readQueryOptions( options );
+	b3World_CastRay( worldId, origin, translation, filter, closestHitCallback, &c );
+	return packClosestHit( c );
+}
+
+val castShapeClosestFiltered( b3WorldId worldId, b3Vec3 origin, val points, float radius, b3Vec3 translation, b3QueryFilter filter,
+							  val options )
+{
+	std::vector<float> f = convertJSArrayToNumberVector<float>( points );
+	b3ShapeProxy proxy{ reinterpret_cast<const b3Vec3*>( f.data() ), (int)( f.size() / 3 ), radius };
+	ClosestHitContext c;
+	c.options = readQueryOptions( options );
+	b3World_CastShape( worldId, origin, &proxy, translation, filter, closestHitCallback, &c );
+	return packClosestHit( c );
+}
+
 // --- shape hull swap ---
 // Bakes transform/scale into a fresh hull (as b3CreateTransformedHullShape does), swaps
 // it into the shape (the world keeps its own copy), and optionally recomputes the body
@@ -2318,6 +2474,14 @@ EMSCRIPTEN_BINDINGS( box3d )
 				{ val r = ( *static_cast<val*>( ctx ) )( shapeId ); return r.isUndefined() ? true : r.as<bool>(); },
 				&cb );
 		} );
+	// Natively filtered variants: b3QueryOptions skips ignored bodies/shapes and sensors inside the
+	// query, with no JS callback per candidate.
+	ret_function( "b3World_CollideMoverPacked(worldId, origin, mover, filter, options): Float64Array", &collideMoverPacked );
+	function( "b3World_CastMoverFiltered(worldId, origin, mover, translation, filter, options)", &castMoverFiltered );
+	ret_function( "b3World_CastRayClosestFiltered(worldId, origin, translation, filter, options): Float64Array",
+		&castRayClosestFiltered );
+	ret_function( "b3World_CastShapeClosestFiltered(worldId, origin, points, radius, translation, filter, options): Float64Array",
+		&castShapeClosestFiltered );
 	function( "b3World_CollideMover(worldId, origin, mover, filter, callback)", +[]( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, val cb )
 	{
 		b3World_CollideMover( worldId, origin, &mover, filter,

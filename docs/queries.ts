@@ -1,5 +1,5 @@
 import Box3D from 'box3d.js/inline';
-import type { Box3DModule, b3ShapeId, b3AABB, b3Vec3 } from 'box3d.js';
+import type { Box3DModule, b3ShapeId, b3AABB, b3Vec3, b3QueryOptions } from 'box3d.js';
 
 const b3: Box3DModule = await Box3D();
 const world = b3.b3CreateWorld(b3.b3DefaultWorldDef());
@@ -107,5 +107,31 @@ console.log(`${overlapHits.length} shapes overlapping proxy`);
 const customFilter = b3.b3DefaultQueryFilter();
 customFilter.maskBits = 1n; // only hit shapes in category 0x0001
 /* SNIPPET_END: query-filter */
+
+/* SNIPPET_START: filtered-queries */
+// Skip candidates natively instead of with a JS callback per shape: list bodies and shapes as
+// Int32Array (index1, world0, generation) triples, and/or drop sensors.
+const playerBody = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+const options: b3QueryOptions = {
+    ignoreBodies: new Int32Array([playerBody.index1, playerBody.world0, playerBody.generation]),
+    excludeSensors: true,
+};
+
+// Closest hit: empty array on a miss, else 14 numbers:
+// shape id (3), body id (3), point (3), normal (3), fraction, 0
+const hit = b3.b3World_CastRayClosestFiltered(world, origin, translation, filter, options);
+if (hit.length > 0) console.log('hit body', hit[3], 'at y', hit[7], 'fraction', hit[12]);
+const sweep = b3.b3World_CastShapeClosestFiltered(world, origin, [0, 0, 0], 0.25, translation, filter, options);
+
+// Character mover: the sweep fraction, and every plane in one array, 14 numbers each:
+// shape id (3), body id (3), body type, normal (3), offset, point (3, relative to origin)
+const capsule = { center1: [0, -0.5, 0] as b3Vec3, center2: [0, 0.5, 0] as b3Vec3, radius: 0.3 };
+const moveFraction = b3.b3World_CastMoverFiltered(world, origin, capsule, translation, filter, options);
+const planes = b3.b3World_CollideMoverPacked(world, origin, capsule, filter, null);
+for (let o = 0; o < planes.length; o += 14) {
+    const normal: b3Vec3 = [planes[o + 7], planes[o + 8], planes[o + 9]];
+    console.log('plane', normal, 'offset', planes[o + 10]);
+}
+/* SNIPPET_END: filtered-queries */
 
 b3.b3DestroyWorld(world);

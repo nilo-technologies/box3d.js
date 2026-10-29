@@ -1142,6 +1142,10 @@ interface EmbindModule {
   b3CreateDecompositionCompound(packed: b3ConvexDecomposition, material?: b3SurfaceMaterial): b3DecompositionCompound;
   b3CreateHeightField(heights: any, countX: number, countZ: number, scale: b3Vec3): b3HeightFieldData | null;
   b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, callback: any): number;
+  b3World_CollideMoverPacked(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
+  b3World_CastMoverFiltered(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): number;
+  b3World_CastRayClosestFiltered(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
+  b3World_CastShapeClosestFiltered(worldId: b3WorldId, origin: b3Vec3, points: Float32Array | number[], radius: number, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
   b3World_CollideMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, callback: any): void;
   b3SolvePlanes(targetDelta: b3Vec3, planes: any): b3PlaneSolverResult;
   b3ClipVector(vector: b3Vec3, planes: any): b3Vec3;
@@ -1177,6 +1181,10 @@ interface EmbindModule {
 }
 
 export interface ShapeIdBuffer { count: number; data: Int32Array; }
+/** Native candidate filter for the *Filtered / *Packed world queries. A shape is skipped when it or
+ * its body is listed (Int32Array of index1, world0, generation triples), or when it is a sensor and
+ * excludeSensors is set. No JS callback runs per candidate. */
+export interface b3QueryOptions { ignoreBodies?: Int32Array; ignoreShapes?: Int32Array; excludeSensors?: boolean; }
 export interface ContactBuffer {
   count: number;
   contactsI32: Int32Array;
