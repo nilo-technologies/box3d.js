@@ -1228,6 +1228,41 @@ function shapeEditing( b3 )
 	b3.b3DestroyWorld( world );
 }
 
+// b3ShapeDef.meshRestOffset: a box rests flush on a mesh with offset 0, and B3_MESH_REST_OFFSET (5 mm) above it by default.
+function meshRestOffset( b3 )
+{
+	const mesh = b3.b3CreateMesh(
+		new Float32Array( [ -10, 0, -10,  -10, 0, 10,  10, 0, 10,  10, 0, -10 ] ),
+		new Uint32Array( [ 0, 1, 2,  0, 2, 3 ] ),
+	);
+	const restHeight = ( offset ) =>
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -10, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const sd = b3.b3DefaultShapeDef();
+		if ( offset !== undefined ) sd.meshRestOffset = offset;
+		const floor = b3.b3CreateMeshShape( staticBody( b3, world ), sd, mesh, [ 1, 1, 1 ] );
+		const reported = b3.b3Shape_GetMeshRestOffset( floor );
+		const { body } = dynamicBox( b3, world, [ 0, 0.5, 0 ], 0.5 );
+		for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+		const y = b3.b3Body_GetPosition( [ 0, 0, 0 ], body )[ 1 ];
+		b3.b3Shape_SetMeshRestOffset( floor, 0.001 );
+		near( b3.b3Shape_GetMeshRestOffset( floor ), 0.001, 1e-7, 'SetMeshRestOffset round-trips' );
+		b3.b3DestroyWorld( world );
+		return { y, reported };
+	};
+
+	near( b3.b3DefaultShapeDef().meshRestOffset, 0.005, 1e-7, 'default mesh rest offset' );
+	const lifted = restHeight( undefined );
+	const flush = restHeight( 0 );
+	near( lifted.reported, 0.005, 1e-7, 'default offset reported' );
+	assert.equal( flush.reported, 0, 'zero offset reported' );
+	near( flush.y, 0.5, 0.00125, 'box rests flush on a zero offset mesh' );
+	near( lifted.y - flush.y, 0.005, 0.00125, 'default offset lifts the box by the rest offset' );
+	b3.b3DestroyMesh( mesh );
+}
+
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
 // determinism, live setters, the four example presets and a 50 car perf check.
 async function vehicleScenarios( b3 )
@@ -1674,6 +1709,7 @@ async function check( label, importPath, decompositionOptions )
 	constantForces( b3 );
 	distanceStiffness( b3 );
 	shapeEditing( b3 );
+	meshRestOffset( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
