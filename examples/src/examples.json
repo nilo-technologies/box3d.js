@@ -463,5 +463,20 @@
       "interactive",
       "offroad"
     ]
+  },
+  "example-vehicle-showcase": {
+    "title": "Vehicle: preset showcase",
+    "description": "45 presets to swap while driving: sports car, rally car and supercar, from 100% realistic to arcade, in FWD, RWD and AWD",
+    "tags": [
+      "vehicle",
+      "car",
+      "wheels",
+      "suspension",
+      "tire",
+      "drivetrain",
+      "interactive",
+      "presets",
+      "arcade"
+    ]
   }
 }

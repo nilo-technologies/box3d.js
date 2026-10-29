@@ -1,7 +1,8 @@
-// Shared driving demo used by the four vehicle examples: builds the world (paved track or
-// off-road terrain), the car visuals, a chase camera, the HUD, keyboard and gamepad input,
-// and the reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is
-// interpolated between steps for high refresh rate displays.
+// Shared driving demo used by the vehicle examples: builds the world (paved track or off-road
+// terrain), the car visuals, a chase camera, the HUD, keyboard and gamepad input, and the
+// reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is interpolated
+// between steps for high refresh rate displays. The car is built by spawnCar and can be
+// swapped for another preset while driving, which the showcase uses.
 
 import type {
 	Box3DModule,
@@ -9,6 +10,8 @@ import type {
 	b3Quat,
 	b3Vec3,
 	b3VehicleDef,
+	b3VehicleId,
+	b3VehicleWheelDef,
 	VehicleWheelRecord,
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -21,7 +24,11 @@ import {
 	type VehiclePresetName,
 	vehiclePresets,
 } from './vehicle-presets';
-import { createVehicleSettings } from './vehicle-settings';
+import {
+	createVehicleSettings,
+	type VehicleSettings,
+} from './vehicle-settings';
+import { addShowcase } from './vehicle-showcase';
 
 export type VehicleDemoOptions = {
 	preset: VehiclePresetName;
@@ -30,6 +37,8 @@ export type VehicleDemoOptions = {
 	color: number;
 	/** One line under the title */
 	blurb: string;
+	/** Adds the Preset folder and hotkeys that swap between the preset matrix cars */
+	showcase?: boolean;
 };
 
 const STEP = 1 / 60;
@@ -127,7 +136,9 @@ export async function runVehicleDemo(
 		return texture;
 	}
 
-	let spawn: b3Vec3 = [0, 1.4, 0];
+	/** Height of a fresh car's chassis above the ground (m) */
+	const spawnClearance = 1.5;
+	let spawn: b3Vec3 = [0, spawnClearance, 0];
 
 	function buildTrack(): void {
 		const size = 250;
@@ -366,7 +377,7 @@ export async function runVehicleDemo(
 				40,
 			);
 		}
-		spawn = [0, heightAt(0, 0) + 1.6, 0];
+		spawn = [0, heightAt(0, 0) + spawnClearance, 0];
 	}
 
 	if (options.terrain === 'track') buildTrack();
@@ -375,44 +386,6 @@ export async function runVehicleDemo(
 	// ---------------------------------------------------------------------------
 	// Vehicle
 	// ---------------------------------------------------------------------------
-
-	const preset = vehiclePresets[options.preset];
-	const [hx, hy, hz] = preset.halfExtents;
-	const bodyDef = b3.b3DefaultBodyDef();
-	bodyDef.type = b3.b3BodyType.b3_dynamicBody;
-	bodyDef.position = spawn;
-	const chassis = b3.b3CreateBody(world, bodyDef);
-	b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
-	hidden.add(chassis.index1);
-
-	const defaults: b3VehicleDef = createPresetVehicleDef(b3, options.preset);
-	const def = createPresetVehicleDef(b3, options.preset);
-	def.chassisId = chassis;
-	const vehicle = b3.b3CreateVehicle(world, def);
-	const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
-
-	// The settings panel edits the live vehicle, so anything drawn from its settings reads this
-	// cache instead of the preset. Reading them through embind builds a fresh object each time,
-	// so refresh a few times a second rather than every frame.
-	const live = {
-		maxRpm: defaults.engine.maxRpm,
-		manual: false,
-		tractionControl: false,
-		abs: false,
-		wheels: defaults.wheels.slice(0, wheelCount),
-	};
-	function refreshLive(): void {
-		live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
-		live.manual =
-			b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
-			b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
-		const assists = b3.b3Vehicle_GetAssists(vehicle);
-		live.tractionControl = assists.tractionControl;
-		live.abs = assists.abs;
-		for (let i = 0; i < wheelCount; i++)
-			live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
-	}
-	refreshLive();
 
 	const stateBuffer = b3.createVehicleStateBuffer();
 	const state = b3.createVehicleStateRecord();
@@ -423,22 +396,7 @@ export async function runVehicleDemo(
 	});
 	app.scene.add(worldRenderer.object3d);
 
-	const settings = createVehicleSettings(
-		app.gui,
-		b3,
-		vehicle,
-		defaults,
-		stateBuffer,
-	);
-
-	// ---- Car visuals
-	const car = new THREE.Group();
-	app.scene.add(car);
-	const paint = new THREE.MeshStandardMaterial({
-		color: options.color,
-		roughness: 0.35,
-		metalness: 0.3,
-	});
+	// Shared by every car, so swapping cars does not leak materials
 	const glass = new THREE.MeshStandardMaterial({
 		color: 0x1b2430,
 		roughness: 0.15,
@@ -448,44 +406,6 @@ export async function runVehicleDemo(
 		color: 0x18181a,
 		roughness: 0.8,
 	});
-	const addBox = (
-		w: number,
-		h: number,
-		d: number,
-		x: number,
-		y: number,
-		z: number,
-		m: THREE.Material,
-	) => {
-		const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-		mesh.position.set(x, y, z);
-		car.add(mesh);
-		return mesh;
-	};
-	addBox(hx * 2, hy * 2, hz * 2, 0, 0, 0, paint);
-	const offroad = options.preset === 'offroad';
-	const cabinLength = hz * (offroad ? 1.25 : 1.0);
-	const cabinHeight = offroad ? hy * 1.5 : hy * 1.6;
-	addBox(
-		hx * 1.75,
-		cabinHeight,
-		cabinLength,
-		0,
-		hy + cabinHeight / 2,
-		offroad ? -hz * 0.2 : -hz * 0.12,
-		glass,
-	);
-	addBox(
-		hx * 1.6,
-		0.05,
-		cabinLength * 0.9,
-		0,
-		hy + cabinHeight + 0.025,
-		offroad ? -hz * 0.2 : -hz * 0.12,
-		paint,
-	);
-	addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, hz + 0.02, trim);
-	addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, -hz - 0.02, trim);
 	const lamp = new THREE.MeshStandardMaterial({
 		color: 0xfff3c4,
 		emissive: 0xfff0b0,
@@ -496,10 +416,11 @@ export async function runVehicleDemo(
 		emissive: 0xff2010,
 		emissiveIntensity: 0.3,
 	});
-	for (const side of [-1, 1]) {
-		addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, hz + 0.01, lamp);
-		addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, -hz - 0.01, tail);
-	}
+	const rimMaterial = new THREE.MeshStandardMaterial({
+		color: 0xb8bcc2,
+		metalness: 0.8,
+		roughness: 0.3,
+	});
 
 	type WheelVisual = {
 		group: THREE.Group;
@@ -510,53 +431,211 @@ export async function runVehicleDemo(
 		localY: number;
 		initialized: boolean;
 	};
-	const wheelVisuals: WheelVisual[] = [];
-	for (let i = 0; i < wheelCount; i++) {
-		const w = defaults.wheels[i];
-		const group = new THREE.Group();
-		const tire = new THREE.MeshStandardMaterial({
-			color: 0x1c1c1c,
-			roughness: 0.9,
-		});
-		const tireMesh = new THREE.Mesh(
-			new THREE.CylinderGeometry(w.radius, w.radius, w.width, 28),
-			tire,
+
+	type Car = {
+		name: VehiclePresetName;
+		chassis: b3BodyId;
+		vehicle: b3VehicleId;
+		halfExtents: b3Vec3;
+		wheelCount: number;
+		settings: VehicleSettings;
+		group: THREE.Group;
+		wheelVisuals: WheelVisual[];
+		lastMark: (THREE.Vector3 | null)[];
+		/**
+		 * The settings panel edits the live vehicle, so anything drawn from its settings reads
+		 * this cache instead of the preset. Reading them through embind builds a fresh object
+		 * each time, so refresh a few times a second rather than every frame.
+		 */
+		live: {
+			maxRpm: number;
+			manual: boolean;
+			tractionControl: boolean;
+			abs: boolean;
+			wheels: b3VehicleWheelDef[];
+		};
+		refreshLive(): void;
+		destroy(): void;
+	};
+
+	/** Builds a car from a preset at a pose, with its visuals and settings panel */
+	function spawnCar(
+		name: VehiclePresetName,
+		color: number,
+		position: b3Vec3,
+		rotation: b3Quat = [0, 0, 0, 1],
+	): Car {
+		const preset = vehiclePresets[name];
+		const halfExtents = preset.halfExtents;
+		const [hx, hy, hz] = halfExtents;
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = position;
+		bodyDef.rotation = rotation;
+		const chassis = b3.b3CreateBody(world, bodyDef);
+		b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
+		hidden.add(chassis.index1);
+
+		const defaults: b3VehicleDef = createPresetVehicleDef(b3, name);
+		const def = createPresetVehicleDef(b3, name);
+		def.chassisId = chassis;
+		const vehicle = b3.b3CreateVehicle(world, def);
+		const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
+
+		const live: Car['live'] = {
+			maxRpm: defaults.engine.maxRpm,
+			manual: false,
+			tractionControl: false,
+			abs: false,
+			wheels: defaults.wheels.slice(0, wheelCount),
+		};
+		function refreshLive(): void {
+			live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
+			live.manual =
+				b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
+				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
+			const assists = b3.b3Vehicle_GetAssists(vehicle);
+			live.tractionControl = assists.tractionControl;
+			live.abs = assists.abs;
+			for (let i = 0; i < wheelCount; i++)
+				live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
+		}
+		refreshLive();
+
+		const settings = createVehicleSettings(
+			app.gui,
+			b3,
+			vehicle,
+			defaults,
+			stateBuffer,
 		);
-		tireMesh.rotation.z = Math.PI / 2;
-		group.add(tireMesh);
-		const rimMaterial = new THREE.MeshStandardMaterial({
-			color: 0xb8bcc2,
-			metalness: 0.8,
-			roughness: 0.3,
+
+		// ---- Car visuals
+		const group = new THREE.Group();
+		app.scene.add(group);
+		const paint = new THREE.MeshStandardMaterial({
+			color,
+			roughness: 0.35,
+			metalness: 0.3,
 		});
-		const rim = new THREE.Mesh(
-			new THREE.CylinderGeometry(
+		const geometries: THREE.BufferGeometry[] = [];
+		const tires: THREE.Material[] = [paint];
+		const addBox = (
+			w: number,
+			h: number,
+			d: number,
+			x: number,
+			y: number,
+			z: number,
+			m: THREE.Material,
+		) => {
+			const geometry = new THREE.BoxGeometry(w, h, d);
+			geometries.push(geometry);
+			const mesh = new THREE.Mesh(geometry, m);
+			mesh.position.set(x, y, z);
+			group.add(mesh);
+			return mesh;
+		};
+		addBox(hx * 2, hy * 2, hz * 2, 0, 0, 0, paint);
+		const offroad = name === 'offroad';
+		const cabinLength = hz * (offroad ? 1.25 : 1.0);
+		const cabinHeight = offroad ? hy * 1.5 : hy * 1.6;
+		addBox(
+			hx * 1.75,
+			cabinHeight,
+			cabinLength,
+			0,
+			hy + cabinHeight / 2,
+			offroad ? -hz * 0.2 : -hz * 0.12,
+			glass,
+		);
+		addBox(
+			hx * 1.6,
+			0.05,
+			cabinLength * 0.9,
+			0,
+			hy + cabinHeight + 0.025,
+			offroad ? -hz * 0.2 : -hz * 0.12,
+			paint,
+		);
+		addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, hz + 0.02, trim);
+		addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, -hz - 0.02, trim);
+		for (const side of [-1, 1]) {
+			addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, hz + 0.01, lamp);
+			addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, -hz - 0.01, tail);
+		}
+
+		const wheelVisuals: WheelVisual[] = [];
+		for (let i = 0; i < wheelCount; i++) {
+			const w = defaults.wheels[i];
+			const wheelGroup = new THREE.Group();
+			const tire = new THREE.MeshStandardMaterial({
+				color: 0x1c1c1c,
+				roughness: 0.9,
+			});
+			tires.push(tire);
+			const tireGeometry = new THREE.CylinderGeometry(
+				w.radius,
+				w.radius,
+				w.width,
+				28,
+			);
+			const tireMesh = new THREE.Mesh(tireGeometry, tire);
+			tireMesh.rotation.z = Math.PI / 2;
+			wheelGroup.add(tireMesh);
+			const rimGeometry = new THREE.CylinderGeometry(
 				w.radius * 0.62,
 				w.radius * 0.62,
 				w.width * 1.04,
 				20,
-			),
-			rimMaterial,
-		);
-		rim.rotation.z = Math.PI / 2;
-		group.add(rim);
-		for (let s = 0; s < 3; s++) {
-			const spoke = new THREE.Mesh(
-				new THREE.BoxGeometry(w.width * 1.08, w.radius * 1.15, w.radius * 0.16),
-				trim,
 			);
-			spoke.rotation.x = (s * Math.PI) / 3;
-			group.add(spoke);
+			const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+			rim.rotation.z = Math.PI / 2;
+			wheelGroup.add(rim);
+			const spokeGeometry = new THREE.BoxGeometry(
+				w.width * 1.08,
+				w.radius * 1.15,
+				w.radius * 0.16,
+			);
+			geometries.push(tireGeometry, rimGeometry, spokeGeometry);
+			for (let s = 0; s < 3; s++) {
+				const spoke = new THREE.Mesh(spokeGeometry, trim);
+				spoke.rotation.x = (s * Math.PI) / 3;
+				wheelGroup.add(spoke);
+			}
+			group.add(wheelGroup);
+			wheelVisuals.push({
+				group: wheelGroup,
+				tire,
+				radius: w.radius,
+				width: w.width,
+				localY: 0,
+				initialized: false,
+			});
 		}
-		car.add(group);
-		wheelVisuals.push({
+
+		return {
+			name,
+			chassis,
+			vehicle,
+			halfExtents,
+			wheelCount,
+			settings,
 			group,
-			tire,
-			radius: w.radius,
-			width: w.width,
-			localY: 0,
-			initialized: false,
-		});
+			wheelVisuals,
+			lastMark: new Array(wheelCount).fill(null),
+			live,
+			refreshLive,
+			destroy() {
+				settings.destroy();
+				// Destroying the chassis destroys the vehicle with it
+				hidden.delete(chassis.index1);
+				b3.b3DestroyBody(chassis);
+				app.scene.remove(group);
+				for (const geometry of geometries) geometry.dispose();
+				for (const material of tires) material.dispose();
+			},
+		};
 	}
 
 	// ---- Skid marks: instanced quads dropped under sliding tires
@@ -576,7 +655,6 @@ export async function runVehicleDemo(
 	marks.renderOrder = 1;
 	app.scene.add(marks);
 	let markCursor = 0;
-	const lastMark: (THREE.Vector3 | null)[] = new Array(wheelCount).fill(null);
 	const markMatrix = new THREE.Matrix4();
 	const markQuat = new THREE.Quaternion();
 	const markScale = new THREE.Vector3();
@@ -587,6 +665,7 @@ export async function runVehicleDemo(
 	const tangentQuat = new THREE.Quaternion();
 
 	function addMark(
+		lastMark: (THREE.Vector3 | null)[],
 		i: number,
 		point: THREE.Vector3,
 		n: THREE.Vector3,
@@ -617,6 +696,8 @@ export async function runVehicleDemo(
 		last.copy(point);
 	}
 
+	let car = spawnCar(options.preset, options.color, spawn);
+
 	// ---------------------------------------------------------------------------
 	// Input
 	// ---------------------------------------------------------------------------
@@ -631,6 +712,7 @@ export async function runVehicleDemo(
 	]);
 	window.addEventListener('keydown', (e) => {
 		if (e.target instanceof HTMLInputElement) return;
+		if (e.target instanceof HTMLSelectElement) return;
 		if (driveKeys.has(e.code)) e.preventDefault();
 		if (!e.repeat) onPress(e.code);
 		keys.add(e.code);
@@ -638,48 +720,88 @@ export async function runVehicleDemo(
 	window.addEventListener('keyup', (e) => keys.delete(e.code));
 	window.addEventListener('blur', () => keys.clear());
 
-	const isManual = () => live.manual;
+	const isManual = () => car.live.manual;
 
 	function setManual(manual: boolean): void {
-		const transmission = b3.b3Vehicle_GetTransmission(vehicle);
+		const transmission = b3.b3Vehicle_GetTransmission(car.vehicle);
 		transmission.mode = manual
 			? b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual
 			: b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto;
-		b3.b3Vehicle_SetTransmission(vehicle, transmission);
-		settings.sync();
-		refreshLive();
+		b3.b3Vehicle_SetTransmission(car.vehicle, transmission);
+		car.settings.sync();
+		car.refreshLive();
 	}
 
 	function shift(delta: number): void {
 		if (!isManual()) setManual(true);
-		const gearCount = b3.b3Vehicle_GetTransmission(vehicle).gearCount;
-		const gear = b3.b3Vehicle_GetState(vehicle).gear;
+		const gearCount = b3.b3Vehicle_GetTransmission(car.vehicle).gearCount;
+		const gear = b3.b3Vehicle_GetState(car.vehicle).gear;
 		b3.b3Vehicle_SetGear(
-			vehicle,
+			car.vehicle,
 			Math.min(Math.max(gear + delta, -1), gearCount),
 		);
 	}
 
-	function resetCar(toSpawn: boolean): void {
-		const [p, q] = b3.b3Body_GetTransform([0, 0, 0], [0, 0, 0, 1], chassis);
+	/** Yaw of the car's heading, 0 along +z */
+	function carYaw(): number {
+		const q = b3.b3Body_GetRotation([0, 0, 0, 1], car.chassis);
 		const fx = 2 * (q[0] * q[2] + q[3] * q[1]);
 		const fz = 1 - 2 * (q[0] * q[0] + q[1] * q[1]);
-		const yaw = toSpawn ? 0 : Math.atan2(fx, fz);
-		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
-		b3.b3Vehicle_Reset(vehicle, position, quatFromAxisAngle([0, 1, 0], yaw));
-		lastMark.fill(null);
-		for (const w of wheelVisuals) w.initialized = false;
+		return Math.atan2(fx, fz);
+	}
+
+	function clearTrail(): void {
+		car.lastMark.fill(null);
+		for (const w of car.wheelVisuals) w.initialized = false;
 		readPose();
 		prevPos.copy(currPos);
 		prevQuat.copy(currQuat);
 	}
 
+	function resetCar(toSpawn: boolean): void {
+		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
+		const yaw = toSpawn ? 0 : carYaw();
+		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
+		b3.b3Vehicle_Reset(
+			car.vehicle,
+			position,
+			quatFromAxisAngle([0, 1, 0], yaw),
+		);
+		clearTrail();
+	}
+
+	/** Replaces the car with another preset, upright and at rest where the old one was */
+	function swapCar(name: VehiclePresetName, color: number): void {
+		if (name === car.name) return;
+		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
+		const rotation = quatFromAxisAngle([0, 1, 0], carYaw());
+		car.destroy();
+		// Spawn at the start height above the ground under the old car, so quick swaps while it
+		// is airborne do not stack it ever higher
+		const ray = b3.b3World_CastRayClosest(
+			world,
+			[p[0], p[1] + 2, p[2]],
+			[0, -60, 0],
+			b3.b3DefaultQueryFilter(),
+		);
+		const groundY = ray.hit ? ray.point[1] : p[1];
+		car = spawnCar(
+			name,
+			color,
+			[p[0], groundY + spawnClearance, p[2]],
+			rotation,
+		);
+		clearTrail();
+	}
+
+	const pressHandlers = new Map<string, () => void>();
 	function onPress(code: string): void {
 		if (code === 'KeyE') shift(1);
 		else if (code === 'KeyQ') shift(-1);
 		else if (code === 'KeyM') setManual(!isManual());
 		else if (code === 'KeyR') resetCar(false);
 		else if (code === 'KeyT') resetCar(true);
+		else pressHandlers.get(code)?.();
 	}
 
 	const padPrev: boolean[] = [];
@@ -721,12 +843,17 @@ export async function runVehicleDemo(
 	// HUD
 	// ---------------------------------------------------------------------------
 
+	const controlsHelp =
+		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
+		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · gamepad works too';
 	const info = document.createElement('div');
 	info.className = 'overlay';
-	info.innerHTML =
-		`<b>${preset.title}</b><br>${options.blurb}<br>` +
-		'<span style="opacity:.75">W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
-		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · gamepad works too</span>';
+	function setInfo(title: string, blurb: string, extra = ''): void {
+		info.innerHTML =
+			`<b>${title}</b><br>${blurb}<br>` +
+			`<span style="opacity:.75">${controlsHelp}${extra}</span>`;
+	}
+	setInfo(vehiclePresets[options.preset].title, options.blurb);
 	document.body.appendChild(info);
 
 	const hud = document.createElement('div');
@@ -749,17 +876,29 @@ export async function runVehicleDemo(
 		hudSpeed.textContent = Math.abs(state.speed * 3.6).toFixed(0);
 		hudGear.textContent =
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
-		const rpm = Math.min(state.engineRpm / live.maxRpm, 1);
+		const rpm = Math.min(state.engineRpm / car.live.maxRpm, 1);
 		hudRpm.style.width = `${(rpm * 100).toFixed(1)}%`;
 		hudRpm.style.background = rpm > 0.9 ? '#ff6b6b' : '#4d96ff';
 		const flags = [
 			isManual() ? 'MANUAL' : 'AUTO',
 			`${state.engineRpm.toFixed(0)} rpm`,
-			live.tractionControl ? 'TC' : '',
-			live.abs ? 'ABS' : '',
+			car.live.tractionControl ? 'TC' : '',
+			car.live.abs ? 'ABS' : '',
 			state.stuck ? 'stuck: press R' : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
+	}
+
+	if (options.showcase) {
+		addShowcase({
+			gui: app.gui,
+			b3,
+			terrain: options.terrain,
+			current: () => car,
+			swap: (name, color) => swapCar(name, color),
+			setInfo,
+			onPress: pressHandlers,
+		});
 	}
 
 	// ---------------------------------------------------------------------------
@@ -774,7 +913,7 @@ export async function runVehicleDemo(
 	const scratchQuat: b3Quat = [0, 0, 0, 1];
 
 	function readPose(): void {
-		b3.b3Body_GetTransform(scratchPos, scratchQuat, chassis);
+		b3.b3Body_GetTransform(scratchPos, scratchQuat, car.chassis);
 		currPos.set(scratchPos[0], scratchPos[1], scratchPos[2]);
 		currQuat.set(
 			scratchQuat[0],
@@ -782,7 +921,7 @@ export async function runVehicleDemo(
 			scratchQuat[2],
 			scratchQuat[3],
 		);
-		b3.getVehicleStateData(stateBuffer, vehicle);
+		b3.getVehicleStateData(stateBuffer, car.vehicle);
 		b3.getVehicleStateAt(state, stateBuffer);
 	}
 	readPose();
@@ -801,8 +940,6 @@ export async function runVehicleDemo(
 	const slipColor = new THREE.Color();
 	const tireBase = new THREE.Color(0x1c1c1c);
 	const tireHot = new THREE.Color(0xff5a1f);
-	const camDistance = hz * 2 + 4.5;
-	const camHeight = hy + (offroad ? 2.6 : 2.0);
 
 	let accumulator = 0;
 	let telemetryTimer = 0;
@@ -815,7 +952,7 @@ export async function runVehicleDemo(
 			while (accumulator >= STEP && steps < 4) {
 				prevPos.copy(currPos);
 				prevQuat.copy(currQuat);
-				b3.b3Vehicle_SetInput(vehicle, input);
+				b3.b3Vehicle_SetInput(car.vehicle, input);
 				b3.b3World_Step(world, STEP, SUBSTEPS);
 				readPose();
 				accumulator -= STEP;
@@ -829,16 +966,16 @@ export async function runVehicleDemo(
 		const alpha = accumulator / STEP;
 		renderPos.lerpVectors(prevPos, currPos, alpha);
 		renderQuat.slerpQuaternions(prevQuat, currQuat, alpha);
-		car.position.copy(renderPos);
-		car.quaternion.copy(renderQuat);
+		car.group.position.copy(renderPos);
+		car.group.quaternion.copy(renderQuat);
 
 		// Wheels in chassis space, with the suspension travel smoothed so debris does not
 		// make them jitter
 		invQuat.copy(currQuat).invert();
 		const smoothing = 1 - Math.exp(-dt * 35);
-		for (let i = 0; i < wheelCount; i++) {
+		for (let i = 0; i < car.wheelCount; i++) {
 			b3.getVehicleWheelAt(wheelRecord, stateBuffer, i);
-			const visual = wheelVisuals[i];
+			const visual = car.wheelVisuals[i];
 			const p = wheelRecord.position;
 			const q = wheelRecord.rotation;
 			wheelPos.set(p[0], p[1], p[2]).sub(currPos).applyQuaternion(invQuat);
@@ -851,7 +988,7 @@ export async function runVehicleDemo(
 			visual.group.position.set(wheelPos.x, visual.localY, wheelPos.z);
 			visual.group.quaternion.copy(wheelQuat);
 
-			const wheelDef = live.wheels[i];
+			const wheelDef = car.live.wheels[i];
 			visual.group.scale.set(
 				wheelDef.width / visual.width,
 				wheelDef.radius / visual.radius,
@@ -873,13 +1010,16 @@ export async function runVehicleDemo(
 				const n = wheelRecord.contactNormal;
 				contact.set(c[0], c[1], c[2]);
 				normal.set(n[0], n[1], n[2]);
-				addMark(i, contact, normal, wheelDef.width);
+				addMark(car.lastMark, i, contact, normal, wheelDef.width);
 			} else {
-				lastMark[i] = null;
+				car.lastMark[i] = null;
 			}
 		}
 
 		// Chase camera behind the car, flattened to the horizon
+		const [, hy, hz] = car.halfExtents;
+		const camDistance = hz * 2 + 4.5;
+		const camHeight = hy + (car.name === 'offroad' ? 2.6 : 2.0);
 		forward.set(0, 0, 1).applyQuaternion(renderQuat);
 		forward.y = 0;
 		if (forward.lengthSq() < 1e-4) forward.set(0, 0, 1);
@@ -902,8 +1042,8 @@ export async function runVehicleDemo(
 		telemetryTimer += dt;
 		if (telemetryTimer > 0.1) {
 			telemetryTimer = 0;
-			settings.update();
-			refreshLive();
+			car.settings.update();
+			car.refreshLive();
 		}
 	});
 	app.start();

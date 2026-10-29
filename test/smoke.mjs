@@ -706,10 +706,12 @@ function debugDraw( b3 )
 }
 
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
-// determinism, live setters, the four example presets and a 50 car perf check.
+// determinism, live setters, the example presets (the four originals and the 45 car matrix),
+// the preset layers, and a 50 car perf check.
 async function vehicleScenarios( b3 )
 {
-	const { vehiclePresets, createPresetVehicleDef } = await import( '../examples/src/vehicle-presets.js' );
+	const { vehiclePresets, createPresetVehicleDef, realismLevels, vehicleCars, drivetrainLayers, buildVehiclePreset } =
+		await import( '../examples/src/vehicle-presets.js' );
 	const dt = 1 / 60;
 
 	function axisAngle( axis, angle )
@@ -960,6 +962,43 @@ async function vehicleScenarios( b3 )
 		b3.b3DestroyWorld( world );
 	}
 
+	// Preset layers: the realism tables only ever move toward arcade, torque shares add up, and
+	// each layer changes what it says it changes
+	{
+		const order = [ 100, 75, 50, 25, 0 ];
+		const rising = [ 'tireGrip', 'rollInfluence', 'counterSteer', 'downforceScale', 'comDrop', 'selfRighting', 'airControl' ];
+		for ( let i = 1; i < order.length; i++ )
+		{
+			const a = realismLevels[ order[ i - 1 ] ];
+			const b = realismLevels[ order[ i ] ];
+			for ( const key of rising ) assert.ok( b[ key ] >= a[ key ], `realism ${order[ i ]}: ${key} does not fall` );
+			assert.ok( b.driftGripScale <= a.driftGripScale, `realism ${order[ i ]}: drift grip does not rise` );
+		}
+		assert.equal( Object.keys( vehiclePresets ).length, 4 + 45, '4 original presets and 45 matrix presets' );
+		for ( const car of Object.keys( vehicleCars ) )
+		{
+			for ( const drive of Object.keys( drivetrainLayers ) )
+			{
+				const real = buildVehiclePreset( b3, car, 100, drive );
+				const arcade = buildVehiclePreset( b3, car, 0, drive );
+				const shares = real.drivetrain.differentials.slice( 0, real.drivetrain.differentialCount );
+				const sum = shares.reduce( ( total, d ) => total + d.torqueRatio, 0 );
+				assert.ok( Math.abs( sum - 1 ) < 1e-6, `${car} ${drive}: torque shares add to 1` );
+				const driven = new Set( shares.flatMap( ( d ) => [ d.leftWheel, d.rightWheel ] ) );
+				const expected = { fwd: [ 0, 1 ], rwd: [ 2, 3 ], awd: [ 0, 1, 2, 3 ] }[ drive ];
+				assert.deepEqual( [ ...driven ].sort(), expected, `${car} ${drive}: drives the right wheels` );
+				assert.equal( real.chassis.mass, vehicleCars[ car ].mass, `${car} ${drive}: car mass` );
+				const ratio = arcade.wheels[ 0 ].tire.lateralPeakFriction / real.wheels[ 0 ].tire.lateralPeakFriction;
+				assert.ok( Math.abs( ratio - realismLevels[ 0 ].tireGrip ) < 1e-5, `${car} ${drive}: arcade grip scale` );
+				assert.ok( arcade.chassis.centerOfMassOffset[ 1 ] < real.chassis.centerOfMassOffset[ 1 ], `${car} ${drive}: arcade center of mass is lower` );
+				// A preset is a pure function of its name
+				assert.deepEqual( JSON.stringify( real, ( _, v ) => typeof v === 'bigint' ? String( v ) : v ),
+					JSON.stringify( createPresetVehicleDef( b3, `${car}-100-${drive}` ), ( _, v ) => typeof v === 'bigint' ? String( v ) : v ),
+					`${car} ${drive}: presets are reproducible` );
+			}
+		}
+	}
+
 	// 50 cars driving in circles cost under 1 ms per step
 	{
 		const world = createWorld();
@@ -1151,7 +1190,10 @@ async function check( label, importPath, decompositionOptions )
 	triangleCollision( b3 );
 
 	const vehicle = await vehicleScenarios( b3 );
-	const presets = Object.entries( vehicle.presets ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' );
+	const runs = Object.entries( vehicle.presets );
+	const matrix = runs.filter( ( [ name ] ) => name.includes( '-' ) ).map( ( [ , t ] ) => t );
+	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
+		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );

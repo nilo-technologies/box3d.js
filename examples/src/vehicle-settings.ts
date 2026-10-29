@@ -27,6 +27,8 @@ export type VehicleSettings = {
 	reset(): void;
 	/** Re-read the live settings after changing them outside the panel */
 	sync(): void;
+	/** Remove the panel, for example before destroying the vehicle */
+	destroy(): void;
 };
 
 const toDeg = 180 / Math.PI;
@@ -835,5 +837,5 @@ export function createVehicleSettings(
 
 	applyTips(root);
 
-	return { update, reset, sync };
+	return { update, reset, sync, destroy: () => root.destroy() };
 }
