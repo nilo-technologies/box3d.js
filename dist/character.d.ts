@@ -96,7 +96,9 @@ export class DynamicMover {
 	pogoCompressionScale: number;
 	pogoTensionScale: number;
 	enableSkirtPogo: boolean;
-	platformMaterialId: bigint;
+	/** Numbers are converted to bigint on assignment. */
+	get platformMaterialId(): bigint;
+	set platformMaterialId(id: bigint | number);
 	/** Surfaces steeper than this are not ground. Default 0.7. */
 	minGroundNormalY: number;
 	/** Seconds the ground force takes to fade on a surface too steep to walk. Default 0.2. */
@@ -132,14 +134,16 @@ export class DynamicMover {
 	/** Index of the probe the pogo used. */
 	readonly selectedProbe: number;
 
-	/** Call once per step, before b3World_Step. throttle is [forward, right], each on [-1, 1]. */
+	/** Call once per step, before b3World_Step. throttle is [forward, right], each on [-1, 1].
+	 * Does nothing after destroy(). */
 	update(timeStep: number, forward: b3Vec3, right: b3Vec3, throttle: readonly [number, number], speedScale?: number): void;
-	/** Jump if grounded. Returns false when airborne. */
+	/** Jump if grounded. Returns false when airborne or destroyed. */
 	jump(): boolean;
 	/** Release the ground so an external impulse can carry the mover into the air. */
 	launch(): void;
 	/** Gravity scale also sizes the pogo forces, so change it here. */
 	setGravityScale(gravityScale: number): void;
-	/** Destroys the mover body and its anchor. Joints go with them. */
+	/** Destroys the mover body and its anchor. Joints go with them. update() and jump() do
+	 * nothing afterwards. */
 	destroy(): void;
 }

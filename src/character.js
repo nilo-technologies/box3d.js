@@ -127,7 +127,7 @@ export class DynamicMover
 		// rail, or step off the foot of a steep slope.
 		this.enableSkirtPogo = d.enableSkirtPogo;
 		// Kinematic bodies whose shapes use this user material id carry the mover along.
-		this.platformMaterialId = BigInt( d.platformMaterialId );
+		this.platformMaterialId = d.platformMaterialId;
 		// Surfaces steeper than this are not ground.
 		this.minGroundNormalY = 0.7;
 		this.slideDuration = 0.2;
@@ -247,7 +247,12 @@ export class DynamicMover
 		this.moverJointId = b3.b3CreateMoverJoint( this.worldId, moverDef );
 	}
 
-	/** Destroys the mover body and its anchor. Joints go with them. */
+	// Compared against ray hits' bigint userMaterialId, so numbers are converted on assignment.
+	get platformMaterialId() { return this._platformMaterialId; }
+	set platformMaterialId( id ) { this._platformMaterialId = BigInt( id ); }
+
+	/** Destroys the mover body and its anchor. Joints go with them. update() and jump()
+	 * do nothing afterwards. */
 	destroy()
 	{
 		const b3 = this.b3;
@@ -272,7 +277,7 @@ export class DynamicMover
 	/** Jump if grounded. Returns false when airborne. */
 	jump()
 	{
-		if ( this.onGround === false || this.walkable === false ) return false;
+		if ( isNonNull( this.bodyId ) === false || this.onGround === false || this.walkable === false ) return false;
 
 		const b3 = this.b3;
 		let surfaceVelocity = 0;
@@ -317,6 +322,8 @@ export class DynamicMover
 	 */
 	update( timeStep, forward, right, throttle, speedScale = 1 )
 	{
+		if ( isNonNull( this.bodyId ) === false ) return;
+
 		const b3 = this.b3;
 		const capsule = this.capsule;
 

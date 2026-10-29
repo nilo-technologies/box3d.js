@@ -248,39 +248,30 @@ interface MovingPlatform {
 	path: (t: number, out: b3Vec3) => void;
 }
 const platforms: MovingPlatform[] = [];
+// A 0.2 m thick slab tagged with PLATFORM_MATERIAL that follows `path`.
 function kinematicPlatform(
 	position: b3Vec3,
+	hx: number,
+	hz: number,
 	path: MovingPlatform['path'],
-	make: (b: b3BodyId) => void,
-): b3BodyId {
+): void {
 	const b = body('kinematic', position);
-	make(b);
-	platforms.push({ body: b, path });
-	return b;
-}
-const slab = (hx: number, hz: number) => (b: b3BodyId) =>
 	b3.b3CreateBoxShape(b, shapeDef(1, true), hx, 0.1, hz);
+	platforms.push({ body: b, path });
+}
 
 // slider: back and forth along x
-kinematicPlatform(
-	[11, 0.25, 5],
-	(t, out) => {
-		out[0] = 11 + 3 * Math.sin(0.5 * t);
-		out[1] = 0.25;
-		out[2] = 5;
-	},
-	slab(1.5, 1.5),
-);
+kinematicPlatform([11, 0.25, 5], 1.5, 1.5, (t, out) => {
+	out[0] = 11 + 3 * Math.sin(0.5 * t);
+	out[1] = 0.25;
+	out[2] = 5;
+});
 // elevator: from the ground up to a 3.3 m deck
-kinematicPlatform(
-	[18, 0.25, 5],
-	(t, out) => {
-		out[0] = 18;
-		out[1] = 0.25 + 1.5 * (1 - Math.cos(0.4 * t));
-		out[2] = 5;
-	},
-	slab(1.5, 1.5),
-);
+kinematicPlatform([18, 0.25, 5], 1.5, 1.5, (t, out) => {
+	out[0] = 18;
+	out[1] = 0.25 + 1.5 * (1 - Math.cos(0.4 * t));
+	out[2] = 5;
+});
 staticBox(21.5, 1.65, 5, 2, 1.65, 2);
 // sweeper: a spinning arm at waist height. It isn't a platform: the mover is a dynamic
 // body, so the arm shoves it aside unless you jump over. (The mover joint matches a
@@ -293,15 +284,11 @@ staticBox(21.5, 1.65, 5, 2, 1.65, 2);
 	b3.b3Body_SetAngularVelocity(sweeper, [0, 0.9, 0]);
 }
 // ferry: a loop that rises and falls
-kinematicPlatform(
-	[19, 0.25, 15],
-	(t, out) => {
-		out[0] = 19 + 2.5 * Math.cos(0.35 * t);
-		out[1] = 0.25 + 0.8 * (1 - Math.cos(0.7 * t));
-		out[2] = 15 + 4 * Math.sin(0.35 * t);
-	},
-	slab(1.3, 1.3),
-);
+kinematicPlatform([19, 0.25, 15], 1.3, 1.3, (t, out) => {
+	out[0] = 19 + 2.5 * Math.cos(0.35 * t);
+	out[1] = 0.25 + 0.8 * (1 - Math.cos(0.7 * t));
+	out[2] = 15 + 4 * Math.sin(0.35 * t);
+});
 
 // ---------------------------------------------------------------------------
 // Character
@@ -404,6 +391,8 @@ window.addEventListener('keydown', (e) => {
 	keys.add(key);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+// A key released while the window is unfocused never sends keyup.
+window.addEventListener('blur', () => keys.clear());
 
 const TIME_STEP = 1 / 60;
 const position: b3Vec3 = [0, 0, 0];
@@ -415,10 +404,9 @@ const right: b3Vec3 = [0, 0, 0];
 const throttle: [number, number] = [0, 0];
 let jumpReleased = true;
 let elapsed = 0;
+let accumulator = 0;
 
-app.onFrame(() => {
-	elapsed += TIME_STEP;
-
+app.onFrame((dt) => {
 	// camera-relative movement basis, flattened to the ground
 	app.camera.getWorldDirection(camDir);
 	camDir.y = 0;
@@ -431,29 +419,37 @@ app.onFrame(() => {
 	throttle[0] = (keys.has('w') ? 1 : 0) - (keys.has('s') ? 1 : 0);
 	throttle[1] = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
 
+	// Fixed 60 Hz steps for the real frame time, so the speed doesn't depend on the
+	// display's refresh rate. The harness clamps dt to 1/30, so at most two per frame.
+	accumulator += dt;
 	app.step(() => {
-		// kinematic platforms follow their paths by target transform, so contacts and
-		// the mover joint see their velocity.
-		for (const m of platforms) {
-			m.path(elapsed, target.position);
-			b3.b3Body_SetTargetTransform(m.body, target, TIME_STEP, true);
-		}
+		while (accumulator >= TIME_STEP) {
+			accumulator -= TIME_STEP;
+			elapsed += TIME_STEP;
 
-		// jumping again needs a fresh press
-		if (keys.has(' ')) {
-			if (jumpReleased && mover.jump()) jumpReleased = false;
-		} else {
-			jumpReleased = true;
-		}
+			// kinematic platforms follow their paths by target transform, so contacts and
+			// the mover joint see their velocity.
+			for (const m of platforms) {
+				m.path(elapsed, target.position);
+				b3.b3Body_SetTargetTransform(m.body, target, TIME_STEP, true);
+			}
 
-		mover.update(
-			TIME_STEP,
-			forward,
-			right,
-			throttle,
-			keys.has('shift') ? 1.5 : 1,
-		);
-		b3.b3World_Step(world, TIME_STEP, 4);
+			// jumping again needs a fresh press
+			if (keys.has(' ')) {
+				if (jumpReleased && mover.jump()) jumpReleased = false;
+			} else {
+				jumpReleased = true;
+			}
+
+			mover.update(
+				TIME_STEP,
+				forward,
+				right,
+				throttle,
+				keys.has('shift') ? 1.5 : 1,
+			);
+			b3.b3World_Step(world, TIME_STEP, 4);
+		}
 	});
 
 	renderer.update();

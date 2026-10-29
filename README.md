@@ -1177,12 +1177,20 @@ if (rayResult.hit) {
 
 ```ts
 // Collect every hit along a ray via callback (called once per shape, unordered).
-// Return false from the callback to stop traversal early.
+// The callback gets the hit point, normal, fraction and the shape's userMaterialId
+// (a bigint). Return 1 to keep going, the fraction to clip the ray there, -1 to
+// ignore this shape, or 0 to stop.
 const hits: b3ShapeId[] = [];
-b3.b3World_CastRay(world, origin, translation, filter, (shapeId: b3ShapeId, _fraction: number, _normal: unknown) => {
-    hits.push(shapeId);
-    return true;
-});
+b3.b3World_CastRay(
+    world,
+    origin,
+    translation,
+    filter,
+    (shapeId: b3ShapeId, _point: b3Vec3, _normal: b3Vec3, _fraction: number, _userMaterialId: bigint) => {
+        hits.push(shapeId);
+        return 1;
+    },
+);
 console.log(`ray hit ${hits.length} shapes`);
 ```
 
@@ -1193,8 +1201,9 @@ Sweep a sphere proxy through the world and find the closest hit.
 ```ts
 // Sweep a convex proxy through the world and find the closest hit (shapecast).
 // The proxy is a flat [x,y,z, ...] array of points; convexRadius rounds the edges.
-// The callback returns the current best fraction -- return a smaller value to narrow
-// the search, or Infinity to collect all hits.
+// The callback gets the same arguments as b3World_CastRay's (shape, point, normal,
+// fraction, userMaterialId) and returns the current best fraction -- return a smaller
+// value to narrow the search, or Infinity to collect all hits.
 const halfE = 0.3;
 const boxProxy = [
     -halfE, -halfE, -halfE,  halfE, -halfE, -halfE,

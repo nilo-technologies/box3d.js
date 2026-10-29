@@ -709,15 +709,11 @@ function debugDraw( b3 )
 function dynamicMover( b3 )
 {
 	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
-	const staticBox = ( x, y, z, hx, hy, hz, material ) =>
+	const staticBox = ( x, y, z, hx, hy, hz ) =>
 	{
 		const def = b3.b3DefaultBodyDef();
 		def.position = [ x, y, z ];
-		const body = b3.b3CreateBody( world, def );
-		const sd = b3.b3DefaultShapeDef();
-		if ( material ) sd.baseMaterial.userMaterialId = material;
-		b3.b3CreateBoxShape( body, sd, hx, hy, hz );
-		return body;
+		b3.b3CreateBoxShape( b3.b3CreateBody( world, def ), b3.b3DefaultShapeDef(), hx, hy, hz );
 	};
 	staticBox( 0, -0.5, 0, 30, 0.5, 30 ); // ground, top at y = 0
 	staticBox( 14, 0.15, 0, 6, 0.15, 2 ); // 0.3 high step at x = 8..20
@@ -770,15 +766,29 @@ function dynamicMover( b3 )
 	run( mover, 120, [ 0, 0 ] );
 	assert.ok( mover.onGround && !mover.jumping, 'mover lands' );
 
+	const bodyId = { ...mover.bodyId };
 	mover.destroy();
-	assert.equal( b3.b3Body_IsValid( mover.bodyId ), false, 'destroy removes the mover body' );
+	assert.equal( b3.b3Body_IsValid( bodyId ), false, 'destroy removes the mover body' );
+	mover.update( dt, forward, right, [ 1, 0 ] );
+	assert.equal( mover.jump(), false, 'update and jump do nothing after destroy' );
 
 	// Platform: the mover joint attaches to a kinematic body tagged with platformMaterialId.
-	const rider = new DynamicMover( b3, world, { position: [ -10, 2, 0 ], platformMaterialId: PLATFORM } );
+	// A number id is converted to bigint, so it still matches the ray's userMaterialId.
+	const rider = new DynamicMover( b3, world, { position: [ -10, 2, 0 ] } );
+	rider.platformMaterialId = Number( PLATFORM );
+	assert.equal( rider.platformMaterialId, PLATFORM, 'platformMaterialId converts numbers to bigint' );
 	run( rider, 90, [ 0, 0 ] );
 	const bodyA = b3.b3Joint_GetBodyA( rider.moverJointId );
 	assert.deepEqual( bodyA, platform, 'mover joint attaches to the tagged platform' );
 	assert.equal( rider.castResult.userMaterialId, PLATFORM, 'ray cast reports the user material id' );
+	let shapeCastMaterial = null;
+	b3.b3World_CastShape( world, [ -11.5, 3, 1.5 ], [ 0, 0, 0 ], 0.2, [ 0, -5, 0 ], b3.b3DefaultQueryFilter(),
+		( _shapeId, _point, _normal, fraction, userMaterialId ) =>
+		{
+			shapeCastMaterial = userMaterialId;
+			return fraction;
+		} );
+	assert.equal( shapeCastMaterial, PLATFORM, 'shape cast reports the user material id' );
 	b3.b3Body_SetLinearVelocity( platform, [ 0, 0, 1 ] );
 	const startZ = run( rider, 1, [ 0, 0 ] )[ 2 ];
 	const endZ = run( rider, 60, [ 0, 0 ] )[ 2 ];
