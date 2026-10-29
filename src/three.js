@@ -575,6 +575,13 @@ export function createDebugRenderer(b3, worldId, options) {
 			spheres * SPHERE_LINE_VERTS +
 			capsules * CAPSULE_LINE_VERTS +
 			transforms * 6;
+		// The default pass draws shapes only, so the first frames have no line
+		// vertices. Attributes are allocated on the first non-empty pass.
+		if (needed === 0) {
+			lineGeometry.setDrawRange(0, 0);
+			lines.visible = false;
+			return;
+		}
 		ensureLines(needed);
 		linePositions = lineGeometry.getAttribute('position').array;
 		lineColors = lineGeometry.getAttribute('color').array;
@@ -635,6 +642,11 @@ export function createDebugRenderer(b3, worldId, options) {
 
 	function syncPoints() {
 		const n = b3.getNumDebugPoints(buf);
+		if (n === 0) {
+			pointGeometry.setDrawRange(0, 0);
+			points.visible = false;
+			return;
+		}
 		ensurePoints(n);
 		const positions = pointGeometry.getAttribute('position').array;
 		const colors = pointGeometry.getAttribute('color').array;
