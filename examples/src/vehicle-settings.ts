@@ -46,6 +46,187 @@ function degreeProxy<T extends object>(target: T, keys: (keyof T)[]) {
 	return proxy;
 }
 
+// Hover text for the panel, keyed by top level folder and then by the controller's property.
+// The wording follows the field docs in box3d's include/box3d/vehicle.h.
+const folderTips: Record<string, string> = {
+	Chassis: 'Mass and balance of the car body',
+	Suspension:
+		'Springs, dampers and wheel settings, per axle. A change applies to both wheels of the axle.',
+	Tires:
+		'Tire grip curves, per axle. Grip rises with slip to a peak, then falls to a lower value once the tire slides.',
+	'Anti-roll':
+		'Bars that link the left and right wheels of an axle to reduce body roll',
+	Engine:
+		'Torque curve and inertia. Torque rises linearly from idle to the peak rpm, then falls to the max rpm.',
+	Transmission: 'Gearbox and clutch',
+	Drivetrain:
+		'Differentials: how engine torque is split between the driven wheels',
+	Steering: 'Steering lock, speed and geometry',
+	Assists: 'Driving aids and arcade shortcuts. Each one can be turned off.',
+	Telemetry:
+		'Live readout per wheel: load (kN), slip ratio, slip angle and suspension compression (0 extended, 1 at the bump stop). S marks a wheel the sticky tire is holding.',
+};
+
+const controllerTips: Record<string, Record<string, string>> = {
+	Chassis: {
+		mass: 'Chassis mass. The suspension keeps its ride frequency, so the springs stiffen with the mass each wheel carries.',
+		autoCenterOfMass:
+			'Puts the center of mass at the resting axle height. A lower center of mass is the most effective way to stop the car from flipping.',
+		y: 'Moves the center of mass up (+) or down (-), in chassis space',
+		z: 'Moves the center of mass forward (+) or back (-), in chassis space. Forward puts more weight on the front wheels.',
+		maxSlopeAngle:
+			'The wheels ignore ground steeper than this, so the car cannot drive up walls',
+	},
+	Suspension: {
+		frequency:
+			'Ride frequency of the spring against the mass on this wheel. Higher is stiffer: less roll and dive, a harsher ride.',
+		compressionDamping:
+			'Damping ratio while the spring compresses. Higher resists bumps and landings more.',
+		reboundDamping:
+			'Damping ratio while the spring extends. Higher stops the car bouncing after a bump.',
+		minLength:
+			'Length at full compression, where the bump stop engages. Measured from the attachment point to the wheel center.',
+		maxLength:
+			'Length at full extension. The difference from the min length is the suspension travel.',
+		preload:
+			'Extra spring length that lifts the car without changing the stiffness',
+		enableBumpStop:
+			'Hard stop at the min length, so hard landings cannot push the wheel through the chassis',
+		radius:
+			'Wheel radius. A larger wheel turns the same torque into less force at the ground.',
+		width: 'Wheel width, used by the cylinder ground probe',
+		inertia:
+			'Spin inertia of the wheel and brake disc. Lower spins up and locks more easily.',
+		steerFactor:
+			'Multiplier on the steer angle: 1 steers fully, 0 is fixed, negative steers the other way (rear steering)',
+		maxBrakeTorque:
+			'Brake torque at full brake. The front to rear balance is the brake bias.',
+		maxHandBrakeTorque:
+			'Brake torque at full handbrake. Usually rear wheels only.',
+		angularDamping: 'Spin damping, a drag that slows a freely spinning wheel',
+		castType:
+			'How the wheel probes the ground. Cylinder matches the tire and does not fall into cracks, sphere uses the wheel radius, ray is a single ray through the wheel center and is the cheapest.',
+	},
+	Tires: {
+		longitudinalPeakSlip:
+			'Slip ratio where grip under throttle and braking peaks. Slip ratio is how much faster or slower the tire spins than the ground passes under it.',
+		longitudinalPeakFriction:
+			'Friction coefficient at peak grip under throttle and braking, scaled by the ground friction',
+		longitudinalSlideSlip:
+			'Slip ratio where the tire is fully spinning or locked',
+		longitudinalSlideFriction:
+			'Friction coefficient once the tire is fully spinning or locked. Lower than the peak, so wheelspin and locked brakes lose grip.',
+		lateralPeakAngle:
+			'Slip angle where cornering grip peaks. Slip angle is the angle between where the tire points and where it travels.',
+		lateralPeakFriction: 'Friction coefficient at peak cornering grip',
+		lateralSlideAngle: 'Slip angle where the tire is fully sliding sideways',
+		lateralSlideFriction:
+			'Cornering friction coefficient once fully sliding. Lower makes slides harder to catch.',
+		rollingResistance:
+			'Rolling resistance coefficient: a torque of coefficient x load x radius that slows the wheel',
+	},
+	'Anti-roll': {
+		stiffness:
+			'Pushes back when one wheel of the axle compresses more than the other, which reduces body roll. A stiffer front bar adds understeer, a stiffer rear bar adds oversteer.',
+	},
+	Engine: {
+		maxTorque: 'Peak engine torque, before the gearbox multiplies it',
+		peakTorqueRpm: 'Rpm where the engine makes its peak torque',
+		idleTorqueScale: 'Fraction of the peak torque available at idle',
+		maxRpmTorqueScale: 'Fraction of the peak torque available at the max rpm',
+		idleRpm: 'Idle rpm. The engine never drops below it.',
+		maxRpm: 'Rev limiter',
+		inertia: 'Engine and flywheel inertia. Lower revs up and down faster.',
+		angularDamping:
+			'Internal engine friction. It is what slows the car when you lift off the throttle.',
+	},
+	Transmission: {
+		automatic:
+			'On: shifts by rpm, and holding reverse while stopped selects reverse. Off: shift with Q and E.',
+		gearCount: 'Number of forward gears in use',
+		finalDrive:
+			'Ratio applied on top of every gear. Higher accelerates harder but reaches the rev limit at a lower speed.',
+		reverseRatio: 'Reverse gear ratio',
+		shiftUpRpm: 'Rpm where the automatic gearbox shifts up',
+		shiftDownRpm: 'Rpm where the automatic gearbox shifts down',
+		shiftTime:
+			'Time the clutch stays open and the throttle is cut during a shift',
+		clutchReleaseTime: 'Time for the clutch to engage again after a shift',
+		shiftLatency:
+			'Minimum time between automatic shifts, so the gearbox does not hunt between gears',
+		clutchStrength:
+			'How strongly the clutch couples the engine to the wheels. Lower lets the clutch slip more.',
+		ratio:
+			'Ratio of this forward gear. Higher multiplies torque more but reaches the rev limit at a lower speed.',
+	},
+	Drivetrain: {
+		torqueRatio:
+			'Share of the engine torque this differential receives. The shares of all differentials should add up to 1.',
+		leftRightSplit:
+			"Share of this differential's torque sent to the left wheel. 0.5 is even.",
+		limitedSlipRatio:
+			'Wheel speed ratio this differential allows before torque moves to the slower wheel. 1 or less is an open differential.',
+		centerLimitedSlipRatio:
+			'Limited slip between the differentials, for example front and rear. 1 or less is open.',
+	},
+	Steering: {
+		maxAngle: 'Steer angle at full lock, when stopped',
+		speedReference:
+			'Speed where the steer angle is halved. It falls off with speed squared. 0 keeps full lock at any speed.',
+		steerSpeed: 'How fast the wheels turn toward a larger angle (rad/s)',
+		returnSpeed: 'How fast the wheels turn back to center (rad/s)',
+		ackermann:
+			'0 turns both front wheels by the same angle. 1 is full Ackermann geometry, where the inside wheel turns more to follow a tighter circle.',
+	},
+	Assists: {
+		tractionControl:
+			'Limits the throttle so no driven wheel gets more torque than its tire can transmit. On rear wheels it also leaves grip for cornering, so full throttle mid corner does not spin the car.',
+		abs: 'Caps the brake torque at what the tire can transmit, so the wheels do not lock and the car still steers while braking',
+		stickyTire:
+			'Holds the car still at low speed with no throttle, for example when parked on a slope',
+		counterSteer:
+			'Steers into a rear slide automatically, as a fraction of the slide angle',
+		driftGripScale:
+			'Sideways grip of handbraked wheels at full handbrake. Below 1 makes handbrake drifts easy.',
+		rollInfluence:
+			'Moves where cornering forces act toward the center of mass height. 0 is physical, 1 removes all body roll from cornering.',
+		downforce:
+			'Downforce coefficient: force = downforce x speed squared. Adds grip at speed.',
+		drag: 'Air drag coefficient: force = drag x speed squared. Limits the top speed.',
+		airControl:
+			'Rotation from driver input while all wheels are in the air (rad/s squared)',
+		airAngularDamping: 'Damps spinning while all wheels are in the air (1/s)',
+		selfRighting:
+			'Roll only torque that turns the car back onto its wheels while partly grounded, or when stuck on its side or roof',
+		maxTiltAngle:
+			'Stops the car tilting further than this from upright. 0 turns it off.',
+		stickySpeed: 'Speed below which the sticky tire engages (m/s)',
+		stickyTime:
+			'How long the car must stay below the sticky speed before the sticky tire engages (s)',
+	},
+};
+
+const rootTips: Record<string, string> = {
+	reset: 'Restores every setting to the preset the example started with',
+};
+
+// Sets the browser tooltip (the title attribute) on every folder and controller that has one
+function applyTips(root: GUI): void {
+	for (const folder of root.foldersRecursive()) {
+		const text = folderTips[folder._title];
+		if (text) folder.$title.title = text;
+	}
+	for (const c of root.controllersRecursive()) {
+		let top = c.parent;
+		while (top !== root && top.parent !== root) top = top.parent;
+		const text =
+			top === root
+				? rootTips[c.property]
+				: controllerTips[top._title]?.[c.property];
+		if (text) c.domElement.title = text;
+	}
+}
+
 export function createVehicleSettings(
 	gui: GUI,
 	b3: Box3DModule,
@@ -651,6 +832,8 @@ export function createVehicleSettings(
 		applyAssists();
 		for (const c of root.controllersRecursive()) c.updateDisplay();
 	}
+
+	applyTips(root);
 
 	return { update, reset, sync };
 }
