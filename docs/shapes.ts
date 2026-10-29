@@ -75,7 +75,8 @@ const staticBody = b3.b3CreateBody(world, staticBodyDef);
 const scale: b3Vec3 = [1, 1, 1];
 const meshShape = b3.b3CreateMeshShape(staticBody, b3.b3DefaultShapeDef(), meshData, scale);
 // Mesh contacts hold other shapes meshRestOffset (default B3_MESH_REST_OFFSET, 5 mm)
-// off the surface. Use 0 (in the def or later) for floors parts must rest flush on.
+// off the surface. For a floor that shapes must rest flush on, set
+// b3ShapeDef.meshRestOffset = 0 before creating the shape, or call:
 b3.b3Shape_SetMeshRestOffset(meshShape, 0);
 meshData.delete();
 /* SNIPPET_END: mesh */
