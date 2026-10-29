@@ -4,6 +4,35 @@
 
 - `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
+box3d now comes from the [nilo-technologies/box3d](https://github.com/nilo-technologies/box3d) fork, updated to upstream `main` (`3362633`, "Dynamic Mover").
+
+Breaking renames that follow upstream:
+
+- `b3CreateCompoundShape` is now `b3CreateBakedCompoundShape`.
+- `b3Body_GetLocalCenterOfMass` / `b3Body_GetWorldCenterOfMass` are now `b3Body_GetLocalCenter` / `b3Body_GetWorldCenter`.
+- `b3RecPlayer_Destroy` is now `b3DestroyPlayer`.
+- `b3CollideCapsuleAndTriangle(capsuleA, v1, v2, v3)`, `b3CollideHullAndTriangle(hullA, v1, v2, v3, flags)` and `b3CollideSphereAndTriangle(sphereA, v1, v2, v3)` are replaced by `b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)`, `b3CollideTriangleAndHull(v1, v2, v3, flags, hullB, enableSpeculative)` and `b3CollideTriangleAndSphere(v1, v2, v3, sphereB)`. The triangle comes first, and the manifold normal points from the triangle to the other shape.
+- The `b3Profile` field `applyRestitution` is now `restitution`.
+- `b3World_RebuildStaticTree` and `b3World_DumpShapeBounds` are gone. Upstream removed the first and no longer implements the second.
+
+New upstream API:
+
+- World:
+  - `b3World_SetRestitutionIterations` / `b3World_GetRestitutionIterations`
+  - `b3World_EnableRestitutionPropagation` / `b3World_IsRestitutionPropagationEnabled`
+  - `b3World_SetIsotropicInertiaTolerance` / `b3World_GetIsotropicInertiaTolerance`
+  - The matching `b3WorldDef` fields.
+- Body:
+  - `b3Body_SetSafetyFactor` / `b3Body_GetSafetyFactor`
+  - `b3Body_AllowFastRotation` / `b3Body_IsFastRotationAllowed`
+  - `b3Body_GetMinExtent`, `b3Body_GetMaxExtent`, `b3Body_GetMaxExtentOrigin`
+  - `b3BodyDef.safetyFactor`.
+- Shape: `b3Shape_SetMeshMaterial` and `b3ShapeDef.enableSpeculativeContact`.
+- Joints:
+  - `b3Joint_IsAwake`.
+  - Mover and pogo joints: `b3CreateMoverJoint`, `b3CreatePogoJoint`, their default defs and accessors. These are what upstream uses for dynamic character movers.
+- Replay: `b3RecPlayer_SubStepFrame` and `b3RecPlayer_IsAtPreStep`.
+
 ## v0.3.0
 
 Debug drawing. `getDebugDraw` runs one `b3World_Draw` pass per role into a reusable wasm buffer, and `box3d.js/three` draws that buffer into a caller-supplied Three.js object.

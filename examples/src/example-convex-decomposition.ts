@@ -267,7 +267,11 @@ async function buildBowl() {
 	const bowlBody = b3.b3CreateBody(world, bowlDef);
 	bowlCompound = b3.b3CreateDecompositionCompound(bowl).compound;
 	if (bowlCompound)
-		b3.b3CreateCompoundShape(bowlBody, b3.b3DefaultShapeDef(), bowlCompound);
+		b3.b3CreateBakedCompoundShape(
+			bowlBody,
+			b3.b3DefaultShapeDef(),
+			bowlCompound,
+		);
 
 	const bowlGroup = new THREE.Group();
 	bowlGroup.position.set(0, 0.5, 0);

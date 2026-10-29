@@ -193,7 +193,7 @@ const compound = b3.b3CreateCompound({
 		},
 	],
 })!;
-b3.b3CreateCompoundShape(
+b3.b3CreateBakedCompoundShape(
 	staticBody([0.4, 0, 4]),
 	b3.b3DefaultShapeDef(),
 	compound,
