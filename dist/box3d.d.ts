@@ -748,8 +748,7 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
-  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -1038,8 +1037,7 @@ interface EmbindModule {
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
-  b3Body_GetName(bodyId: b3BodyId): string;
-  b3CreateHull(points: any): b3HullData | null;
+  b3Body_GetName(bodyId: b3BodyId): string;  b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
   b3CreateMesh(positions: any, indices: any): b3MeshData | null;
   b3GetMeshVertices(mesh: b3MeshData | null): Float32Array;
@@ -1074,6 +1072,7 @@ interface EmbindModule {
   b3World_CastShape(worldId: b3WorldId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, callback: any): void;
   b3Body_CastShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, maxFraction: number, canEncroach: boolean, bodyTransform: b3Transform): b3BodyCastResult;
   b3Body_OverlapShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, filter: b3QueryFilter, bodyTransform: b3Transform): boolean;
+  b3Body_CollideMover(bodyId: b3BodyId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, bodyTransform: b3Transform): BodyPlaneResultBuffer;
   b3Shape_GetHullVertices(shapeId: b3ShapeId): any;
   b3DistanceJoint_GetSpringForceRange(jointId: b3JointId): any;
   b3World_OverlapAABB(worldId: b3WorldId, aabb: b3AABB, filter: b3QueryFilter, callback: any): void;
@@ -1127,6 +1126,10 @@ export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
 export interface PlaneResultBuffer { count: number; data: Float32Array; }
 export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+/** Packed planes returned by b3Body_CollideMover: PlaneResultBuffer plus the shape id
+ * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
+export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }
+export interface BodyPlaneResult { shapeId: b3ShapeId; result: PlaneResult; }
 /** Triangle positions/indices plus sphere (xyz, radius) and capsule (c1, c2, radius) parameters.
  * Views alias the wasm heap until the shape is destroyed or changed. Copy them to cache. */
 export interface DebugGeometry {
@@ -1285,6 +1288,9 @@ export interface Box3DFacade {
   getNumPlaneResults(buf: PlaneResultBuffer): number;
   createPlaneResult(): PlaneResult;
   getPlaneResultAt(out: PlaneResult, buf: PlaneResultBuffer, i: number): PlaneResult;
+  getNumBodyPlaneResults(buf: BodyPlaneResultBuffer): number;
+  createBodyPlaneResult(): BodyPlaneResult;
+  getBodyPlaneResultAt(out: BodyPlaneResult, buf: BodyPlaneResultBuffer, i: number): BodyPlaneResult;
   /** Reusable wasm buffer filled by getDebugDraw. Free it with destroyDebugDrawBuffer. */
   createDebugDrawBuffer(): DebugDrawBuffer;
   /** One b3World_Draw pass per enabled role. Refreshes the heap views; allocates nothing. */
