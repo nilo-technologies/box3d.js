@@ -345,6 +345,18 @@ The pre-solve callback fires for each contact before the constraint solver runs.
 
 <Snippet source="./events.ts" select="pre-solve" />
 
+## Debug Draw
+
+box3d can draw the world it is simulating: shape outlines, contacts, joints, mass axes, bounds, and islands. `getDebugDraw` runs one `b3World_Draw` pass per enabled role into a reusable wasm buffer, the same pattern as contacts and events. Readers (`getDebugShapeAt`, and one per other tier) fill a scratch object in place.
+
+Shape triangles are built once, the first time that shape is drawn, and freed when the shape or the world is destroyed. `getDebugGeometry` returns views of that cache (or `null`). Copy them out; they alias the wasm heap. Hulls, meshes, and height fields come back as triangles. Spheres and capsules come back as parameters. A compound is one triangle list plus a parameter list for its sphere and capsule children.
+
+`box3d.js/three` turns the buffer into Three.js objects. It does not import `three`. Pass the same `THREE` namespace the rest of the page uses, so `three` and `three/webgpu` both work. `null` in `colors` keeps box3d's own colour. Mass has no box3d colour, so `colors.mass: null` is white.
+
+<Snippet source="./debug-draw.ts" select="debug-draw" />
+
+<ExamplesTable ids="example-debug-draw" />
+
 ## Multithreading
 
 box3d's internal solver can spread work across OS threads via Emscripten pthreads. This requires `SharedArrayBuffer`, which in turn requires [cross-origin isolation](https://developer.mozilla.org/en-US/docs/Web/API/Window/crossOriginIsolated).

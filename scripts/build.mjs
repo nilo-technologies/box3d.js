@@ -16,7 +16,7 @@
 // in the browser for SharedArrayBuffer.
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -203,6 +203,9 @@ function wasmSizes()
 assertEmscriptenVersion();
 
 mkdirSync( join( root, 'dist' ), { recursive: true } );
+// Hand-written Three.js helper. It does not go through emscripten.
+copyFileSync( join( root, 'src', 'three.js' ), join( root, 'dist', 'three.mjs' ) );
+copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 
@@ -316,6 +319,50 @@ export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point:
  * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
 export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }
 export interface BodyPlaneResult { shapeId: b3ShapeId; result: PlaneResult; }
+/** Triangle positions/indices plus sphere (xyz, radius) and capsule (c1, c2, radius) parameters.
+ * Views alias the wasm heap until the shape is destroyed or changed. Copy them to cache. */
+export interface DebugGeometry {
+  positions: Float32Array;
+  indices: Uint32Array;
+  spheres: Float32Array;
+  capsules: Float32Array;
+}
+export interface DebugDrawOptions {
+  shapes?: boolean;
+  bounds?: boolean;
+  joints?: boolean;
+  jointExtras?: boolean;
+  mass?: boolean;
+  contacts?: boolean;
+  contactNormals?: boolean;
+  contactForces?: boolean;
+  frictionForces?: boolean;
+  contactFeatures?: boolean;
+  islands?: boolean;
+  graphColors?: boolean;
+  forceScale?: number;
+  jointScale?: number;
+  /** [minX, minY, minZ, maxX, maxY, maxZ]. Defaults to a huge box so nothing is clipped. */
+  drawingBounds?: b3AABB;
+  maskBits?: number;
+}
+export interface DebugDrawBuffer { readonly _brand?: 'DebugDrawBuffer'; }
+export interface DebugShapeRecord {
+  geometryId: number;
+  /** DebugShapeState.*.value */
+  state: number;
+  /** box3d packed colour; low 24 bits are RGB, the high byte is the debug material. */
+  color: number;
+  position: b3Vec3;
+  rotation: b3Quat;
+}
+export interface DebugSegment { p1: b3Vec3; p2: b3Vec3; color: number; role: number; }
+export interface DebugPoint { position: b3Vec3; size: number; color: number; role: number; }
+export interface DebugSpherePrimitive { center: b3Vec3; radius: number; alpha: number; color: number; role: number; }
+export interface DebugCapsulePrimitive { p1: b3Vec3; p2: b3Vec3; radius: number; alpha: number; color: number; role: number; }
+export interface DebugBoxPrimitive { extents: b3Vec3; position: b3Vec3; rotation: b3Quat; color: number; role: number; }
+export interface DebugBoundsPrimitive { aabb: b3AABB; color: number; role: number; }
+export interface DebugTransformPrimitive { position: b3Vec3; rotation: b3Quat; role: number; }
 export interface Contact {
   shapeIdA: b3ShapeId;
   shapeIdB: b3ShapeId;
@@ -433,6 +480,35 @@ export interface Box3DFacade {
   getNumBodyPlaneResults(buf: BodyPlaneResultBuffer): number;
   createBodyPlaneResult(): BodyPlaneResult;
   getBodyPlaneResultAt(out: BodyPlaneResult, buf: BodyPlaneResultBuffer, i: number): BodyPlaneResult;
+  /** Reusable wasm buffer filled by getDebugDraw. Free it with destroyDebugDrawBuffer. */
+  createDebugDrawBuffer(): DebugDrawBuffer;
+  /** One b3World_Draw pass per enabled role. Refreshes the heap views; allocates nothing. */
+  getDebugDraw(buf: DebugDrawBuffer, worldId: b3WorldId, options?: DebugDrawOptions): DebugDrawBuffer;
+  destroyDebugDrawBuffer(buf: DebugDrawBuffer): void;
+  getNumDebugShapes(buf: DebugDrawBuffer): number;
+  getNumDebugSegments(buf: DebugDrawBuffer): number;
+  getNumDebugPoints(buf: DebugDrawBuffer): number;
+  getNumDebugSpheres(buf: DebugDrawBuffer): number;
+  getNumDebugCapsules(buf: DebugDrawBuffer): number;
+  getNumDebugBoxes(buf: DebugDrawBuffer): number;
+  getNumDebugBounds(buf: DebugDrawBuffer): number;
+  getNumDebugTransforms(buf: DebugDrawBuffer): number;
+  createDebugShapeRecord(): DebugShapeRecord;
+  getDebugShapeAt(out: DebugShapeRecord, buf: DebugDrawBuffer, i: number): DebugShapeRecord;
+  createDebugSegment(): DebugSegment;
+  getDebugSegmentAt(out: DebugSegment, buf: DebugDrawBuffer, i: number): DebugSegment;
+  createDebugPoint(): DebugPoint;
+  getDebugPointAt(out: DebugPoint, buf: DebugDrawBuffer, i: number): DebugPoint;
+  createDebugSpherePrimitive(): DebugSpherePrimitive;
+  getDebugSphereAt(out: DebugSpherePrimitive, buf: DebugDrawBuffer, i: number): DebugSpherePrimitive;
+  createDebugCapsulePrimitive(): DebugCapsulePrimitive;
+  getDebugCapsuleAt(out: DebugCapsulePrimitive, buf: DebugDrawBuffer, i: number): DebugCapsulePrimitive;
+  createDebugBoxPrimitive(): DebugBoxPrimitive;
+  getDebugBoxAt(out: DebugBoxPrimitive, buf: DebugDrawBuffer, i: number): DebugBoxPrimitive;
+  createDebugBoundsPrimitive(): DebugBoundsPrimitive;
+  getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
+  createDebugTransformPrimitive(): DebugTransformPrimitive;
+  getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
 }`;
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );

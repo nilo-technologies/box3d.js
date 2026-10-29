@@ -822,6 +822,252 @@ function b3UnpackConvexDecomposition( packed )
 	return parts;
 }
 
+// --- debug draw (reusable, wasm-backed; zero JS alloc per fill) ---------------
+//
+//   const dd = b3.createDebugDrawBuffer();
+//   const shape = b3.createDebugShapeRecord();
+//   b3.getDebugDraw( dd, world, { shapes: true, contacts: true } );
+//   for ( let i = 0, n = b3.getNumDebugShapes( dd ); i < n; i++ )
+//   {
+//     b3.getDebugShapeAt( shape, dd, i );
+//     const geo = b3.getDebugGeometry( shape.geometryId ); // wasm views; copy to cache
+//   }
+//   b3.destroyDebugDrawBuffer( dd );
+//
+// Strides come from bindings.cpp (LAYOUT). Field order matches DebugDrawBuffer packing.
+// getDebugGeometry is the embind function: views onto the geometry cache, or null.
+
+const DEBUG_SHAPE_I32 = LAYOUT.debugShapeI32;
+const DEBUG_SHAPE_F64 = LAYOUT.debugShapeF64;
+const DEBUG_SEGMENT_F64 = LAYOUT.debugSegmentF64;
+const DEBUG_SEGMENT_I32 = LAYOUT.debugSegmentI32;
+const DEBUG_POINT_F64 = LAYOUT.debugPointF64;
+const DEBUG_POINT_F32 = LAYOUT.debugPointF32;
+const DEBUG_POINT_I32 = LAYOUT.debugPointI32;
+const DEBUG_SPHERE_F64 = LAYOUT.debugSphereF64;
+const DEBUG_SPHERE_F32 = LAYOUT.debugSphereF32;
+const DEBUG_SPHERE_I32 = LAYOUT.debugSphereI32;
+const DEBUG_CAPSULE_F64 = LAYOUT.debugCapsuleF64;
+const DEBUG_CAPSULE_F32 = LAYOUT.debugCapsuleF32;
+const DEBUG_CAPSULE_I32 = LAYOUT.debugCapsuleI32;
+const DEBUG_BOX_F32 = LAYOUT.debugBoxF32;
+const DEBUG_BOX_F64 = LAYOUT.debugBoxF64;
+const DEBUG_BOX_I32 = LAYOUT.debugBoxI32;
+const DEBUG_BOUNDS_F64 = LAYOUT.debugBoundsF64;
+const DEBUG_BOUNDS_I32 = LAYOUT.debugBoundsI32;
+const DEBUG_TRANSFORM_F64 = LAYOUT.debugTransformF64;
+const DEBUG_TRANSFORM_I32 = LAYOUT.debugTransformI32;
+
+function createDebugDrawBuffer()
+{
+	return {
+		_impl: new Module.DebugDrawBufferImpl(),
+		i32: null, f32: null, f64: null,
+		shapeCount: 0, shapeI32Base: 0, shapeF64Base: 0,
+		segmentCount: 0, segmentI32Base: 0, segmentF64Base: 0,
+		pointCount: 0, pointI32Base: 0, pointF32Base: 0, pointF64Base: 0,
+		sphereCount: 0, sphereI32Base: 0, sphereF32Base: 0, sphereF64Base: 0,
+		capsuleCount: 0, capsuleI32Base: 0, capsuleF32Base: 0, capsuleF64Base: 0,
+		boxCount: 0, boxI32Base: 0, boxF32Base: 0, boxF64Base: 0,
+		boundsCount: 0, boundsI32Base: 0, boundsF64Base: 0,
+		transformCount: 0, transformI32Base: 0, transformF64Base: 0,
+	};
+}
+
+function getDebugDraw( buf, worldId, options )
+{
+	const impl = buf._impl;
+	impl.loadFrom( worldId, options === undefined ? {} : options );
+	buf.i32 = HEAP32;
+	buf.f32 = HEAPF32;
+	buf.f64 = HEAPF64;
+	buf.shapeCount = impl.shapeCount();
+	buf.shapeI32Base = impl.shapeI32Ptr() >> 2;
+	buf.shapeF64Base = impl.shapeF64Ptr() >> 3;
+	buf.segmentCount = impl.segmentCount();
+	buf.segmentI32Base = impl.segmentI32Ptr() >> 2;
+	buf.segmentF64Base = impl.segmentF64Ptr() >> 3;
+	buf.pointCount = impl.pointCount();
+	buf.pointI32Base = impl.pointI32Ptr() >> 2;
+	buf.pointF32Base = impl.pointF32Ptr() >> 2;
+	buf.pointF64Base = impl.pointF64Ptr() >> 3;
+	buf.sphereCount = impl.sphereCount();
+	buf.sphereI32Base = impl.sphereI32Ptr() >> 2;
+	buf.sphereF32Base = impl.sphereF32Ptr() >> 2;
+	buf.sphereF64Base = impl.sphereF64Ptr() >> 3;
+	buf.capsuleCount = impl.capsuleCount();
+	buf.capsuleI32Base = impl.capsuleI32Ptr() >> 2;
+	buf.capsuleF32Base = impl.capsuleF32Ptr() >> 2;
+	buf.capsuleF64Base = impl.capsuleF64Ptr() >> 3;
+	buf.boxCount = impl.boxCount();
+	buf.boxI32Base = impl.boxI32Ptr() >> 2;
+	buf.boxF32Base = impl.boxF32Ptr() >> 2;
+	buf.boxF64Base = impl.boxF64Ptr() >> 3;
+	buf.boundsCount = impl.boundsCount();
+	buf.boundsI32Base = impl.boundsI32Ptr() >> 2;
+	buf.boundsF64Base = impl.boundsF64Ptr() >> 3;
+	buf.transformCount = impl.transformCount();
+	buf.transformI32Base = impl.transformI32Ptr() >> 2;
+	buf.transformF64Base = impl.transformF64Ptr() >> 3;
+	return buf;
+}
+
+function destroyDebugDrawBuffer( buf )
+{
+	buf._impl.delete();
+	buf._impl = null;
+}
+
+function getNumDebugShapes( buf ) { return buf.shapeCount; }
+function getNumDebugSegments( buf ) { return buf.segmentCount; }
+function getNumDebugPoints( buf ) { return buf.pointCount; }
+function getNumDebugSpheres( buf ) { return buf.sphereCount; }
+function getNumDebugCapsules( buf ) { return buf.capsuleCount; }
+function getNumDebugBoxes( buf ) { return buf.boxCount; }
+function getNumDebugBounds( buf ) { return buf.boundsCount; }
+function getNumDebugTransforms( buf ) { return buf.transformCount; }
+
+function createDebugShapeRecord()
+{
+	return { geometryId: 0, state: 0, color: 0, position: [ 0, 0, 0 ], rotation: [ 0, 0, 0, 1 ] };
+}
+function getDebugShapeAt( out, buf, i )
+{
+	const a = buf.i32;
+	const s = buf.shapeI32Base + i * DEBUG_SHAPE_I32;
+	out.geometryId = a[ s ] >>> 0;
+	out.state = a[ s + 1 ];
+	out.color = a[ s + 2 ] >>> 0;
+	const f = buf.f64;
+	const fs = buf.shapeF64Base + i * DEBUG_SHAPE_F64;
+	out.position[ 0 ] = f[ fs ]; out.position[ 1 ] = f[ fs + 1 ]; out.position[ 2 ] = f[ fs + 2 ];
+	out.rotation[ 0 ] = f[ fs + 3 ]; out.rotation[ 1 ] = f[ fs + 4 ]; out.rotation[ 2 ] = f[ fs + 5 ]; out.rotation[ 3 ] = f[ fs + 6 ];
+	return out;
+}
+
+function createDebugSegment()
+{
+	return { p1: [ 0, 0, 0 ], p2: [ 0, 0, 0 ], color: 0, role: 0 };
+}
+function getDebugSegmentAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.segmentF64Base + i * DEBUG_SEGMENT_F64;
+	out.p1[ 0 ] = f[ fs ]; out.p1[ 1 ] = f[ fs + 1 ]; out.p1[ 2 ] = f[ fs + 2 ];
+	out.p2[ 0 ] = f[ fs + 3 ]; out.p2[ 1 ] = f[ fs + 4 ]; out.p2[ 2 ] = f[ fs + 5 ];
+	const a = buf.i32;
+	const s = buf.segmentI32Base + i * DEBUG_SEGMENT_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugPoint()
+{
+	return { position: [ 0, 0, 0 ], size: 0, color: 0, role: 0 };
+}
+function getDebugPointAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.pointF64Base + i * DEBUG_POINT_F64;
+	out.position[ 0 ] = f[ fs ]; out.position[ 1 ] = f[ fs + 1 ]; out.position[ 2 ] = f[ fs + 2 ];
+	out.size = buf.f32[ buf.pointF32Base + i * DEBUG_POINT_F32 ];
+	const a = buf.i32;
+	const s = buf.pointI32Base + i * DEBUG_POINT_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugSpherePrimitive()
+{
+	return { center: [ 0, 0, 0 ], radius: 0, alpha: 0, color: 0, role: 0 };
+}
+function getDebugSphereAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.sphereF64Base + i * DEBUG_SPHERE_F64;
+	out.center[ 0 ] = f[ fs ]; out.center[ 1 ] = f[ fs + 1 ]; out.center[ 2 ] = f[ fs + 2 ];
+	const p = buf.f32;
+	const ps = buf.sphereF32Base + i * DEBUG_SPHERE_F32;
+	out.radius = p[ ps ]; out.alpha = p[ ps + 1 ];
+	const a = buf.i32;
+	const s = buf.sphereI32Base + i * DEBUG_SPHERE_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugCapsulePrimitive()
+{
+	return { p1: [ 0, 0, 0 ], p2: [ 0, 0, 0 ], radius: 0, alpha: 0, color: 0, role: 0 };
+}
+function getDebugCapsuleAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.capsuleF64Base + i * DEBUG_CAPSULE_F64;
+	out.p1[ 0 ] = f[ fs ]; out.p1[ 1 ] = f[ fs + 1 ]; out.p1[ 2 ] = f[ fs + 2 ];
+	out.p2[ 0 ] = f[ fs + 3 ]; out.p2[ 1 ] = f[ fs + 4 ]; out.p2[ 2 ] = f[ fs + 5 ];
+	const p = buf.f32;
+	const ps = buf.capsuleF32Base + i * DEBUG_CAPSULE_F32;
+	out.radius = p[ ps ]; out.alpha = p[ ps + 1 ];
+	const a = buf.i32;
+	const s = buf.capsuleI32Base + i * DEBUG_CAPSULE_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugBoxPrimitive()
+{
+	return { extents: [ 0, 0, 0 ], position: [ 0, 0, 0 ], rotation: [ 0, 0, 0, 1 ], color: 0, role: 0 };
+}
+function getDebugBoxAt( out, buf, i )
+{
+	const p = buf.f32;
+	const ps = buf.boxF32Base + i * DEBUG_BOX_F32;
+	out.extents[ 0 ] = p[ ps ]; out.extents[ 1 ] = p[ ps + 1 ]; out.extents[ 2 ] = p[ ps + 2 ];
+	const f = buf.f64;
+	const fs = buf.boxF64Base + i * DEBUG_BOX_F64;
+	out.position[ 0 ] = f[ fs ]; out.position[ 1 ] = f[ fs + 1 ]; out.position[ 2 ] = f[ fs + 2 ];
+	out.rotation[ 0 ] = f[ fs + 3 ]; out.rotation[ 1 ] = f[ fs + 4 ]; out.rotation[ 2 ] = f[ fs + 5 ]; out.rotation[ 3 ] = f[ fs + 6 ];
+	const a = buf.i32;
+	const s = buf.boxI32Base + i * DEBUG_BOX_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugBoundsPrimitive()
+{
+	return { aabb: [ 0, 0, 0, 0, 0, 0 ], color: 0, role: 0 };
+}
+function getDebugBoundsAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.boundsF64Base + i * DEBUG_BOUNDS_F64;
+	for ( let k = 0; k < 6; k++ ) out.aabb[ k ] = f[ fs + k ];
+	const a = buf.i32;
+	const s = buf.boundsI32Base + i * DEBUG_BOUNDS_I32;
+	out.color = a[ s ] >>> 0;
+	out.role = a[ s + 1 ];
+	return out;
+}
+
+function createDebugTransformPrimitive()
+{
+	return { position: [ 0, 0, 0 ], rotation: [ 0, 0, 0, 1 ], role: 0 };
+}
+function getDebugTransformAt( out, buf, i )
+{
+	const f = buf.f64;
+	const fs = buf.transformF64Base + i * DEBUG_TRANSFORM_F64;
+	out.position[ 0 ] = f[ fs ]; out.position[ 1 ] = f[ fs + 1 ]; out.position[ 2 ] = f[ fs + 2 ];
+	out.rotation[ 0 ] = f[ fs + 3 ]; out.rotation[ 1 ] = f[ fs + 4 ]; out.rotation[ 2 ] = f[ fs + 5 ]; out.rotation[ 3 ] = f[ fs + 6 ];
+	out.role = buf.i32[ buf.transformI32Base + i * DEBUG_TRANSFORM_I32 ];
+	return out;
+}
+
 // --- out-param math reads (conventions documented in src/bindings.cpp header) ---
 // Each raw `b3X_GetYInto(out, ...)` writes floats to a static wasm scratch; the
 // public `b3X_GetY(out, ...) -> out` copies scratch -> the caller's mathcat array.
@@ -924,6 +1170,17 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createJointEvent, getJointEventAt,
 		getNumPlaneResults, createPlaneResult, getPlaneResultAt,
 		getNumBodyPlaneResults, createBodyPlaneResult, getBodyPlaneResultAt,
+		createDebugDrawBuffer, getDebugDraw, destroyDebugDrawBuffer,
+		getNumDebugShapes, getNumDebugSegments, getNumDebugPoints, getNumDebugSpheres,
+		getNumDebugCapsules, getNumDebugBoxes, getNumDebugBounds, getNumDebugTransforms,
+		createDebugShapeRecord, getDebugShapeAt,
+		createDebugSegment, getDebugSegmentAt,
+		createDebugPoint, getDebugPointAt,
+		createDebugSpherePrimitive, getDebugSphereAt,
+		createDebugCapsulePrimitive, getDebugCapsuleAt,
+		createDebugBoxPrimitive, getDebugBoxAt,
+		createDebugBoundsPrimitive, getDebugBoundsAt,
+		createDebugTransformPrimitive, getDebugTransformAt,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,

@@ -421,6 +421,289 @@ async function decompositionCache( b3, world, options )
 	b3.b3ClearConvexDecompositionCache();
 }
 
+// Ground plus a resting dynamic box (sleep off, so the box stays awake and still
+// emits contacts), a distance joint, and one shape of each geometry kind.
+function debugDraw( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	worldDef.enableSleep = false;
+	const world = b3.b3CreateWorld( worldDef );
+
+	const groundDef = b3.b3DefaultBodyDef();
+	groundDef.type = b3.b3BodyType.b3_staticBody;
+	const ground = b3.b3CreateBody( world, groundDef );
+	b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+
+	const boxDef = b3.b3DefaultBodyDef();
+	boxDef.type = b3.b3BodyType.b3_dynamicBody;
+	boxDef.position = [ 0, 2, 0 ];
+	boxDef.enableSleep = false;
+	const box = b3.b3CreateBody( world, boxDef );
+	b3.b3Body_EnableSleep( box, false );
+	b3.b3CreateBoxShape( box, b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5 );
+
+	function dynamicAt( x, y, z )
+	{
+		const def = b3.b3DefaultBodyDef();
+		def.type = b3.b3BodyType.b3_dynamicBody;
+		def.position = [ x, y, z ];
+		def.enableSleep = false;
+		const body = b3.b3CreateBody( world, def );
+		b3.b3Body_EnableSleep( body, false );
+		b3.b3CreateBoxShape( body, b3.b3DefaultShapeDef(), 0.4, 0.4, 0.4 );
+		return body;
+	}
+	const jointA = dynamicAt( -4, 4, 0 );
+	const jointB = dynamicAt( -4, 2, 0 );
+	const jd = b3.b3DefaultDistanceJointDef();
+	jd.base.bodyIdA = jointA;
+	jd.base.bodyIdB = jointB;
+	jd.base.localFrameA = { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	jd.base.localFrameB = { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	jd.length = 2;
+	b3.b3CreateDistanceJoint( world, jd );
+
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+
+	const dd = b3.createDebugDrawBuffer();
+	const shape = b3.createDebugShapeRecord();
+	const segment = b3.createDebugSegment();
+	const point = b3.createDebugPoint();
+	const bounds = b3.createDebugBoundsPrimitive();
+	const transform = b3.createDebugTransformPrimitive();
+
+	const state = b3.DebugShapeState;
+	const role = b3.DebugDrawRole;
+	const STATIC = state[ 'static' ].value;
+	const AWAKE = state.awake.value;
+
+	function fill( options )
+	{
+		b3.getDebugDraw( dd, world, options );
+	}
+	function zeros()
+	{
+		return b3.getNumDebugShapes( dd ) === 0 && b3.getNumDebugSegments( dd ) === 0
+			&& b3.getNumDebugPoints( dd ) === 0 && b3.getNumDebugSpheres( dd ) === 0
+			&& b3.getNumDebugCapsules( dd ) === 0 && b3.getNumDebugBoxes( dd ) === 0
+			&& b3.getNumDebugBounds( dd ) === 0 && b3.getNumDebugTransforms( dd ) === 0;
+	}
+
+	fill( {} );
+	assert.ok( zeros(), 'no role flags means an empty debug buffer' );
+
+	fill( { shapes: true } );
+	const shapeCount = b3.getNumDebugShapes( dd );
+	assert.ok( shapeCount >= 2, `shapes pass reports the ground and the box (got ${shapeCount})` );
+	let sawStatic = false;
+	let sawAwake = false;
+	for ( let i = 0; i < shapeCount; i++ )
+	{
+		b3.getDebugShapeAt( shape, dd, i );
+		if ( shape.state === STATIC ) sawStatic = true;
+		if ( shape.state === AWAKE ) sawAwake = true;
+		assert.ok( shape.geometryId > 0, 'shape carries a geometry id' );
+		const q = shape.rotation;
+		assert.ok( Math.abs( Math.hypot( q[ 0 ], q[ 1 ], q[ 2 ], q[ 3 ] ) - 1 ) < 1e-3, 'shape rotation is a unit quaternion' );
+	}
+	assert.ok( sawStatic, 'ground is reported as static' );
+	assert.ok( sawAwake, 'resting dynamic box stays awake when sleep is disabled' );
+	assert.equal( b3.getNumDebugSegments( dd ), 0, 'shapes pass does not emit segments' );
+
+	function assertRoles( count, read, roleValue, label )
+	{
+		assert.ok( count > 0, `${label} count is non-zero (got ${count})` );
+		for ( let i = 0; i < count; i++ )
+		{
+			const rec = read( i );
+			assert.equal( rec.role, roleValue, `${label} primitives are tagged with that role` );
+		}
+	}
+
+	fill( { bounds: true } );
+	assertRoles( b3.getNumDebugBounds( dd ), ( i ) => b3.getDebugBoundsAt( bounds, dd, i ), role.bounds.value, 'bounds' );
+
+	fill( { joints: true } );
+	const jointSegments = b3.getNumDebugSegments( dd );
+	assert.ok( jointSegments >= 1, `joints pass draws the distance joint (got ${jointSegments} segments)` );
+	for ( let i = 0; i < jointSegments; i++ )
+	{
+		b3.getDebugSegmentAt( segment, dd, i );
+		assert.equal( segment.role, role.joints.value, 'joint segments are tagged joints' );
+		assert.notEqual( segment.color & 0xffffff, 0xF0FFFF, 'joints alone do not include the azure extra' );
+	}
+
+	fill( { joints: true, jointExtras: true } );
+	const extraSegments = b3.getNumDebugSegments( dd );
+	assert.ok( extraSegments > jointSegments, `jointExtras adds a segment (${jointSegments} -> ${extraSegments})` );
+	let azure = 0;
+	for ( let i = 0; i < extraSegments; i++ )
+	{
+		b3.getDebugSegmentAt( segment, dd, i );
+		assert.equal( segment.role, role.joints.value, 'joint extras stay on the joints role' );
+		if ( ( segment.color & 0xffffff ) === 0xF0FFFF ) azure++;
+	}
+	assert.ok( azure >= 1, 'jointExtras draws the azure constraint-force segment' );
+
+	fill( { mass: true } );
+	assertRoles( b3.getNumDebugTransforms( dd ), ( i ) => b3.getDebugTransformAt( transform, dd, i ), role.mass.value, 'mass' );
+
+	fill( { contacts: true } );
+	assertRoles( b3.getNumDebugPoints( dd ), ( i ) => b3.getDebugPointAt( point, dd, i ), role.contactPoints.value, 'contact points' );
+	assert.equal( b3.getNumDebugSegments( dd ), 0, 'contact points pass does not keep the other contact primitives' );
+
+	fill( { contactNormals: true } );
+	assertRoles( b3.getNumDebugSegments( dd ), ( i ) => b3.getDebugSegmentAt( segment, dd, i ), role.contactNormals.value, 'contact normals' );
+
+	fill( { contactForces: true } );
+	const forceSegments = b3.getNumDebugSegments( dd );
+	assertRoles( forceSegments, ( i ) => b3.getDebugSegmentAt( segment, dd, i ), role.contactForces.value, 'contact forces' );
+	for ( let i = 0; i < forceSegments; i++ )
+	{
+		b3.getDebugSegmentAt( segment, dd, i );
+		assert.notEqual( segment.color & 0xffffff, 0xFFFF00, 'contact-forces pass drops the yellow friction lines' );
+	}
+
+	fill( { frictionForces: true } );
+	const frictionSegments = b3.getNumDebugSegments( dd );
+	assertRoles( frictionSegments, ( i ) => b3.getDebugSegmentAt( segment, dd, i ), role.frictionForces.value, 'friction forces' );
+	for ( let i = 0; i < frictionSegments; i++ )
+	{
+		b3.getDebugSegmentAt( segment, dd, i );
+		assert.equal( segment.color & 0xffffff, 0xFFFF00, 'friction pass keeps only the yellow segments' );
+	}
+	assert.notEqual( frictionSegments, forceSegments, 'friction and normal-force segments are different sets' );
+
+	fill( { contactFeatures: true } );
+	assertRoles( b3.getNumDebugPoints( dd ), ( i ) => b3.getDebugPointAt( point, dd, i ), role.contactFeatures.value, 'contact features' );
+
+	fill( { islands: true } );
+	assertRoles( b3.getNumDebugBounds( dd ), ( i ) => b3.getDebugBoundsAt( bounds, dd, i ), role.islands.value, 'islands' );
+
+	fill( { graphColors: true } );
+	assertRoles( b3.getNumDebugPoints( dd ), ( i ) => b3.getDebugPointAt( point, dd, i ), role.graphColors.value, 'graph colours' );
+	assert.equal( b3.getNumDebugSegments( dd ), 0, 'graph-colours pass records points only' );
+
+	b3.destroyDebugDrawBuffer( dd );
+	b3.b3DestroyWorld( world );
+
+	function expectGeometry( label, create, check )
+	{
+		const wdef = b3.b3DefaultWorldDef();
+		const w = b3.b3CreateWorld( wdef );
+		const bdef = b3.b3DefaultBodyDef();
+		bdef.type = b3.b3BodyType.b3_staticBody;
+		const body = b3.b3CreateBody( w, bdef );
+		const made = create( body );
+		const buf = b3.createDebugDrawBuffer();
+		const rec = b3.createDebugShapeRecord();
+		b3.getDebugDraw( buf, w, { shapes: true } );
+		assert.equal( b3.getNumDebugShapes( buf ), 1, `${label}: one shape drawn` );
+		b3.getDebugShapeAt( rec, buf, 0 );
+		const geo = b3.getDebugGeometry( rec.geometryId );
+		assert.ok( geo, `${label}: geometry is cached` );
+		check( geo, label );
+		const id = rec.geometryId;
+		b3.b3DestroyShape( made.shape, true );
+		assert.equal( b3.getDebugGeometry( id ), null, `${label}: destroying the shape frees its geometry` );
+		b3.getDebugDraw( buf, w, { shapes: true } );
+		assert.equal( b3.getNumDebugShapes( buf ), 0, `${label}: the next draw omits the destroyed shape` );
+		if ( made.release ) made.release();
+		b3.destroyDebugDrawBuffer( buf );
+		b3.b3DestroyWorld( w );
+	}
+
+	expectGeometry( 'hull', ( body ) =>
+	{
+		const hull = b3.b3CreateHull( [
+			-0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, 0.5,  -0.5, -0.5, 0.5,
+			-0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  -0.5,  0.5, 0.5,
+		] );
+		const shape = b3.b3CreateHullShape( body, b3.b3DefaultShapeDef(), hull );
+		return { shape, release: () => b3.b3DestroyHull( hull ) };
+	}, ( geo, label ) =>
+	{
+		assert.ok( geo.indices.length >= 3, `${label}: triangulated faces` );
+		assert.equal( geo.spheres.length, 0, `${label}: no sphere parameters` );
+		assert.equal( geo.capsules.length, 0, `${label}: no capsule parameters` );
+	} );
+
+	expectGeometry( 'mesh', ( body ) =>
+	{
+		const mesh = b3.b3CreateMesh(
+			new Float32Array( [ 0, 0, 0,  1, 0, 0,  0, 0, 1 ] ),
+			new Uint32Array( [ 0, 1, 2 ] ),
+		);
+		const shape = b3.b3CreateMeshShape( body, b3.b3DefaultShapeDef(), mesh, [ 1, 1, 1 ] );
+		return { shape, release: () => b3.b3DestroyMesh( mesh ) };
+	}, ( geo, label ) =>
+	{
+		assert.ok( geo.indices.length >= 3, `${label}: triangles` );
+		assert.ok( geo.positions.length >= 9, `${label}: vertices` );
+	} );
+
+	expectGeometry( 'height field', ( body ) =>
+	{
+		const hf = b3.b3CreateHeightField( [ 0, 0.2, 0.1, 0.4 ], 2, 2, [ 1, 1, 1 ] );
+		const shape = b3.b3CreateHeightFieldShape( body, b3.b3DefaultShapeDef(), hf );
+		return { shape, release: () => b3.b3DestroyHeightField( hf ) };
+	}, ( geo, label ) =>
+	{
+		assert.ok( geo.indices.length >= 6, `${label}: both cell triangles` );
+		assert.ok( geo.positions.length >= 12, `${label}: four grid points` );
+	} );
+
+	expectGeometry( 'compound', ( body ) =>
+	{
+		const hull = b3.b3CreateHull( [
+			-0.4, -0.2, -0.4,  0.4, -0.2, -0.4,  0.4, -0.2, 0.4,  -0.4, -0.2, 0.4,
+			-0.4,  0.2, -0.4,  0.4,  0.2, -0.4,  0.4,  0.2, 0.4,  -0.4,  0.2, 0.4,
+		] );
+		const compound = b3.b3CreateCompound( {
+			hulls: [ { hull, transform: { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } } ],
+			spheres: [ { sphere: { center: [ 0, 0.8, 0 ], radius: 0.3 } } ],
+		} );
+		const shape = b3.b3CreateCompoundShape( body, b3.b3DefaultShapeDef(), compound );
+		return {
+			shape,
+			release: () =>
+			{
+				b3.b3DestroyCompound( compound );
+				b3.b3DestroyHull( hull );
+			},
+		};
+	}, ( geo, label ) =>
+	{
+		assert.ok( geo.indices.length >= 3, `${label}: hull child triangles` );
+		assert.equal( geo.spheres.length, 4, `${label}: sphere child is parameters (xyz, radius)` );
+	} );
+
+	expectGeometry( 'sphere', ( body ) =>
+	{
+		const shape = b3.b3CreateSphereShape( body, b3.b3DefaultShapeDef(), { center: [ 0.2, -0.1, 0.3 ], radius: 0.7 } );
+		return { shape };
+	}, ( geo, label ) =>
+	{
+		assert.equal( geo.indices.length, 0, `${label}: not tessellated` );
+		assert.equal( geo.spheres.length, 4, `${label}: center and radius` );
+		assert.ok( Math.abs( geo.spheres[ 3 ] - 0.7 ) < 1e-5, `${label}: radius round-trips` );
+	} );
+
+	expectGeometry( 'capsule', ( body ) =>
+	{
+		const shape = b3.b3CreateCapsuleShape( body, b3.b3DefaultShapeDef(), {
+			center1: [ 0, -0.4, 0 ], center2: [ 0, 0.4, 0 ], radius: 0.25,
+		} );
+		return { shape };
+	}, ( geo, label ) =>
+	{
+		assert.equal( geo.indices.length, 0, `${label}: not tessellated` );
+		assert.equal( geo.capsules.length, 7, `${label}: both centers and the radius` );
+		assert.ok( Math.abs( geo.capsules[ 6 ] - 0.25 ) < 1e-5, `${label}: radius round-trips` );
+	} );
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -440,6 +723,8 @@ async function check( label, importPath, decompositionOptions )
 	const { planeCount } = eventsAndPlanes( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
+
+	debugDraw( b3 );
 
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
