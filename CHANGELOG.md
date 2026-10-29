@@ -3,6 +3,24 @@
 ## Unreleased
 
 - `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
+- `vendor/box3d` moves from box3d v0.1.0 to `nilo-technologies/box3d` main (3362633, upstream "Dynamic Mover (#202)"), which brings box3d's dynamic character mover joints.
+- Mover joint: `b3DefaultMoverJointDef`, `b3CreateMoverJoint`, `b3MoverJoint_Set/GetLinearVelocity`, `b3MoverJoint_Set/GetMaxVelocityForce`. It drives a body to a target linear velocity within a force budget.
+- Pogo joint: `b3DefaultPogoJointDef`, `b3CreatePogoJoint`, and `b3PogoJoint_*` for rest length, spring hertz and damping ratio, tension and compression force limits, normal, current length and speed, and impulse. It holds a body above a surface along a normal with a spring.
+- `b3JointType` gains `b3_moverJoint` and `b3_pogoJoint`. New `b3Joint_IsAwake`.
+- New def fields: `b3WorldDef.restitutionIterations`, `enableRestitutionPropagation` and `isotropicInertiaTolerance`, `b3BodyDef.safetyFactor`, `b3ShapeDef.enableSpeculativeContact`. Matching runtime accessors: `b3World_Set/GetRestitutionIterations`, `b3World_EnableRestitutionPropagation` / `IsRestitutionPropagationEnabled`, `b3World_Set/GetIsotropicInertiaTolerance`, `b3Body_Set/GetSafetyFactor`, `b3Body_AllowFastRotation` / `IsFastRotationAllowed`.
+- `b3PlaneResult` gains `triangleIndex`, `childIndex` and `materialIndex`.
+
+### Breaking
+
+These follow box3d's renames and removals.
+
+- `b3CreateCompoundShape` is now `b3CreateBakedCompoundShape`.
+- `b3Body_GetLocalCenterOfMass` and `b3Body_GetWorldCenterOfMass` are now `b3Body_GetLocalCenter` and `b3Body_GetWorldCenter`.
+- `b3CollideCapsuleAndTriangle`, `b3CollideHullAndTriangle` and `b3CollideSphereAndTriangle` are now `b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)`, `b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)` and `b3CollideTriangleAndSphere(v1, v2, v3, sphereB)`. The triangle comes first, and the manifold normal now points from the triangle to the shape.
+- `b3RecPlayer_Destroy` is now `b3DestroyPlayer`.
+- `b3World_RebuildStaticTree` is removed. `b3World_DumpShapeBounds` is removed too: box3d still declares it but no longer defines it.
+- `b3Profile.applyRestitution` is now `b3Profile.restitution`.
+- The hull and compound binary versions changed, so hull and compound data baked with v0.3.0 has to be rebuilt.
 
 ## v0.3.0
 

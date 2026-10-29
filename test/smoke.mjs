@@ -216,6 +216,74 @@ function eventsAndPlanes( b3 )
 	return { sawSensor, planeCount };
 }
 
+// Dynamic character: a rotation-locked capsule that a pogo joint holds above the
+// ground and a mover joint drives sideways, as in box3d's DynamicMover sample.
+function moverAndPogoJoints( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const ground = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+	b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+
+	const capsule = { center1: [ 0, -0.5, 0 ], center2: [ 0, 0.5, 0 ], radius: 0.3 };
+	const moverDef = b3.b3DefaultBodyDef();
+	moverDef.type = b3.b3BodyType.b3_dynamicBody;
+	moverDef.position = [ 0, 2, 0 ];
+	moverDef.motionLocks = { linearX: false, linearY: false, linearZ: false, angularX: true, angularY: true, angularZ: true };
+	moverDef.enableSleep = false;
+	moverDef.safetyFactor = 0.25;
+	const mover = b3.b3CreateBody( world, moverDef );
+	assert.equal( b3.b3Body_GetSafetyFactor( mover ), 0.25, 'body def safetyFactor survives the JS round trip' );
+	const shapeDef = b3.b3DefaultShapeDef();
+	shapeDef.density = 200;
+	shapeDef.baseMaterial.friction = 0;
+	b3.b3CreateCapsuleShape( mover, shapeDef, capsule );
+
+	const moverJointDef = b3.b3DefaultMoverJointDef();
+	moverJointDef.base.bodyIdA = ground;
+	moverJointDef.base.bodyIdB = mover;
+	moverJointDef.base.collideConnected = true;
+	moverJointDef.maxForce = 6000;
+	const moverJoint = b3.b3CreateMoverJoint( world, moverJointDef );
+	assert.ok( b3.b3Joint_GetType( moverJoint ) === b3.b3JointType.b3_moverJoint, 'mover joint has the mover type' );
+
+	const weight = 10 * b3.b3Body_GetMass( mover );
+	const restLength = 0.9;
+	const pogoDef = b3.b3DefaultPogoJointDef();
+	pogoDef.base.bodyIdA = ground;
+	pogoDef.base.bodyIdB = mover;
+	pogoDef.base.collideConnected = true;
+	pogoDef.base.localFrameA = { position: [ 0, 0.5, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	pogoDef.base.localFrameB = { position: capsule.center1, quaternion: [ 0, 0, 0, 1 ] };
+	pogoDef.normal = [ 0, 1, 0 ];
+	pogoDef.restLength = restLength;
+	pogoDef.hertz = 3;
+	pogoDef.dampingRatio = 0.8;
+	pogoDef.maxCompressionForce = 100 * weight;
+	pogoDef.maxTensionForce = 100 * weight;
+	const pogo = b3.b3CreatePogoJoint( world, pogoDef );
+	assert.ok( b3.b3Joint_GetType( pogo ) === b3.b3JointType.b3_pogoJoint, 'pogo joint has the pogo type' );
+	assert.ok( Math.abs( b3.b3PogoJoint_GetRestLength( pogo ) - restLength ) < 1e-6, 'pogo def restLength is applied' );
+
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const p = [ 0, 0, 0 ];
+	b3.b3Body_GetPosition( p, mover );
+	const pogoLength = b3.b3PogoJoint_GetCurrentLength( pogo );
+	// The ground top is y = 0.5 and the capsule bottom sits 0.8 below the body origin.
+	assert.ok( p[ 1 ] - 0.8 > 0.5, `pogo holds the capsule clear of the ground (y=${p[ 1 ].toFixed( 3 )})` );
+	assert.ok( Math.abs( pogoLength - restLength ) < 0.1, `pogo settles near its rest length (got ${pogoLength.toFixed( 3 )})` );
+
+	b3.b3MoverJoint_SetLinearVelocity( moverJoint, [ 2, 0, 0 ] );
+	for ( let i = 0; i < 60; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const v = [ 0, 0, 0 ];
+	b3.b3Body_GetLinearVelocity( v, mover );
+	assert.ok( Math.abs( v[ 0 ] - 2 ) < 0.1, `mover joint drives the target velocity (vx=${v[ 0 ].toFixed( 3 )})` );
+
+	b3.b3DestroyWorld( world );
+	return { height: p[ 1 ], speed: v[ 0 ] };
+}
+
 // Indexed torus around the y axis: concave, so V-HACD has to split it.
 function torusMesh( radius = 1, tube = 0.35, radial = 24, tubular = 12 )
 {
@@ -322,7 +390,7 @@ async function convexDecomposition( b3, extraOptions = {} )
 	const staticDef = b3.b3DefaultBodyDef();
 	staticDef.type = b3.b3BodyType.b3_staticBody;
 	staticDef.position = [ 5, 1, 0 ];
-	const compoundShape = b3.b3CreateCompoundShape( b3.b3CreateBody( world, staticDef ), b3.b3DefaultShapeDef(), compound );
+	const compoundShape = b3.b3CreateBakedCompoundShape( b3.b3CreateBody( world, staticDef ), b3.b3DefaultShapeDef(), compound );
 	assert.ok( b3.b3Shape_IsValid( compoundShape ), 'compound shape is valid' );
 	assert.equal( b3.b3Shape_GetType( compoundShape ), b3.b3ShapeType.b3_compoundShape, 'shape is a compound' );
 	b3.b3World_Step( world, 1 / 60, 4 );
@@ -664,7 +732,7 @@ function debugDraw( b3 )
 			hulls: [ { hull, transform: { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } } ],
 			spheres: [ { sphere: { center: [ 0, 0.8, 0 ], radius: 0.3 } } ],
 		} );
-		const shape = b3.b3CreateCompoundShape( body, b3.b3DefaultShapeDef(), compound );
+		const shape = b3.b3CreateBakedCompoundShape( body, b3.b3DefaultShapeDef(), compound );
 		return {
 			shape,
 			release: () =>
@@ -722,6 +790,8 @@ async function check( label, importPath, decompositionOptions )
 
 	const { planeCount } = eventsAndPlanes( b3 );
 
+	const { height, speed } = moverAndPogoJoints( b3 );
+
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
 	debugDraw( b3 );
@@ -729,6 +799,7 @@ async function check( label, importPath, decompositionOptions )
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
+		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}` );
 }
 
