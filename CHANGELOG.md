@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
+
 ## v0.2.0
 
 Convex decomposition: [V-HACD](https://github.com/kmammou/v-hacd) v4.1.0 is compiled into every build, so concave meshes can become collision shapes on dynamic bodies.

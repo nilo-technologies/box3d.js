@@ -444,6 +444,22 @@ function getPlaneResultAt( out, buf, i )
 	return out;
 }
 
+// --- b3Body_CollideMover plane results -----------------------------------------
+// b3Body_CollideMover returns { count, data, shapeIds }: data has the CollideMover
+// plane layout (so getPlaneResultAt also reads it), shapeIds LAYOUT.shapeId int32
+// per plane. Mirrors b3BodyPlaneResult: { shapeId, result }.
+
+function getNumBodyPlaneResults( buf ) { return buf.count; }
+function createBodyPlaneResult() { return { shapeId: createShapeId(), result: createPlaneResult() }; }
+function getBodyPlaneResultAt( out, buf, i )
+{
+	const ids = buf.shapeIds;
+	const s = i * LAYOUT.shapeId;
+	out.shapeId.index1 = ids[ s ]; out.shapeId.world0 = ids[ s + 1 ]; out.shapeId.generation = ids[ s + 2 ];
+	getPlaneResultAt( out.result, buf, i );
+	return out;
+}
+
 // --- convex decomposition (V-HACD) -------------------------------------------
 //
 //   const res = b3.b3CreateConvexDecompositionShapes( body, shapeDef, positions, indices, { maxConvexHulls: 16 } );
@@ -907,6 +923,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createSensorTouchEvent, getSensorBeginEventAt, getSensorEndEventAt,
 		createJointEvent, getJointEventAt,
 		getNumPlaneResults, createPlaneResult, getPlaneResultAt,
+		getNumBodyPlaneResults, createBodyPlaneResult, getBodyPlaneResultAt,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,

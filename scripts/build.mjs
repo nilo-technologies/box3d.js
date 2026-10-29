@@ -312,6 +312,10 @@ export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
 export interface PlaneResultBuffer { count: number; data: Float32Array; }
 export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+/** Packed planes returned by b3Body_CollideMover: PlaneResultBuffer plus the shape id
+ * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
+export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }
+export interface BodyPlaneResult { shapeId: b3ShapeId; result: PlaneResult; }
 export interface Contact {
   shapeIdA: b3ShapeId;
   shapeIdB: b3ShapeId;
@@ -426,6 +430,9 @@ export interface Box3DFacade {
   getNumPlaneResults(buf: PlaneResultBuffer): number;
   createPlaneResult(): PlaneResult;
   getPlaneResultAt(out: PlaneResult, buf: PlaneResultBuffer, i: number): PlaneResult;
+  getNumBodyPlaneResults(buf: BodyPlaneResultBuffer): number;
+  createBodyPlaneResult(): BodyPlaneResult;
+  getBodyPlaneResultAt(out: BodyPlaneResult, buf: BodyPlaneResultBuffer, i: number): BodyPlaneResult;
 }`;
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
