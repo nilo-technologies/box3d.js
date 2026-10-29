@@ -302,7 +302,7 @@ async function convexDecomposition( b3, extraOptions = {} )
 	const staticDef = b3.b3DefaultBodyDef();
 	staticDef.type = b3.b3BodyType.b3_staticBody;
 	staticDef.position = [ 5, 1, 0 ];
-	const compoundShape = b3.b3CreateCompoundShape( b3.b3CreateBody( world, staticDef ), b3.b3DefaultShapeDef(), compound );
+	const compoundShape = b3.b3CreateBakedCompoundShape( b3.b3CreateBody( world, staticDef ), b3.b3DefaultShapeDef(), compound );
 	assert.ok( b3.b3Shape_IsValid( compoundShape ), 'compound shape is valid' );
 	assert.equal( b3.b3Shape_GetType( compoundShape ), b3.b3ShapeType.b3_compoundShape, 'shape is a compound' );
 	b3.b3World_Step( world, 1 / 60, 4 );
@@ -644,7 +644,7 @@ function debugDraw( b3 )
 			hulls: [ { hull, transform: { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } } ],
 			spheres: [ { sphere: { center: [ 0, 0.8, 0 ], radius: 0.3 } } ],
 		} );
-		const shape = b3.b3CreateCompoundShape( body, b3.b3DefaultShapeDef(), compound );
+		const shape = b3.b3CreateBakedCompoundShape( body, b3.b3DefaultShapeDef(), compound );
 		return {
 			shape,
 			release: () =>
