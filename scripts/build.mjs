@@ -206,6 +206,9 @@ mkdirSync( join( root, 'dist' ), { recursive: true } );
 // Hand-written Three.js helper. It does not go through emscripten.
 copyFileSync( join( root, 'src', 'three.js' ), join( root, 'dist', 'three.mjs' ) );
 copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts' ) );
+// Hand-written DynamicMover port (box3d's samples/dynamic_mover.cpp).
+copyFileSync( join( root, 'src', 'character.js' ), join( root, 'dist', 'character.mjs' ) );
+copyFileSync( join( root, 'src', 'character.d.ts' ), join( root, 'dist', 'character.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 

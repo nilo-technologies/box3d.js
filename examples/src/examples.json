@@ -184,6 +184,18 @@
       "interactive"
     ]
   },
+  "example-dynamic-mover": {
+    "title": "Dynamic Mover",
+    "description": "box3d's rigid-body character (mover + pogo joints) from box3d.js/character: stairs, slopes, a ledge, crates and a moving platform",
+    "tags": [
+      "character",
+      "mover",
+      "controller",
+      "pogo",
+      "joints",
+      "interactive"
+    ]
+  },
   "example-static-compound": {
     "title": "Static Compound",
     "description": "one static compound shape (a bin) built from many box children; balls rain in",

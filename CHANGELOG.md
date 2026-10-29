@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `import { DynamicMover } from 'box3d.js/character'` is a JavaScript port of box3d's dynamic character mover (`samples/dynamic_mover.cpp`). A capsule body with locked rotation is driven by a mover joint and held above the ground by a pogo joint, with a skirt of rays for ledges and steep slopes, and it rides kinematic platforms tagged with `platformMaterialId`. Call `update(timeStep, forward, right, throttle, speedScale?)` before each `b3World_Step`; `jump()`, `launch()`, `setGravityScale()` and `destroy()` match the sample, and every tuning value is a public field. It is not compiled into the wasm.
+- The `b3World_CastRay` callback receives the hit shape's `userMaterialId` (a `bigint`) as a fifth argument.
+- New example: Dynamic Mover.
 - `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
 box3d now comes from the [nilo-technologies/box3d](https://github.com/nilo-technologies/box3d) fork, updated to upstream `main` (`3362633`, "Dynamic Mover").

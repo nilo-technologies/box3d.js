@@ -3063,9 +3063,10 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3World_CastRay(worldId, origin, translation, filter, callback)", +[]( b3WorldId worldId, b3Vec3 origin, b3Vec3 translation, b3QueryFilter filter, val cb )
 	{
 		b3World_CastRay( worldId, origin, translation, filter,
-			[]( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* ctx ) -> float
+			[]( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId, int, int, void* ctx ) -> float
 			{
-				val r = ( *static_cast<val*>( ctx ) )( shapeId, point, normal, fraction );
+				// userMaterialId arrives as a BigInt (WASM_BIGINT).
+				val r = ( *static_cast<val*>( ctx ) )( shapeId, point, normal, fraction, userMaterialId );
 				return r.isUndefined() ? 1.0f : r.as<float>();
 			},
 			&cb );

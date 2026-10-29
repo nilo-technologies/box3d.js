@@ -2,6 +2,7 @@
 // build variants (separate-wasm and inlined single-file).
 
 import assert from 'node:assert/strict';
+import { DynamicMover } from '../dist/character.mjs';
 
 function fallingBox( b3 )
 {
@@ -704,6 +705,90 @@ function debugDraw( b3 )
 	} );
 }
 
+// box3d.js/character: stand, walk, climb a step, jump, and ride a tagged kinematic platform.
+function dynamicMover( b3 )
+{
+	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
+	const staticBox = ( x, y, z, hx, hy, hz, material ) =>
+	{
+		const def = b3.b3DefaultBodyDef();
+		def.position = [ x, y, z ];
+		const body = b3.b3CreateBody( world, def );
+		const sd = b3.b3DefaultShapeDef();
+		if ( material ) sd.baseMaterial.userMaterialId = material;
+		b3.b3CreateBoxShape( body, sd, hx, hy, hz );
+		return body;
+	};
+	staticBox( 0, -0.5, 0, 30, 0.5, 30 ); // ground, top at y = 0
+	staticBox( 14, 0.15, 0, 6, 0.15, 2 ); // 0.3 high step at x = 8..20
+
+	const PLATFORM = 7n;
+	const platformDef = b3.b3DefaultBodyDef();
+	platformDef.type = b3.b3BodyType.b3_kinematicBody;
+	platformDef.position = [ -10, 0.25, 0 ];
+	const platform = b3.b3CreateBody( world, platformDef );
+	const platformShape = b3.b3DefaultShapeDef();
+	platformShape.baseMaterial.userMaterialId = PLATFORM;
+	b3.b3CreateBoxShape( platform, platformShape, 2, 0.25, 2 );
+
+	const dt = 1 / 60;
+	const forward = [ 1, 0, 0 ];
+	const right = [ 0, 0, 1 ];
+	const pos = [ 0, 0, 0 ];
+	const vel = [ 0, 0, 0 ];
+	const run = ( mover, frames, throttle ) =>
+	{
+		for ( let i = 0; i < frames; i++ )
+		{
+			mover.update( dt, forward, right, throttle );
+			b3.b3World_Step( world, dt, 4 );
+		}
+		return b3.b3Body_GetPosition( pos, mover.bodyId );
+	};
+
+	const mover = new DynamicMover( b3, world, { position: [ 0, 1.5, 0 ] } );
+	run( mover, 120, [ 0, 0 ] );
+	const standY = pos[ 1 ];
+	assert.ok( mover.onGround && mover.walkable, 'mover stands on the ground' );
+	assert.ok( standY > 1 && standY < 1.6, `pogo holds the capsule above the ground (y=${standY.toFixed( 2 )})` );
+	assert.ok( Math.abs( pos[ 0 ] ) < 1e-3 && Math.abs( pos[ 2 ] ) < 1e-3, 'mover stays put without input' );
+
+	run( mover, 60, [ 1, 0 ] );
+	b3.b3Body_GetLinearVelocity( vel, mover.bodyId );
+	assert.ok( vel[ 0 ] > 0.9 * mover.maxSpeed, `mover reaches max speed (vx=${vel[ 0 ].toFixed( 2 )})` );
+
+	run( mover, 60, [ 1, 0 ] );
+	assert.ok( pos[ 0 ] > 9 && pos[ 0 ] < 18, `mover walked onto the step (x=${pos[ 0 ].toFixed( 2 )})` );
+	const stepY = run( mover, 10, [ 0, 0 ] )[ 1 ];
+	assert.ok( stepY > standY + 0.2, `mover climbed the 0.3 step (y=${stepY.toFixed( 2 )})` );
+
+	assert.equal( mover.jump(), true, 'jump from the ground' );
+	run( mover, 5, [ 0, 0 ] );
+	b3.b3Body_GetLinearVelocity( vel, mover.bodyId );
+	assert.ok( vel[ 1 ] > 3 && mover.jumping, `mover rises after jumping (vy=${vel[ 1 ].toFixed( 2 )})` );
+	assert.equal( mover.jump(), false, 'no jump while airborne' );
+	run( mover, 120, [ 0, 0 ] );
+	assert.ok( mover.onGround && !mover.jumping, 'mover lands' );
+
+	mover.destroy();
+	assert.equal( b3.b3Body_IsValid( mover.bodyId ), false, 'destroy removes the mover body' );
+
+	// Platform: the mover joint attaches to a kinematic body tagged with platformMaterialId.
+	const rider = new DynamicMover( b3, world, { position: [ -10, 2, 0 ], platformMaterialId: PLATFORM } );
+	run( rider, 90, [ 0, 0 ] );
+	const bodyA = b3.b3Joint_GetBodyA( rider.moverJointId );
+	assert.deepEqual( bodyA, platform, 'mover joint attaches to the tagged platform' );
+	assert.equal( rider.castResult.userMaterialId, PLATFORM, 'ray cast reports the user material id' );
+	b3.b3Body_SetLinearVelocity( platform, [ 0, 0, 1 ] );
+	const startZ = run( rider, 1, [ 0, 0 ] )[ 2 ];
+	const endZ = run( rider, 60, [ 0, 0 ] )[ 2 ];
+	assert.ok( endZ - startZ > 0.8, `mover rides the moving platform (dz=${( endZ - startZ ).toFixed( 2 )})` );
+	rider.destroy();
+
+	b3.b3DestroyWorld( world );
+	return { standY, stepY, rideZ: endZ - startZ };
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -726,10 +811,13 @@ async function check( label, importPath, decompositionOptions )
 
 	debugDraw( b3 );
 
+	const mover = dynamicMover( b3 );
+
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
-		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}` );
+		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
+		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform` );
 }
 
 console.log( 'box3d.js smoke test' );

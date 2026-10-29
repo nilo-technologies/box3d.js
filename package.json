@@ -23,6 +23,10 @@
     "./three": {
       "types": "./dist/three.d.ts",
       "import": "./dist/three.mjs"
+    },
+    "./character": {
+      "types": "./dist/character.d.ts",
+      "import": "./dist/character.mjs"
     }
   },
   "files": [
