@@ -192,6 +192,25 @@ function eventsAndPlanes( b3 )
 	assert.ok( planeCount >= 1, `CollideMover reported plane results via the buffer (got ${planeCount})` );
 	assert.ok( worstNormalErr < 1e-3, 'plane-result normal is unit-length' );
 
+	// CollideMover over a two-triangle mesh quad reports which triangle each plane came from.
+	const quadDef = b3.b3DefaultBodyDef();
+	quadDef.position = [ 30, 0, 0 ];
+	const quad = b3.b3CreateMesh(
+		new Float32Array( [ 0, 0, 0,  1, 0, 0,  0, 0, 1,  1, 0, 1 ] ),
+		new Uint32Array( [ 0, 2, 1,  1, 2, 3 ] ),
+	);
+	b3.b3CreateMeshShape( b3.b3CreateBody( world, quadDef ), b3.b3DefaultShapeDef(), quad, [ 1, 1, 1 ] );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	const meshTriangles = [];
+	b3.b3World_CollideMover( world, [ 30.75, 0.8, 0.75 ], capsule, b3.b3DefaultQueryFilter(), ( _s, buf ) =>
+	{
+		for ( let i = 0, n = b3.getNumPlaneResults( buf ); i < n; i++ )
+			meshTriangles.push( b3.getPlaneResultAt( planeResult, buf, i ).triangleIndex );
+		return true;
+	} );
+	assert.ok( meshTriangles.length >= 1 && meshTriangles.every( ( t ) => t === 0 || t === 1 ),
+		`mesh CollideMover planes carry the mesh triangle index (got ${meshTriangles})` );
+
 	// Body CollideMover: the same mover against a dynamic body at a caller-given
 	// transform. The body sits far away; its transform is overridden to the mover.
 	const dynDef = b3.b3DefaultBodyDef();
@@ -213,6 +232,7 @@ function eventsAndPlanes( b3 )
 	assert.equal( b3.getNumBodyPlaneResults( missed ), 0, 'body CollideMover reports nothing when out of reach' );
 
 	b3.b3DestroyWorld( world );
+	b3.b3DestroyMesh( quad );
 	return { sawSensor, planeCount };
 }
 

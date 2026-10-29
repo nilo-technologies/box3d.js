@@ -1182,8 +1182,10 @@ export interface BodyMoveEvent {
 export interface SensorTouchEvent { sensorShapeId: b3ShapeId; visitorShapeId: b3ShapeId; }
 export interface JointEvent { jointId: b3JointId; }
 /** Packed plane buffer passed to the b3World_CollideMover callback. */
-export interface PlaneResultBuffer { count: number; data: Float32Array; }
-export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; }
+export interface PlaneResultBuffer { count: number; data: Float32Array; indices: Int32Array; }
+/** triangleIndex is the mesh or height field triangle, childIndex the compound child,
+ * materialIndex the shape material. */
+export interface PlaneResult { plane: { normal: b3Vec3; offset: number }; point: b3Vec3; triangleIndex: number; childIndex: number; materialIndex: number; }
 /** Packed planes returned by b3Body_CollideMover: PlaneResultBuffer plus the shape id
  * of each plane (ShapeIdBuffer layout). Read with getBodyPlaneResultAt. */
 export interface BodyPlaneResultBuffer extends PlaneResultBuffer { shapeIds: Int32Array; }

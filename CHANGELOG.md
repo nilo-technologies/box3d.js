@@ -8,7 +8,7 @@
 - Pogo joint: `b3DefaultPogoJointDef`, `b3CreatePogoJoint`, and `b3PogoJoint_*` for rest length, spring hertz and damping ratio, tension and compression force limits, normal, current length and speed, and impulse. It holds a body above a surface along a normal with a spring.
 - `b3JointType` gains `b3_moverJoint` and `b3_pogoJoint`. New `b3Joint_IsAwake`.
 - New def fields: `b3WorldDef.restitutionIterations`, `enableRestitutionPropagation` and `isotropicInertiaTolerance`, `b3BodyDef.safetyFactor`, `b3ShapeDef.enableSpeculativeContact`. Matching runtime accessors: `b3World_Set/GetRestitutionIterations`, `b3World_EnableRestitutionPropagation` / `IsRestitutionPropagationEnabled`, `b3World_Set/GetIsotropicInertiaTolerance`, `b3Body_Set/GetSafetyFactor`, `b3Body_AllowFastRotation` / `IsFastRotationAllowed`.
-- `b3PlaneResult` gains `triangleIndex`, `childIndex` and `materialIndex`.
+- `b3PlaneResult` gains `triangleIndex`, `childIndex` and `materialIndex`. The `b3World_CollideMover` and `b3Body_CollideMover` buffers carry them in a parallel `indices` Int32Array, and `getPlaneResultAt` fills them.
 
 ### Breaking
 
