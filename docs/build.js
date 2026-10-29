@@ -17,7 +17,7 @@ const projectRoot = path.join(docsDir, '..');
 
 // Examples gallery (GitHub Pages). The gallery deep-links each example via a
 // `#<key>` hash, so links are `${EXAMPLES_BASE_URL}#<key>`.
-const EXAMPLES_BASE_URL = 'https://isaac-mason.github.io/box3d.js/';
+const EXAMPLES_BASE_URL = 'https://nilo-technologies.github.io/box3d.js/';
 
 const templatePath = path.join(docsDir, 'README.template.md');
 const outPath = path.join(projectRoot, 'README.md');
