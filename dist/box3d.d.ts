@@ -353,9 +353,6 @@ export type b3WorldDef = {
   enableSleep: boolean,
   enableContinuous: boolean,
   workerCount: number,
-  restitutionIterations: number,
-  enableRestitutionPropagation: boolean,
-  isotropicInertiaTolerance: number,
   capacity: b3Capacity,
   internalValue: number
 };
@@ -378,7 +375,6 @@ export type b3BodyDef = {
   isEnabled: boolean,
   allowFastRotation: boolean,
   enableContactRecycling: boolean,
-  safetyFactor: number,
   internalValue: number
 };
 

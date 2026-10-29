@@ -2187,9 +2187,6 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "enableSleep", &b3WorldDef::enableSleep )
 		.field( "enableContinuous", &b3WorldDef::enableContinuous )
 		.field( "workerCount", &b3WorldDef::workerCount )
-		.field( "restitutionIterations", &b3WorldDef::restitutionIterations )
-		.field( "enableRestitutionPropagation", &b3WorldDef::enableRestitutionPropagation )
-		.field( "isotropicInertiaTolerance", &b3WorldDef::isotropicInertiaTolerance )
 		.field( "capacity", &b3WorldDef::capacity )
 		.field( "internalValue", &b3WorldDef::internalValue );
 
@@ -2211,7 +2208,6 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "isEnabled", &b3BodyDef::isEnabled )
 		.field( "allowFastRotation", &b3BodyDef::allowFastRotation )
 		.field( "enableContactRecycling", &b3BodyDef::enableContactRecycling )
-		.field( "safetyFactor", &b3BodyDef::safetyFactor )
 		.field( "internalValue", &b3BodyDef::internalValue );
 
 	value_object<b3ShapeDef>( "b3ShapeDef" )
