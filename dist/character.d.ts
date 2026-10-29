@@ -42,7 +42,8 @@ export interface DynamicMoverDef {
 	pogoCompressionScale?: number;
 	/** Pogo tension force limit as a multiple of the mover weight. Default 100. */
 	pogoTensionScale?: number;
-	/** Kinematic bodies whose shapes use this user material id carry the mover. 0 disables. Default 0. */
+	/** Kinematic bodies whose shapes use this user material id carry the mover. Only their linear
+	 * velocity is matched, so spinning platforms don't carry it. 0 disables. Default 0. */
 	platformMaterialId?: bigint | number;
 	/** Default true. */
 	enableSkirtPogo?: boolean;

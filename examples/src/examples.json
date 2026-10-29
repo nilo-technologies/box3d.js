@@ -186,7 +186,7 @@
   },
   "example-dynamic-mover": {
     "title": "Dynamic Mover",
-    "description": "box3d's rigid-body character (mover + pogo joints) from box3d.js/character: stairs, slopes, a ledge, crates and a moving platform",
+    "description": "a capsule character on an obstacle course: stair flights, ramps up to too-steep, a bridge, stepping posts, props, a seesaw, a sweeper arm, and moving platforms it rides (box3d.js/character)",
     "tags": [
       "character",
       "mover",

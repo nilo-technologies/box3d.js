@@ -359,7 +359,7 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 
 ## Character Controller
 
-`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it.
+`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it. As in upstream, only the platform's linear velocity is matched, so translating platforms carry the character and spinning ones don't.
 
 It is plain JavaScript on top of the bindings, not part of the wasm. Upstream intends this controller to be changed for each game, so every tuning value is a public field, and the class is small enough to subclass or copy.
 
