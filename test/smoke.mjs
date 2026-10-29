@@ -684,6 +684,280 @@ function debugDraw( b3 )
 	} );
 }
 
+// Vehicle controller: ride height, acceleration, braking, turning, slope hold,
+// determinism, live setters, the four example presets and a 50 car perf check.
+async function vehicleScenarios( b3 )
+{
+	const { vehiclePresets, createPresetVehicleDef } = await import( '../examples/src/vehicle-presets.js' );
+	const dt = 1 / 60;
+
+	function axisAngle( axis, angle )
+	{
+		const s = Math.sin( angle / 2 );
+		return [ axis[ 0 ] * s, axis[ 1 ] * s, axis[ 2 ] * s, Math.cos( angle / 2 ) ];
+	}
+
+	function createWorld( groundRotation = [ 0, 0, 0, 1 ] )
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -9.81, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const groundDef = b3.b3DefaultBodyDef();
+		groundDef.position = [ 0, -1, 0 ];
+		groundDef.rotation = groundRotation;
+		const ground = b3.b3CreateBody( world, groundDef );
+		b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 2000, 1, 2000 );
+		return world;
+	}
+
+	function createCar( world, { position = [ 0, 1, 0 ], rotation = [ 0, 0, 0, 1 ], def = b3.b3DefaultVehicleDef(), halfExtents = [ 0.9, 0.3, 2.1 ] } = {} )
+	{
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = position;
+		bodyDef.rotation = rotation;
+		const chassis = b3.b3CreateBody( world, bodyDef );
+		b3.b3CreateBoxShape( chassis, b3.b3DefaultShapeDef(), halfExtents[ 0 ], halfExtents[ 1 ], halfExtents[ 2 ] );
+		def.chassisId = chassis;
+		const vehicle = b3.b3CreateVehicle( world, def );
+		assert.ok( b3.b3Vehicle_IsValid( vehicle ), 'vehicle is valid' );
+		return { vehicle, chassis };
+	}
+
+	const input = ( forward = 0, brake = 0, steer = 0, handbrake = 0 ) => ( { forward, brake, steer, handbrake } );
+	const step = ( world, count ) =>
+	{
+		for ( let i = 0; i < count; i++ ) b3.b3World_Step( world, dt, 4 );
+	};
+	const pos = [ 0, 0, 0 ];
+	const rot = [ 0, 0, 0, 1 ];
+	const position = ( body ) => [ ...b3.b3Body_GetPosition( pos, body ) ];
+	const uprightness = ( body ) =>
+	{
+		const [ x, , z ] = b3.b3Body_GetRotation( rot, body );
+		return 1 - 2 * ( x * x + z * z ); // world y of the chassis up axis
+	};
+
+	const buf = b3.createVehicleStateBuffer();
+	const state = b3.createVehicleStateRecord();
+	const wheel = b3.createVehicleWheelRecord();
+	function readState( vehicle )
+	{
+		b3.getVehicleStateData( buf, vehicle );
+		b3.getVehicleStateAt( state, buf );
+		const wheels = [];
+		for ( let i = 0; i < b3.getNumVehicleWheels( buf ); i++ )
+		{
+			b3.getVehicleWheelAt( wheel, buf, i );
+			wheels.push( { ...wheel } );
+		}
+		return { ...state, wheels };
+	}
+	function assertFinite( vehicle, chassis, label )
+	{
+		const s = readState( vehicle );
+		const values = [ ...position( chassis ), s.speed, s.engineRpm ];
+		for ( const w of s.wheels ) values.push( ...w.position, ...w.rotation, w.load, w.angularVelocity, w.slipRatio );
+		assert.ok( values.every( Number.isFinite ), `${label}: vehicle state is finite` );
+	}
+
+	const results = {};
+
+	// Ride height: rests on four loaded wheels, sprung masses add up to the chassis mass
+	{
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world );
+		step( world, 120 );
+		const s = readState( vehicle );
+		const sprung = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3Vehicle_GetSprungMass( vehicle, i ), 0 );
+		assert.ok( Math.abs( sprung - 1300 ) < 1, `sprung masses sum to the chassis mass (${sprung.toFixed( 1 )})` );
+		assert.equal( s.wheelsInContact, 4, 'all four wheels touch the ground' );
+		const load = s.wheels.reduce( ( sum, w ) => sum + w.load, 0 );
+		assert.ok( Math.abs( load - 1300 * 9.81 ) < 1300 * 9.81 * 0.05, `wheel loads carry the weight (${load.toFixed( 0 )} N)` );
+		results.rideHeight = position( chassis )[ 1 ];
+		assert.ok( results.rideHeight > 0.6 && results.rideHeight < 0.8, `ride height ${results.rideHeight.toFixed( 3 )} m` );
+		assert.ok( Math.abs( b3.b3Body_GetLinearVelocity( pos, chassis )[ 1 ] ) < 0.01, 'suspension settled' );
+
+		// Acceleration and shifting
+		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		let t = 0;
+		while ( readState( vehicle ).speed < 100 / 3.6 && t < 15 )
+		{
+			step( world, 1 );
+			t += dt;
+		}
+		results.zeroTo100 = t;
+		const afterLaunch = readState( vehicle );
+		assert.ok( t > 4 && t < 10, `0-100 km/h in ${t.toFixed( 2 )} s` );
+		assert.ok( afterLaunch.gear >= 2, `the automatic gearbox upshifted (gear ${afterLaunch.gear})` );
+
+		// Braking from 100 km/h
+		const start = position( chassis );
+		b3.b3Vehicle_SetInput( vehicle, input( 0, 1 ) );
+		let brakeTime = 0;
+		while ( readState( vehicle ).speed > 0.05 && brakeTime < 10 )
+		{
+			step( world, 1 );
+			brakeTime += dt;
+		}
+		const end = position( chassis );
+		results.braking = Math.hypot( end[ 0 ] - start[ 0 ], end[ 2 ] - start[ 2 ] );
+		assert.ok( results.braking > 25 && results.braking < 50, `braking distance ${results.braking.toFixed( 1 )} m` );
+
+		// Live setters take effect on the next step
+		const chassisSettings = b3.b3Vehicle_GetChassis( vehicle );
+		chassisSettings.mass = 2000;
+		b3.b3Vehicle_SetChassis( vehicle, chassisSettings );
+		step( world, 1 );
+		const heavier = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3Vehicle_GetSprungMass( vehicle, i ), 0 );
+		assert.ok( Math.abs( heavier - 2000 ) < 1, `live chassis mass reaches the suspension (${heavier.toFixed( 1 )})` );
+
+		const steering = b3.b3Vehicle_GetSteering( vehicle );
+		steering.maxAngle = 0;
+		b3.b3Vehicle_SetSteering( vehicle, steering );
+		b3.b3Vehicle_SetInput( vehicle, input( 0, 0, 1 ) );
+		step( world, 30 );
+		assert.ok( Math.abs( readState( vehicle ).steerAngle ) < 1e-4, 'live steering limit applies' );
+
+		const engine = b3.b3Vehicle_GetEngine( vehicle );
+		engine.maxTorque = 0;
+		b3.b3Vehicle_SetEngine( vehicle, engine );
+		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		step( world, 120 );
+		assert.ok( Math.abs( readState( vehicle ).speed ) < 0.5, 'live engine torque applies' );
+		assert.equal( b3.b3Vehicle_GetEngine( vehicle ).maxTorque, 0, 'engine settings round-trip' );
+
+		const wheelDef = b3.b3Vehicle_GetWheel( vehicle, 0 );
+		assert.ok( Math.abs( wheelDef.radius - 0.34 ) < 1e-6, 'wheel settings round-trip' );
+		assert.equal( b3.b3Vehicle_GetDrivetrain( vehicle ).differentials[ 0 ].leftWheel, 2, 'fixed arrays round-trip' );
+
+		const [ wheelPos, wheelRot ] = b3.b3Vehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, 0 );
+		assert.ok( Math.abs( Math.hypot( ...wheelRot ) - 1 ) < 1e-3 && wheelPos.every( Number.isFinite ), 'wheel transform reads' );
+		assertFinite( vehicle, chassis, 'default car' );
+
+		b3.b3Body_SetLinearVelocity( chassis, [ 0, 0, 0 ] );
+		b3.b3Vehicle_Reset( vehicle, [ 0, 1, 0 ], [ 0, 0, 0, 1 ] );
+		assert.ok( Math.abs( position( chassis )[ 1 ] - 1 ) < 1e-5, 'reset teleports the chassis' );
+
+		b3.b3DestroyVehicle( vehicle );
+		assert.ok( !b3.b3Vehicle_IsValid( vehicle ), 'destroyed vehicle is invalid' );
+		assert.equal( b3.b3World_GetVehicleCount( world ), 0, 'world has no vehicles left' );
+		b3.b3DestroyWorld( world );
+	}
+
+	// Turning at walking pace with full lock gives a tight circle
+	{
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world );
+		step( world, 60 );
+		let minX = Infinity, maxX = -Infinity;
+		for ( let i = 0; i < 900; i++ )
+		{
+			const speed = readState( vehicle ).speed;
+			b3.b3Vehicle_SetInput( vehicle, input( Math.min( Math.max( ( 5 - speed ) * 0.5, 0 ), 1 ), 0, -1 ) );
+			step( world, 1 );
+			if ( i > 300 )
+			{
+				const p = position( chassis );
+				minX = Math.min( minX, p[ 0 ] );
+				maxX = Math.max( maxX, p[ 0 ] );
+			}
+		}
+		results.turnRadius = ( maxX - minX ) / 2;
+		assert.ok( results.turnRadius > 3 && results.turnRadius < 9, `full lock turn radius ${results.turnRadius.toFixed( 2 )} m` );
+		assert.ok( uprightness( chassis ) > 0.95, 'stays upright while turning' );
+		b3.b3DestroyWorld( world );
+	}
+
+	// Holds still on a 20 degree slope with the handbrake, and on 10 degrees with no input
+	for ( const [ degrees, handbrake ] of [ [ 20, 1 ], [ 10, 0 ] ] )
+	{
+		const q = axisAngle( [ 1, 0, 0 ], degrees * Math.PI / 180 );
+		const world = createWorld( q );
+		const { vehicle, chassis } = createCar( world, { position: [ 0, 0.7, 0 ], rotation: q } );
+		b3.b3Vehicle_SetInput( vehicle, input( 0, 0, 0, handbrake ) );
+		step( world, 120 );
+		const start = position( chassis );
+		step( world, 300 );
+		const end = position( chassis );
+		const drift = Math.hypot( end[ 0 ] - start[ 0 ], end[ 1 ] - start[ 1 ], end[ 2 ] - start[ 2 ] );
+		assert.ok( drift < 0.05, `${degrees} degree slope drift ${drift.toFixed( 4 )} m` );
+		results[ `slope${degrees}` ] = drift;
+		b3.b3DestroyWorld( world );
+	}
+
+	// Determinism: the same inputs give bit-identical results
+	function drive()
+	{
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world );
+		for ( let i = 0; i < 400; i++ )
+		{
+			b3.b3Vehicle_SetInput( vehicle, input( 1, 0, Math.sin( i * 0.05 ), i > 300 ? 1 : 0 ) );
+			step( world, 1 );
+		}
+		const out = [ ...position( chassis ), ...b3.b3Body_GetRotation( rot, chassis ), readState( vehicle ).engineRpm ];
+		b3.b3DestroyWorld( world );
+		return out;
+	}
+	assert.deepEqual( drive(), drive(), 'vehicle simulation is deterministic' );
+
+	// Each example preset settles and drives 200 m without blowing up or flipping
+	results.presets = {};
+	for ( const name of Object.keys( vehiclePresets ) )
+	{
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world, {
+			def: createPresetVehicleDef( b3, name ),
+			halfExtents: vehiclePresets[ name ].halfExtents,
+			position: [ 0, 1.3, 0 ],
+		} );
+		step( world, 120 );
+		assert.equal( readState( vehicle ).wheelsInContact, 4, `${name}: settles on four wheels` );
+		assert.ok( Math.abs( b3.b3Body_GetLinearVelocity( pos, chassis )[ 1 ] ) < 0.02, `${name}: suspension settled` );
+		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		let t = 0;
+		while ( position( chassis )[ 2 ] < 200 && t < 30 )
+		{
+			step( world, 1 );
+			t += dt;
+		}
+		assertFinite( vehicle, chassis, name );
+		assert.ok( t < 30, `${name}: drives 200 m (reached z=${position( chassis )[ 2 ].toFixed( 1 )})` );
+		assert.ok( uprightness( chassis ) > 0.95, `${name}: stays upright` );
+		assert.ok( Math.abs( position( chassis )[ 0 ] ) < 5, `${name}: drives straight` );
+		results.presets[ name ] = t;
+		b3.b3DestroyWorld( world );
+	}
+
+	// 50 cars driving in circles cost under 1 ms per step
+	{
+		const world = createWorld();
+		const cars = [];
+		for ( let i = 0; i < 50; i++ )
+		{
+			const car = createCar( world, { position: [ ( i % 10 ) * 20, 1, Math.floor( i / 10 ) * 20 ] } );
+			b3.b3Vehicle_SetInput( car.vehicle, input( 0.6, 0, 0.5 ) );
+			cars.push( car );
+		}
+		step( world, 120 );
+		const steps = 300;
+		const t0 = performance.now();
+		for ( let i = 0; i < steps; i++ )
+		{
+			b3.b3World_Step( world, dt, 4 );
+			for ( const car of cars ) b3.getVehicleStateData( buf, car.vehicle );
+		}
+		results.perf = ( performance.now() - t0 ) / steps;
+		assert.ok( results.perf < 1, `50 vehicles step in ${results.perf.toFixed( 3 )} ms` );
+		assert.equal( b3.b3World_GetVehicleCount( world ), 50, 'world counts its vehicles' );
+		b3.b3DestroyWorld( world );
+	}
+
+	b3.destroyVehicleStateBuffer( buf );
+	return results;
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -705,6 +979,12 @@ async function check( label, importPath, decompositionOptions )
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
 	debugDraw( b3 );
+
+	const vehicle = await vehicleScenarios( b3 );
+	const presets = Object.entries( vehicle.presets ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' );
+	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
+		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
+		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
 
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
