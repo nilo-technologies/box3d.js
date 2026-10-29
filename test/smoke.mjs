@@ -869,20 +869,22 @@ async function vehicleScenarios( b3 )
 		b3.b3DestroyWorld( world );
 	}
 
-	// Holds still on a 20 degree slope with the handbrake, and on 10 degrees with no input
-	for ( const [ degrees, handbrake ] of [ [ 20, 1 ], [ 10, 0 ] ] )
+	// Holds still on a 20 degree slope with the handbrake or after stopping with the brake, and on
+	// 10 degrees with no input at all
+	for ( const [ degrees, handbrake, brake ] of [ [ 20, 1, 0 ], [ 20, 0, 1 ], [ 10, 0, 0 ] ] )
 	{
 		const q = axisAngle( [ 1, 0, 0 ], degrees * Math.PI / 180 );
 		const world = createWorld( q );
 		const { vehicle, chassis } = createCar( world, { position: [ 0, 0.7, 0 ], rotation: q } );
+		b3.b3Vehicle_SetInput( vehicle, input( 0, brake, 0, handbrake ) );
+		step( world, 60 );
 		b3.b3Vehicle_SetInput( vehicle, input( 0, 0, 0, handbrake ) );
-		step( world, 120 );
+		step( world, 60 );
 		const start = position( chassis );
 		step( world, 300 );
 		const end = position( chassis );
 		const drift = Math.hypot( end[ 0 ] - start[ 0 ], end[ 1 ] - start[ 1 ], end[ 2 ] - start[ 2 ] );
 		assert.ok( drift < 0.05, `${degrees} degree slope drift ${drift.toFixed( 4 )} m` );
-		results[ `slope${degrees}` ] = drift;
 		b3.b3DestroyWorld( world );
 	}
 
