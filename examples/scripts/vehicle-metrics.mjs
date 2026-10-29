@@ -458,6 +458,46 @@ function testSelfRight(preset) {
 	return result;
 }
 
+// 15 s flat out over rolling bumps (up to 0.35 m) with the steering weaving: the state must stay
+// finite, and a car at 50% realism or below must stay on its wheels
+function testRough(preset) {
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [0, -9.81, 0];
+	const world = b3.b3CreateWorld(worldDef);
+	const count = 161;
+	const cell = 2;
+	const half = ((count - 1) * cell) / 2;
+	const heights = [];
+	for (let iz = 0; iz < count; iz++) {
+		for (let ix = 0; ix < count; ix++) {
+			const x = ix * cell;
+			const z = iz * cell;
+			heights.push(0.2 * Math.sin(x * 0.35) * Math.cos(z * 0.3) + 0.15 * Math.sin(z * 0.9 + x * 0.2));
+		}
+	}
+	const field = b3.b3CreateHeightField(heights, count, count, [cell, 1, cell]);
+	const groundDef = b3.b3DefaultBodyDef();
+	groundDef.position = [-half, 0, -half];
+	b3.b3CreateHeightFieldShape(b3.b3CreateBody(world, groundDef), b3.b3DefaultShapeDef(), field);
+	const car = createCar(world, preset, [0, 1.6, -half + 30]);
+	step(car, 60);
+	let minUp = 1;
+	let finite = true;
+	let maxSpeed = 0;
+	for (let i = 0; i < 900; i++) {
+		b3.b3Vehicle_SetInput(car.vehicle, input(1, 0, 0.6 * Math.sin(i * 0.02)));
+		step(car);
+		const p = pose(car.chassis);
+		const s = readState(car.vehicle);
+		finite &&= [...p.position, p.upright, s.speed, s.engineRpm].every(Number.isFinite);
+		minUp = Math.min(minUp, p.upright);
+		maxSpeed = Math.max(maxSpeed, s.speed * kmh);
+		if (Math.abs(p.position[0]) > half - 20 || Math.abs(p.position[2]) > half - 20) break;
+	}
+	b3.b3DestroyWorld(world);
+	return { roughFinite: finite, roughUpright: minUp, roughSpeed: maxSpeed };
+}
+
 export function measure(preset, { quick = false } = {}) {
 	return {
 		...testSettle(preset),
@@ -467,6 +507,7 @@ export function measure(preset, { quick = false } = {}) {
 		...testStepSteer(preset),
 		...testHandbrake(preset),
 		...testSelfRight(preset),
+		...testRough(preset),
 	};
 }
 
@@ -505,6 +546,10 @@ export function check(m, target, { quick = false } = {}) {
 	range('handbrakeYaw', 'deg', 0);
 	range('handbrakeRate', 'deg/s', 0);
 	rule('handbrakeUpright', m.handbrakeUpright > 0.5, `upright ${m.handbrakeUpright.toFixed(2)}`);
+	rule('roughFinite', m.roughFinite, 'state stays finite on rough ground');
+	if (!t.maySpin) {
+		rule('roughUpright', m.roughUpright > 0.5, `upright ${m.roughUpright.toFixed(2)} at worst on rough ground`);
+	}
 	if (t.mustRight) {
 		rule('rightsFromSide', m.sideRighted, `upright ${m.sideUpright.toFixed(2)} after 6 s on its side`);
 		rule('rightsFromRoof', m.roofRighted, `upright ${m.roofUpright.toFixed(2)} after 6 s on its roof`);
@@ -607,7 +652,7 @@ if (isMain) {
 			const failed = checks.filter((c) => !c.pass);
 			const m = metrics;
 			console.log(
-				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(16)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${m.topSpeed.toFixed(0)} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | ride ${m.rideHeight.toFixed(2)}`,
+				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(16)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${m.topSpeed.toFixed(0)} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
 			);
 			for (const c of failed) console.log(`       x ${c.name}: ${c.detail}`);
 		}
