@@ -193,7 +193,7 @@ const compound = b3.b3CreateCompound({
 		},
 	],
 })!;
-b3.b3CreateCompoundShape(
+b3.b3CreateBakedCompoundShape(
 	staticBody([0.4, 0, 4]),
 	b3.b3DefaultShapeDef(),
 	compound,
@@ -394,6 +394,35 @@ function prismatic(x: number) {
 	});
 }
 
+function cylindrical(x: number) {
+	const hub = platform(x);
+	const spool = dynamicBody([x, 1.15, JOINT_Z], true);
+	b3.b3CreateBoxShape(spool, b3.b3DefaultShapeDef(), 0.12, 0.2, 0.2);
+	// Slides along and spins about frame A's X-axis
+	const jd = b3.b3DefaultCylindricalJointDef();
+	jd.base.bodyIdA = hub;
+	jd.base.bodyIdB = spool;
+	jd.base.localFrameA = frame([0, 1.25, 0], IDENTITY);
+	jd.base.localFrameB = frame([0, 0, 0], IDENTITY);
+	jd.enableLimit = true;
+	jd.lowerTranslation = -0.55;
+	jd.upperTranslation = 0.55;
+	jd.enableMotor = true;
+	jd.maxMotorForce = 8000;
+	jd.enableAngularLimit = true;
+	jd.lowerAngle = -2.5;
+	jd.upperAngle = 2.5;
+	jd.enableAngularMotor = true;
+	jd.maxMotorTorque = 4000;
+	const joint = b3.b3CreateCylindricalJoint(world, jd);
+	let t = 0;
+	updates.push((dt) => {
+		t += dt;
+		b3.b3CylindricalJoint_SetMotorSpeed(joint, Math.sin(t) * 1.6);
+		b3.b3CylindricalJoint_SetAngularMotorSpeed(joint, Math.cos(t * 0.7) * 3);
+	});
+}
+
 function spherical(x: number) {
 	const hub = platform(x);
 	const bob = dynamicBody([x, 0.85, JOINT_Z], true);
@@ -547,16 +576,17 @@ function filterJoint(x: number) {
 	b3.b3CreateFilterJoint(world, jd);
 }
 
-const jointX = [-10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8, 10.4];
+const jointX = [-11.7, -9.1, -6.5, -3.9, -1.3, 1.3, 3.9, 6.5, 9.1, 11.7];
 revolute(jointX[0]);
 prismatic(jointX[1]);
-spherical(jointX[2]);
-weld(jointX[3]);
-distance(jointX[4]);
-wheel(jointX[5]);
-motor(jointX[6]);
-parallel(jointX[7]);
-filterJoint(jointX[8]);
+cylindrical(jointX[2]);
+spherical(jointX[3]);
+weld(jointX[4]);
+distance(jointX[5]);
+wheel(jointX[6]);
+motor(jointX[7]);
+parallel(jointX[8]);
+filterJoint(jointX[9]);
 
 // Shape gallery, in front. x is shifted toward the camera axis so a tag
 // raised above its shape still sits over that shape on screen.
@@ -585,6 +615,7 @@ makeLabel('sleeping', 5.19, 2.44, 0.6, 0.42);
 const jointNames = [
 	'revolute',
 	'prismatic',
+	'cylindrical',
 	'spherical',
 	'weld',
 	'distance',

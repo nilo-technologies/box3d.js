@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nilo-technologies/box3d` `feat/roblox-physics`, which adds the cylindrical joint, shape enable/disable, and distance-joint springs in stiffness units (and bumps box3d's recording format to 3.0).
+Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nilo-technologies/box3d` `feat/roblox-physics`, which is box3d's current `main` (mover and pogo joints, broad-phase and solver work, recording format 6) plus the cylindrical joint, shape enable/disable, and distance-joint springs in stiffness units (recording format 7).
+
+**Breaking**, following box3d's API changes:
+
+- `b3CreateCompoundShape` is now `b3CreateBakedCompoundShape` (static bodies only, as before).
+- `b3Body_GetLocalCenterOfMass` / `b3Body_GetWorldCenterOfMass` are now `b3Body_GetLocalCenter` / `b3Body_GetWorldCenter`.
+- The triangle manifold helpers put the triangle first and their normal now points from the triangle to the other shape: `b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)`, `b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)`, `b3CollideTriangleAndSphere(v1, v2, v3, sphereB)` replace `b3CollideCapsuleAndTriangle`, `b3CollideHullAndTriangle`, `b3CollideSphereAndTriangle`.
+- `b3RecPlayer_Destroy` is now `b3DestroyPlayer`. `b3Profile.applyRestitution` is now `restitution`.
+- `b3World_RebuildStaticTree` and `b3World_DumpShapeBounds` are gone (box3d removed them).
+- New def fields with box3d's defaults: `b3WorldDef.restitutionIterations`, `enableRestitutionPropagation`, `isotropicInertiaTolerance`; `b3BodyDef.safetyFactor`; `b3ShapeDef.enableSpeculativeContact`. `b3PlaneResult` gains `triangleIndex`, `childIndex`, `materialIndex`. `b3JointType` gains `b3_moverJoint` and `b3_pogoJoint`.
+
+New:
 
 - Cylindrical joint: `b3_cylindricalJoint`, `b3DefaultCylindricalJointDef()`, `b3CreateCylindricalJoint(worldId, def)`. Body B rotates about frame A's x-axis and slides along `def.localSlideAxisA` (frame A x by default, which makes the joint coaxial; any other direction in frame A is allowed). The translation has a spring (`enableSpring`, `hertz`, `dampingRatio`, `targetTranslation`), limit (`enableLimit`, `lowerTranslation`, `upperTranslation`), and motor (`enableMotor`, `maxMotorForce`, `motorSpeed`); the rotation has its own (`enableAngularSpring`, `angularHertz`, `angularDampingRatio`, `targetAngle`, `enableAngularLimit`, `lowerAngle`, `upperAngle`, `enableAngularMotor`, `maxMotorTorque`, `angularMotorSpeed`). `b3CylindricalJoint_*` setters and getters, plus `GetTranslation`, `GetSpeed`, `GetAngle`, `GetAngularSpeed`, `GetMotorForce`, and `GetMotorTorque`. Debug draw shows it like the other joints.
 - `b3World_SetMixingRules(worldId, frictionRule, restitutionRule)` installs native friction and restitution mixing callbacks (no JS call per contact; safe in the multithreaded builds). Rules are the plain numbers in `b3MixingRule`: `geometric` (box3d's default for friction), `average`, `min`, `max` (box3d's default for restitution), `multiply`, and `robloxWeighted`. `robloxWeighted` reads Roblox `FrictionWeight` / `ElasticityWeight` from each shape's `userMaterialId` (bits 0-31: friction weight × 1000; bits 32-63: elasticity weight × 1000) and mixes `(a·wA + b·wB) / (wA + wB)`, a plain average when both weights are 0. A shape whose `userMaterialId` is `0n` falls back to box3d's default rule for that pair. An unknown rule throws a `RangeError`.
@@ -12,6 +23,8 @@ Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nil
 - `b3Shape_SetHull(shapeId, hull, transform, scale, updateBodyMass)` swaps a shape's geometry for `hull` baked with `transform` and `scale` (the hull is copied; destroy yours when done). It returns `false`, leaving the shape unchanged, if the transformed hull is degenerate. `updateBodyMass` recomputes the body's mass from its shapes.
 - `b3Shape_Disable(shapeId)` / `b3Shape_Enable(shapeId)` / `b3Shape_IsEnabled(shapeId)`. A disabled shape leaves the broad-phase: it has no contacts, sensor overlaps, or query hits until it is enabled again. Its mass still counts.
 - The build normalizes Emscripten's output to LF, so dist files built on Windows match the other hosts.
+- `b3Body_ClearConstantForces` / `b3DestroyBody` range-check the world slot of the id before touching the constant-force table.
+- The Debug Draw example has a cylindrical joint in its joint row.
 
 ## v0.3.0
 

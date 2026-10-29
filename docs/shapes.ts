@@ -106,7 +106,7 @@ const spec = {
 // Compound data is NOT copied into the world -- keep it (and its hulls) alive for
 // as long as the shape exists, then free it after the body/world is destroyed.
 const compoundData = b3.b3CreateCompound(spec)!;
-b3.b3CreateCompoundShape(compoundBody, b3.b3DefaultShapeDef(), compoundData);
+b3.b3CreateBakedCompoundShape(compoundBody, b3.b3DefaultShapeDef(), compoundData);
 /* SNIPPET_END: compound */
 
 // a concave mesh to decompose: a hollow open box (floor + four walls)
@@ -159,7 +159,7 @@ const { compound } = b3.b3CreateDecompositionCompound(decomposition, { ...b3.b3D
 const levelBodyDef = b3.b3DefaultBodyDef();
 levelBodyDef.type = b3.b3BodyType.b3_staticBody;
 const levelBody = b3.b3CreateBody(world, levelBodyDef);
-b3.b3CreateCompoundShape(levelBody, b3.b3DefaultShapeDef(), compound!);
+b3.b3CreateBakedCompoundShape(levelBody, b3.b3DefaultShapeDef(), compound!);
 // the shape references the compound: b3DestroyCompound(compound) after the body/world is gone
 /* SNIPPET_END: decomposition-static */
 

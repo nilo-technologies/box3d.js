@@ -35,7 +35,7 @@ export type DebugDrawRole = DebugDrawRoleValue<0>|DebugDrawRoleValue<1>|DebugDra
 export interface b3JointTypeValue<T extends number> {
   value: T;
 }
-export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>;
+export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>|b3JointTypeValue<11>;
 
 export interface b3HullData extends ClassHandle {
 }
@@ -196,20 +196,6 @@ export type b3Capacity = {
   contactCount: number
 };
 
-export type b3Counters = {
-  bodyCount: number,
-  shapeCount: number,
-  contactCount: number,
-  jointCount: number,
-  islandCount: number,
-  stackUsed: number,
-  byteCount: number,
-  taskCount: number,
-  awakeContactCount: number,
-  treeHeight: number,
-  staticTreeHeight: number
-};
-
 export type b3TreeStats = {
   nodeVisits: number,
   leafVisits: number
@@ -232,6 +218,20 @@ export type b3ContactEndTouchEvent = {
   shapeIdA: b3ShapeId,
   shapeIdB: b3ShapeId,
   contactId: b3ContactId
+};
+
+export type b3Counters = {
+  bodyCount: number,
+  shapeCount: number,
+  contactCount: number,
+  jointCount: number,
+  islandCount: number,
+  stackUsed: number,
+  byteCount: bigint,
+  taskCount: number,
+  awakeContactCount: number,
+  treeHeight: number,
+  staticTreeHeight: number
 };
 
 export type b3Filter = {
@@ -289,7 +289,10 @@ export type b3Plane = {
 
 export type b3PlaneResult = {
   plane: b3Plane,
-  point: b3Vec3
+  point: b3Vec3,
+  triangleIndex: number,
+  childIndex: number,
+  materialIndex: number
 };
 
 export type b3Sphere = {
@@ -323,6 +326,9 @@ export type b3WorldDef = {
   enableSleep: boolean,
   enableContinuous: boolean,
   workerCount: number,
+  restitutionIterations: number,
+  enableRestitutionPropagation: boolean,
+  isotropicInertiaTolerance: number,
   capacity: b3Capacity,
   internalValue: number
 };
@@ -344,6 +350,7 @@ export type b3BodyDef = {
   isEnabled: boolean,
   allowFastRotation: boolean,
   enableContactRecycling: boolean,
+  safetyFactor: number,
   internalValue: number
 };
 
@@ -360,6 +367,7 @@ export type b3ShapeDef = {
   enablePreSolveEvents: boolean,
   invokeContactCreation: boolean,
   updateBodyMass: boolean,
+  enableSpeculativeContact: boolean,
   internalValue: number
 };
 
@@ -404,7 +412,7 @@ export type b3Profile = {
   solveImpulses: number,
   integratePositions: number,
   relaxImpulses: number,
-  applyRestitution: number,
+  restitution: number,
   storeImpulses: number,
   splitIslands: number,
   transforms: number,
@@ -636,7 +644,7 @@ interface EmbindModule {
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
   DebugShapeState: {static: DebugShapeStateValue<0>, kinematic: DebugShapeStateValue<1>, kinematicSleeping: DebugShapeStateValue<2>, awake: DebugShapeStateValue<3>, sleeping: DebugShapeStateValue<4>, sensor: DebugShapeStateValue<5>, disabled: DebugShapeStateValue<6>, fast: DebugShapeStateValue<7>, bullet: DebugShapeStateValue<8>, speedCapped: DebugShapeStateValue<9>, timeOfImpact: DebugShapeStateValue<10>, invalidMass: DebugShapeStateValue<11>, custom: DebugShapeStateValue<12>};
   DebugDrawRole: {bounds: DebugDrawRoleValue<0>, joints: DebugDrawRoleValue<1>, mass: DebugDrawRoleValue<2>, contactPoints: DebugDrawRoleValue<3>, contactNormals: DebugDrawRoleValue<4>, contactForces: DebugDrawRoleValue<5>, frictionForces: DebugDrawRoleValue<6>, contactFeatures: DebugDrawRoleValue<7>, islands: DebugDrawRoleValue<8>, graphColors: DebugDrawRoleValue<9>};
-  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_cylindricalJoint: b3JointTypeValue<9>};
+  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>, b3_cylindricalJoint: b3JointTypeValue<11>};
   b3HullData: {};
   b3MeshData: {};
   b3CompoundData: {};
@@ -674,12 +682,9 @@ interface EmbindModule {
   b3World_IsContinuousEnabled(worldId: b3WorldId): boolean;
   b3World_EnableWarmStarting(worldId: b3WorldId, flag: boolean): void;
   b3World_IsWarmStartingEnabled(worldId: b3WorldId): boolean;
-  b3World_RebuildStaticTree(worldId: b3WorldId): void;
   b3World_EnableSpeculative(worldId: b3WorldId, flag: boolean): void;
-  b3World_DumpShapeBounds(worldId: b3WorldId, type: b3BodyType): void;
   b3World_StopRecording(worldId: b3WorldId): void;
   b3GetVersion(): Version;
-  b3GetByteCount(): number;
   b3DestroyBody(bodyId: b3BodyId): void;
   b3Body_IsValid(id: b3BodyId): boolean;
   b3Body_GetType(bodyId: b3BodyId): b3BodyType;
@@ -784,7 +789,6 @@ interface EmbindModule {
   b3World_GetAwakeBodyCount(worldId: b3WorldId): number;
   b3World_SetWorkerCount(worldId: b3WorldId, count: number): void;
   b3World_GetWorkerCount(worldId: b3WorldId): number;
-  b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3Body_GetShapeCount(bodyId: b3BodyId): number;
   b3Body_GetJointCount(bodyId: b3BodyId): number;
   b3CreateDynamicTree(proxyCapacity: number): b3DynamicTree | null;
@@ -800,8 +804,8 @@ interface EmbindModule {
   b3Body_GetTransform(outPosition: b3Vec3, outRotation: b3Quat, bodyId: b3BodyId): [ b3Vec3, b3Quat ];
   b3Body_GetLinearVelocity(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetAngularVelocity(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
-  b3Body_GetLocalCenterOfMass(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
-  b3Body_GetWorldCenterOfMass(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
+  b3Body_GetLocalCenter(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
+  b3Body_GetWorldCenter(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_ComputeAABB(out: b3AABB, bodyId: b3BodyId): b3AABB;
   b3Shape_GetAABB(out: b3AABB, shapeId: b3ShapeId): b3AABB;
   b3Joint_GetLocalFrameA(outPosition: b3Vec3, outRotation: b3Quat, jointId: b3JointId): [ b3Vec3, b3Quat ];
@@ -813,7 +817,7 @@ interface EmbindModule {
   b3World_StartRecording(worldId: b3WorldId, recording: number): void;
   b3Recording_GetSize(recording: number): number;
   b3RecPlayer_CreateFromRecording(recording: number, workerCount: number): number;
-  b3RecPlayer_Destroy(player: number): void;
+  b3DestroyPlayer(player: number): void;
   b3RecPlayer_StepFrame(player: number): boolean;
   b3RecPlayer_Restart(player: number): void;
   b3RecPlayer_SeekFrame(player: number, frame: number): void;
@@ -826,6 +830,8 @@ interface EmbindModule {
   b3RecPlayer_HasDiverged(player: number): boolean;
   b3RecPlayer_GetDivergeFrame(player: number): number;
   b3RecPlayer_SetWorkerCount(player: number, count: number): void;
+  b3GetByteCount(): bigint;
+  b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3DefaultFilter(): b3Filter;
   b3Shape_GetFilter(shapeId: b3ShapeId): b3Filter;
   b3Shape_SetFilter(shapeId: b3ShapeId, filter: b3Filter, invokeContacts: boolean): void;
@@ -889,7 +895,7 @@ interface EmbindModule {
   b3CreateCapsuleShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, capsule: b3Capsule): b3ShapeId;
   b3CreateHullShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, hull: b3HullData | null): b3ShapeId;
   b3CreateMeshShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, mesh: b3MeshData | null, scale: b3Vec3): b3ShapeId;
-  b3CreateCompoundShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, compound: b3CompoundData | null): b3ShapeId;
+  b3CreateBakedCompoundShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, compound: b3CompoundData | null): b3ShapeId;
   b3CreateHeightFieldShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, heightField: b3HeightFieldData | null): b3ShapeId;
   b3CreateTransformedHullShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, hull: b3HullData | null, transform: b3Transform, scale: b3Vec3): b3ShapeId;
   b3World_Step(worldId: b3WorldId, timeStep: number, subStepCount: number): void;
@@ -1150,9 +1156,9 @@ interface EmbindModule {
   b3CollideCapsules(capsuleA: b3Capsule, capsuleB: b3Capsule, transformB: b3Transform): any;
   b3CollideHullAndCapsule(hullA: b3HullData | null, capsuleB: b3Capsule, transformB: b3Transform): any;
   b3CollideHulls(hullA: b3HullData | null, hullB: b3HullData | null, transformB: b3Transform): any;
-  b3CollideCapsuleAndTriangle(capsuleA: b3Capsule, v1: b3Vec3, v2: b3Vec3, v3: b3Vec3): any;
-  b3CollideHullAndTriangle(hullA: b3HullData | null, v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, triangleFlags: number): any;
-  b3CollideSphereAndTriangle(sphereA: b3Sphere, v1: b3Vec3, v2: b3Vec3, v3: b3Vec3): any;
+  b3CollideTriangleAndCapsule(v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, capsuleB: b3Capsule): any;
+  b3CollideTriangleAndHull(v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, triangleFlags: number, hullB: b3HullData | null, enableSpeculative: boolean): any;
+  b3CollideTriangleAndSphere(v1: b3Vec3, v2: b3Vec3, v3: b3Vec3, sphereB: b3Sphere): any;
   b3Shape_GetSensorData(shapeId: b3ShapeId): ShapeIdBuffer;
   b3World_OverlapShape(worldId: b3WorldId, origin: b3Vec3, points: any, radius: number, filter: b3QueryFilter, callback: any): void;
   b3World_CastShape(worldId: b3WorldId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, callback: any): void;
