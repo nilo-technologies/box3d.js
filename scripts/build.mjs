@@ -90,7 +90,8 @@ function assertEmscriptenVersion()
 function validateESModule( file )
 {
 	const path = join( root, file );
-	let src = readFileSync( path, 'utf8' );
+	// Emscripten writes CRLF on Windows; keep the committed outputs LF on every host.
+	let src = readFileSync( path, 'utf8' ).replaceAll( '\r\n', '\n' );
 
 	// require() -> await import
 	src = src.replaceAll( /\brequire\(\s*["']([^"']+)["']\s*\)/g, '(await import("$1"))' );
@@ -519,6 +520,7 @@ export interface Box3DFacade {
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
 let tsd = readFileSync( tsdPath, 'utf8' )
+	.replaceAll( '\r\n', '\n' ) // emit-tsd writes CRLF on Windows
 	.replaceAll( 'MainModuleFactory', 'Box3DFactory' )
 	.replaceAll( 'MainModule', 'Box3DModule' )
 	.replace(

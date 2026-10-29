@@ -792,7 +792,8 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
+  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -1120,7 +1121,8 @@ interface EmbindModule {
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
-  b3Body_GetName(bodyId: b3BodyId): string;  b3Body_GetTransformsPacked(ids: Int32Array): Float64Array;
+  b3Body_GetName(bodyId: b3BodyId): string;
+  b3Body_GetTransformsPacked(ids: Int32Array): Float64Array;
   b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
   b3CreateMesh(positions: any, indices: any): b3MeshData | null;

@@ -557,6 +557,23 @@ b3.b3Body_ApplyLinearImpulse(dynamicBody, [0, mass * 5, 0], [0.3, 5, 0], true);
   </tr>
 </table>
 
+### Constant Forces
+
+`b3Body_ApplyForce` lasts one step. A constant force or torque is kept by the bindings and re-applied by every `b3World_Step` (without waking the body) until it is changed, cleared, or the body is destroyed.
+
+```ts
+// Persistent forces: set once, re-applied by every b3World_Step until changed or cleared
+// (plain b3Body_ApplyForce is cleared after each step). Force and torque are world-space;
+// the point is body-local, null = centre of mass. A new force replaces the previous one.
+const hovering = b3.b3CreateBody(world, dynamicDef);
+b3.b3CreateBoxShape(hovering, b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5);
+const hoverMass = b3.b3Body_GetMass(hovering);
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], null);     // cancels gravity
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], [0.5, 0, 0]); // ... off-centre
+b3.b3Body_SetConstantTorque(hovering, [0, 2, 0]);
+b3.b3Body_ClearConstantForces(hovering); // also dropped when the body is destroyed
+```
+
 ### Damping
 
 ```ts
@@ -678,6 +695,24 @@ const mat = b3.b3DefaultSurfaceMaterial();
 mat.friction = 0.1;
 mat.restitution = 0.9;
 b3.b3Shape_SetSurfaceMaterial(shape, mat);
+```
+
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a Roblox-style weighted average.
+
+```ts
+// Friction/restitution mixing for every contact in the world, as native callbacks.
+// Rules: geometric (default friction), average, min, max (default restitution), multiply,
+// and robloxWeighted, which mixes (a*wA + b*wB) / (wA + wB) with Roblox weights packed into
+// each shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000.
+// A shape with userMaterialId 0n uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.robloxWeighted, b3.b3MixingRule.robloxWeighted);
+const weightedDef = b3.b3DefaultShapeDef();
+weightedDef.baseMaterial.friction = 0.7;
+weightedDef.baseMaterial.restitution = 0.2;
+const frictionWeight = 3, elasticityWeight = 1;
+weightedDef.baseMaterial.userMaterialId =
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(elasticityWeight * 1000)) << 32n);
+b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
 ```
 
 <table>
@@ -1009,6 +1044,28 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
   </tr>
 </table>
 
+### Resizing and Disabling Shapes
+
+```ts
+// Resize or reshape a hull shape in place: the hull is baked with a transform and a
+// (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to
+// batch several changes and call b3Body_ApplyMassFromShapes once.
+const crate = b3.b3CreateBoxShape(body, sd, 0.5, 0.5, 0.5);
+const unitCube = b3.b3CreateHull([
+    -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
+    -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
+])!;
+const resized = b3.b3Shape_SetHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+if (!resized) console.warn('degenerate hull; the shape is unchanged');
+b3.b3DestroyHull(unitCube);
+
+// Take a shape out of the simulation without destroying it: no contacts, sensor
+// overlaps or query hits while disabled (its mass still counts).
+b3.b3Shape_Disable(crate);
+b3.b3Shape_IsEnabled(crate); // false
+b3.b3Shape_Enable(crate);
+```
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -1016,6 +1073,7 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 **Axis conventions:**
 - Revolute: rotates about the joint frame's local **Z**-axis
 - Prismatic: slides along the joint frame's local **X**-axis
+- Cylindrical: rotates about frame A's local **X**-axis and slides along `localSlideAxisA` (also **X** by default)
 - Spherical: cone centered on frame **Z**
 
 <table>
@@ -1087,6 +1145,22 @@ distanceDef.length = 2.0; // desired distance in metres
 b3.b3CreateDistanceJoint(world, distanceDef);
 ```
 
+Springs can also be given in physical units (stiffness and damping), which keeps the force independent of the body masses:
+
+```ts
+// Distance-joint spring in physical units: force = -stiffness * stretch - damping * stretchSpeed,
+// independent of the attached masses. Overrides hertz / dampingRatio when either is positive.
+const springDef = b3.b3DefaultDistanceJointDef();
+springDef.base.bodyIdA = anchor;
+springDef.base.bodyIdB = pendulum;
+springDef.length = 2.0;
+springDef.enableSpring = true;
+springDef.springStiffness = 400; // N/m
+springDef.springDamping = 20;    // N*s/m
+const spring = b3.b3CreateDistanceJoint(world, springDef);
+b3.b3DistanceJoint_SetSpringStiffness(spring, 800, 20);
+```
+
 ### Spherical (Ball and Socket)
 
 ```ts
@@ -1113,6 +1187,38 @@ prismaticDef.enableLimit = true;
 prismaticDef.lowerTranslation = -2.0;
 prismaticDef.upperTranslation =  2.0;
 b3.b3CreatePrismaticJoint(world, prismaticDef);
+```
+
+### Cylindrical (Slide and Spin)
+
+```ts
+// Cylindrical joint: B rotates about frame A's X-axis and slides along localSlideAxisA
+// (frame A X by default, so it slides along the same axis it spins about).
+const cylindricalDef = b3.b3DefaultCylindricalJointDef();
+cylindricalDef.base.bodyIdA = anchor;
+cylindricalDef.base.bodyIdB = pendulum;
+cylindricalDef.base.localFrameA = { position: [0, -2, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.base.localFrameB = { position: [0,  0, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.enableLimit = true;          // translation limit, metres
+cylindricalDef.lowerTranslation = -0.5;
+cylindricalDef.upperTranslation =  0.5;
+cylindricalDef.enableAngularMotor = true;   // spin about the axis
+cylindricalDef.angularMotorSpeed = 2.0;     // rad/s
+cylindricalDef.maxMotorTorque = 100;
+const cylindrical = b3.b3CreateCylindricalJoint(world, cylindricalDef);
+
+// Linear and angular springs, limits and motors each have setters; read the state back
+b3.b3CylindricalJoint_EnableSpring(cylindrical, true);
+b3.b3CylindricalJoint_SetTargetTranslation(cylindrical, 0.25);
+b3.b3CylindricalJoint_EnableAngularLimit(cylindrical, true);
+b3.b3CylindricalJoint_SetAngularLimits(cylindrical, -Math.PI / 2, Math.PI / 2);
+b3.b3Joint_WakeBodies(cylindrical); // setters don't wake sleeping bodies
+const slide = b3.b3CylindricalJoint_GetTranslation(cylindrical);
+const spin = b3.b3CylindricalJoint_GetAngle(cylindrical);
+
+// Slide along a different direction in frame A (e.g. a tilted wheel suspension)
+cylindricalDef.localSlideAxisA = [0, 1, 0];
+b3.b3CreateCylindricalJoint(world, cylindricalDef);
 ```
 
 ### Wheel (Suspension)
@@ -1421,6 +1527,28 @@ for (let i = 0, n = b3.getNumSensorEndEvents(eventsBuffer); i < n; i++) {
   </td>
   </tr>
 </table>
+
+### Packed Reads
+
+Callers that can't read the wasm heap directly (a sandbox, a worker membrane) can take body move events and body poses as one copied typed array each.
+
+```ts
+// One call, one copied array -- for callers that can't read the wasm heap (e.g. a sandbox).
+// Body move events: 11 numbers each (index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep).
+const moves = b3.createEventsBuffer();
+b3.b3World_Step(world, 1 / 60, 4);
+b3.getEvents(moves, world);
+const packedMoves = b3.getBodyMoveEventsPacked(moves);
+for (let o = 0; o < packedMoves.length; o += 11) {
+    console.log('body', packedMoves[o], 'y', packedMoves[o + 4], 'asleep', packedMoves[o + 10] === 1);
+}
+b3.destroyEventsBuffer(moves);
+
+// Poses of chosen bodies: Int32Array of id triples in, Float64Array of 7 per body out
+// (px, py, pz, qx, qy, qz, qw; NaN for an invalid id).
+const ids = new Int32Array([body.index1, body.world0, body.generation]);
+const poses = b3.b3Body_GetTransformsPacked(ids);
+```
 
 ### Pre-Solve Callback
 

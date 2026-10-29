@@ -192,4 +192,33 @@ for (let i = 0, n = b3.getNumSensorEndEvents(eventsBuffer); i < n; i++) {
 }
 /* SNIPPET_END: sensor */
 
+/* SNIPPET_START: constant-forces */
+// Persistent forces: set once, re-applied by every b3World_Step until changed or cleared
+// (plain b3Body_ApplyForce is cleared after each step). Force and torque are world-space;
+// the point is body-local, null = centre of mass. A new force replaces the previous one.
+const hovering = b3.b3CreateBody(world, dynamicDef);
+b3.b3CreateBoxShape(hovering, b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5);
+const hoverMass = b3.b3Body_GetMass(hovering);
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], null);     // cancels gravity
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], [0.5, 0, 0]); // ... off-centre
+b3.b3Body_SetConstantTorque(hovering, [0, 2, 0]);
+b3.b3Body_ClearConstantForces(hovering); // also dropped when the body is destroyed
+/* SNIPPET_END: constant-forces */
+
+/* SNIPPET_START: mixing-rules */
+// Friction/restitution mixing for every contact in the world, as native callbacks.
+// Rules: geometric (default friction), average, min, max (default restitution), multiply,
+// and robloxWeighted, which mixes (a*wA + b*wB) / (wA + wB) with Roblox weights packed into
+// each shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000.
+// A shape with userMaterialId 0n uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.robloxWeighted, b3.b3MixingRule.robloxWeighted);
+const weightedDef = b3.b3DefaultShapeDef();
+weightedDef.baseMaterial.friction = 0.7;
+weightedDef.baseMaterial.restitution = 0.2;
+const frictionWeight = 3, elasticityWeight = 1;
+weightedDef.baseMaterial.userMaterialId =
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(elasticityWeight * 1000)) << 32n);
+b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
+/* SNIPPET_END: mixing-rules */
+
 b3.b3DestroyWorld(world);

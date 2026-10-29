@@ -124,6 +124,12 @@ Forces accumulate until the next `b3World_Step` call, then clear. Impulses apply
 
 <ExamplesTable ids="example-add-impulse-at-position,example-explosion" />
 
+### Constant Forces
+
+`b3Body_ApplyForce` lasts one step. A constant force or torque is kept by the bindings and re-applied by every `b3World_Step` (without waking the body) until it is changed, cleared, or the body is destroyed.
+
+<Snippet source="./bodies.ts" select="constant-forces" />
+
 ### Damping
 
 <Snippet source="./bodies.ts" select="damping" />
@@ -165,6 +171,10 @@ Use `b3Body_SetTargetTransform` to move kinematic bodies each frame. box3d compu
 Friction and restitution can be set per shape at creation, or updated at runtime via `b3Shape_SetSurfaceMaterial`.
 
 <Snippet source="./bodies.ts" select="material" />
+
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a Roblox-style weighted average.
+
+<Snippet source="./bodies.ts" select="mixing-rules" />
 
 <ExamplesTable ids="example-friction,example-restitution" />
 
@@ -242,6 +252,10 @@ In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stag
 
 <ExamplesTable ids="example-convex-decomposition" />
 
+### Resizing and Disabling Shapes
+
+<Snippet source="./shapes.ts" select="resize-disable" />
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -249,6 +263,7 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 **Axis conventions:**
 - Revolute: rotates about the joint frame's local **Z**-axis
 - Prismatic: slides along the joint frame's local **X**-axis
+- Cylindrical: rotates about frame A's local **X**-axis and slides along `localSlideAxisA` (also **X** by default)
 - Spherical: cone centered on frame **Z**
 
 <ExamplesTable ids="example-constraints,example-hinge-motor" />
@@ -269,6 +284,10 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="distance" />
 
+Springs can also be given in physical units (stiffness and damping), which keeps the force independent of the body masses:
+
+<Snippet source="./joints.ts" select="distance-stiffness" />
+
 ### Spherical (Ball and Socket)
 
 <Snippet source="./joints.ts" select="spherical" />
@@ -276,6 +295,10 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 ### Prismatic (Slider)
 
 <Snippet source="./joints.ts" select="prismatic" />
+
+### Cylindrical (Slide and Spin)
+
+<Snippet source="./joints.ts" select="cylindrical" />
 
 ### Wheel (Suspension)
 
@@ -338,6 +361,12 @@ Events fire when contacts begin, end, or hit. To instead inspect **every current
 <Snippet source="./events.ts" select="sensor-events" />
 
 <ExamplesTable ids="example-sensor" />
+
+### Packed Reads
+
+Callers that can't read the wasm heap directly (a sandbox, a worker membrane) can take body move events and body poses as one copied typed array each.
+
+<Snippet source="./events.ts" select="packed-reads" />
 
 ### Pre-Solve Callback
 
