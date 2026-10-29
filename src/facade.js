@@ -417,7 +417,7 @@ function getBodyMoveEventsPacked( eb )
 }
 
 // Rule ids for b3World_SetMixingRules; the order matches MixingRule in src/bindings.cpp.
-const b3MixingRule = Object.freeze( { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, robloxWeighted: 5 } );
+const b3MixingRule = Object.freeze( { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, weighted: 5 } );
 
 // sensor begin/end touch events: { sensorShapeId, visitorShapeId }
 function createSensorTouchEvent()

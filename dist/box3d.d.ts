@@ -721,6 +721,7 @@ interface EmbindModule {
   b3Shape_ArePreSolveEventsEnabled(shapeId: b3ShapeId): boolean;
   b3Shape_EnableHitEvents(shapeId: b3ShapeId, flag: boolean): void;
   b3Shape_AreHitEventsEnabled(shapeId: b3ShapeId): boolean;
+  b3Shape_SetHull(shapeId: b3ShapeId, hull: b3HullData | null): void;
   b3Shape_Enable(shapeId: b3ShapeId): void;
   b3Shape_Disable(shapeId: b3ShapeId): void;
   b3Shape_IsEnabled(shapeId: b3ShapeId): boolean;
@@ -866,7 +867,7 @@ interface EmbindModule {
   b3Body_GetLocalRotationalInertia(bodyId: b3BodyId): b3Matrix3;
   b3Body_GetWorldInverseRotationalInertia(bodyId: b3BodyId): b3Matrix3;
   b3CloneAndTransformHull(original: b3HullData | null, transform: b3Transform, scale: b3Vec3): b3HullData | null;
-  b3Shape_SetHull(shapeId: b3ShapeId, hull: b3HullData | null, transform: b3Transform, scale: b3Vec3, updateBodyMass: boolean): boolean;
+  b3Shape_SetBakedHull(shapeId: b3ShapeId, hull: b3HullData | null, transform: b3Transform, scale: b3Vec3, updateBodyMass: boolean): boolean;
   b3Joint_SetLocalFrameA(jointId: b3JointId, localFrame: b3Transform): void;
   b3Joint_SetLocalFrameB(jointId: b3JointId, localFrame: b3Transform): void;
   b3Body_SetTransform(bodyId: b3BodyId, position: b3Vec3, rotation: b3Quat): void;
@@ -1384,15 +1385,17 @@ export interface Box3DFacade {
   /** Every body move event of the last getEvents in one copied array, 11 numbers per event:
    * index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep (0/1). */
   getBodyMoveEventsPacked(eb: EventsBuffer): Float64Array;
-  /** Rule ids for b3World_SetMixingRules. robloxWeighted reads Roblox weights packed into each
-   * shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000. */
+  /** Rule ids for b3World_SetMixingRules. 'weighted' mixes (a*wA + b*wB) / (wA + wB) with per-shape
+   * weights packed into each shape's userMaterialId, so while it is active that field holds the weights
+   * and can't double as a material tag: bits 0-31 friction weight * 1000, bits 32-62 restitution
+   * weight * 1000, bit 63 set = weights present. A shape without bit 63 uses box3d's default rule. */
   readonly b3MixingRule: {
     readonly geometric: 0;
     readonly average: 1;
     readonly min: 2;
     readonly max: 3;
     readonly multiply: 4;
-    readonly robloxWeighted: 5;
+    readonly weighted: 5;
   };
   createSensorTouchEvent(): SensorTouchEvent;
   getSensorBeginEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;

@@ -1503,13 +1503,21 @@ enum MixingRule
 	e_mixMin,
 	e_mixMax,
 	e_mixMultiply,
-	e_mixRobloxWeighted,
+	e_mixWeighted,
 	e_mixRuleCount,
 };
 
-// Roblox FrictionWeight/ElasticityWeight packed into b3SurfaceMaterial::userMaterialId:
-// bits 0-31 friction weight * 1000, bits 32-63 elasticity weight * 1000 (uint32 each).
-// The mixed value is (a*wA + b*wB) / (wA + wB), a plain average when both weights are 0.
+// Per-shape weights packed into b3SurfaceMaterial::userMaterialId, so the weighted rule takes
+// that field over (it can't also tag materials while this rule is active):
+// bits 0-31 friction weight * 1000 (uint32), bits 32-62 restitution weight * 1000 (31 bits),
+// bit 63 set = weights present. The mixed value is (a*wA + b*wB) / (wA + wB), a plain average
+// when both weights are 0. A shape without the presence bit uses box3d's default rule for the pair.
+constexpr uint64_t kWeightsPresent = 1ull << 63;
+
+inline bool hasWeights( uint64_t id ) { return ( id & kWeightsPresent ) != 0; }
+inline float frictionWeight( uint64_t id ) { return (float)(uint32_t)id * 0.001f; }
+inline float restitutionWeight( uint64_t id ) { return (float)(uint32_t)( ( id >> 32 ) & 0x7FFFFFFFu ) * 0.001f; }
+
 inline float weightedMix( float a, float wA, float b, float wB )
 {
 	float w = wA + wB;
@@ -1521,11 +1529,10 @@ float mixFrictionAverage( float a, uint64_t, float b, uint64_t ) { return 0.5f *
 float mixFrictionMin( float a, uint64_t, float b, uint64_t ) { return std::min( a, b ); }
 float mixFrictionMax( float a, uint64_t, float b, uint64_t ) { return std::max( a, b ); }
 float mixFrictionMultiply( float a, uint64_t, float b, uint64_t ) { return a * b; }
-float mixFrictionRobloxWeighted( float a, uint64_t idA, float b, uint64_t idB )
+float mixFrictionWeighted( float a, uint64_t idA, float b, uint64_t idB )
 {
-	// A shape without packed weights falls back to box3d's default friction rule
-	if ( idA == 0 || idB == 0 ) return sqrtf( a * b );
-	return weightedMix( a, (float)(uint32_t)idA * 0.001f, b, (float)(uint32_t)idB * 0.001f );
+	if ( !hasWeights( idA ) || !hasWeights( idB ) ) return sqrtf( a * b );
+	return weightedMix( a, frictionWeight( idA ), b, frictionWeight( idB ) );
 }
 
 float mixRestitutionGeometric( float a, uint64_t, float b, uint64_t ) { return sqrtf( a * b ); }
@@ -1533,19 +1540,18 @@ float mixRestitutionAverage( float a, uint64_t, float b, uint64_t ) { return 0.5
 float mixRestitutionMin( float a, uint64_t, float b, uint64_t ) { return std::min( a, b ); }
 float mixRestitutionMax( float a, uint64_t, float b, uint64_t ) { return std::max( a, b ); }
 float mixRestitutionMultiply( float a, uint64_t, float b, uint64_t ) { return a * b; }
-float mixRestitutionRobloxWeighted( float a, uint64_t idA, float b, uint64_t idB )
+float mixRestitutionWeighted( float a, uint64_t idA, float b, uint64_t idB )
 {
-	// A shape without packed weights falls back to box3d's default restitution rule
-	if ( idA == 0 || idB == 0 ) return std::max( a, b );
-	return weightedMix( a, (float)(uint32_t)( idA >> 32 ) * 0.001f, b, (float)(uint32_t)( idB >> 32 ) * 0.001f );
+	if ( !hasWeights( idA ) || !hasWeights( idB ) ) return std::max( a, b );
+	return weightedMix( a, restitutionWeight( idA ), b, restitutionWeight( idB ) );
 }
 
 b3FrictionCallback* const g_frictionRules[e_mixRuleCount] = {
-	mixFrictionGeometric, mixFrictionAverage, mixFrictionMin, mixFrictionMax, mixFrictionMultiply, mixFrictionRobloxWeighted,
+	mixFrictionGeometric, mixFrictionAverage, mixFrictionMin, mixFrictionMax, mixFrictionMultiply, mixFrictionWeighted,
 };
 b3RestitutionCallback* const g_restitutionRules[e_mixRuleCount] = {
 	mixRestitutionGeometric, mixRestitutionAverage, mixRestitutionMin,
-	mixRestitutionMax, mixRestitutionMultiply, mixRestitutionRobloxWeighted,
+	mixRestitutionMax, mixRestitutionMultiply, mixRestitutionWeighted,
 };
 
 EM_JS( void, b3ThrowMixingRuleError, ( int rule ), {
@@ -1758,7 +1764,6 @@ val collideMoverPacked( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3Que
 			if ( c->options.skips( shapeId ) ) return true;
 			b3BodyId bodyId = b3Shape_GetBody( shapeId );
 			double bodyType = (double)b3Body_GetType( bodyId );
-			c->out.reserve( c->out.size() + (size_t)planeCount * kMoverPlaneStride );
 			for ( int i = 0; i < planeCount; ++i )
 			{
 				const b3PlaneResult& pr = planes[i];
@@ -1842,7 +1847,7 @@ val castShapeClosestFiltered( b3WorldId worldId, b3Vec3 origin, val points, floa
 // Bakes transform/scale into a fresh hull (as b3CreateTransformedHullShape does), swaps
 // it into the shape (the world keeps its own copy), and optionally recomputes the body
 // mass. Returns false, leaving the shape unchanged, if the transformed hull is degenerate.
-bool setShapeHull( b3ShapeId shapeId, const b3HullData* hull, b3Transform transform, b3Vec3 scale, bool updateBodyMass )
+bool setShapeBakedHull( b3ShapeId shapeId, const b3HullData* hull, b3Transform transform, b3Vec3 scale, bool updateBodyMass )
 {
 	b3HullData* baked = b3CloneAndTransformHull( hull, transform, scale );
 	if ( baked == nullptr ) return false;
@@ -2992,9 +2997,12 @@ EMSCRIPTEN_BINDINGS( box3d )
 	} );
 	function( "b3Shape_SetSphere(shapeId, sphere)", +[]( b3ShapeId shapeId, b3Sphere sphere ) { b3Shape_SetSphere( shapeId, &sphere ); } );
 	function( "b3Shape_SetCapsule(shapeId, capsule)", +[]( b3ShapeId shapeId, b3Capsule capsule ) { b3Shape_SetCapsule( shapeId, &capsule ); } );
-	// Swap a shape's geometry for hull baked with transform/scale (the hull is copied).
-	// Returns false, leaving the shape unchanged, if the transformed hull is degenerate.
-	function( "b3Shape_SetHull(shapeId, hull, transform, scale, updateBodyMass)", &setShapeHull, allow_raw_pointers() );
+	// 1:1 with C: swap the shape's geometry for a copy of hull. Mass is unchanged.
+	function( "b3Shape_SetHull(shapeId, hull)", +[]( b3ShapeId shapeId, b3HullData* hull ) { b3Shape_SetHull( shapeId, hull ); },
+		allow_raw_pointers() );
+	// Convenience: hull baked with transform/scale (no temporary hull for JS to free), optional mass
+	// update. Returns false, leaving the shape unchanged, if the transformed hull is degenerate.
+	function( "b3Shape_SetBakedHull(shapeId, hull, transform, scale, updateBodyMass)", &setShapeBakedHull, allow_raw_pointers() );
 	function( "b3Shape_Enable(shapeId)", &b3Shape_Enable );
 	function( "b3Shape_Disable(shapeId)", &b3Shape_Disable );
 	function( "b3Shape_IsEnabled(shapeId)", &b3Shape_IsEnabled );

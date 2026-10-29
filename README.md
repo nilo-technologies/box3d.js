@@ -697,21 +697,22 @@ mat.restitution = 0.9;
 b3.b3Shape_SetSurfaceMaterial(shape, mat);
 ```
 
-Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a Roblox-style weighted average.
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a weighted average with per-shape weights. The weighted rule reads the weights from `userMaterialId`, so while it is active that field can't double as a material tag.
 
 ```ts
 // Friction/restitution mixing for every contact in the world, as native callbacks.
 // Rules: geometric (default friction), average, min, max (default restitution), multiply,
-// and robloxWeighted, which mixes (a*wA + b*wB) / (wA + wB) with Roblox weights packed into
-// each shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000.
-// A shape with userMaterialId 0n uses box3d's default rule.
-b3.b3World_SetMixingRules(world, b3.b3MixingRule.robloxWeighted, b3.b3MixingRule.robloxWeighted);
+// and weighted, which mixes (a*wA + b*wB) / (wA + wB) with per-shape weights packed into each
+// shape's userMaterialId: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000,
+// bit 63 set = weights present. While this rule is active, userMaterialId holds the weights, so
+// it can't double as a material tag. A shape without bit 63 uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.weighted, b3.b3MixingRule.weighted);
 const weightedDef = b3.b3DefaultShapeDef();
 weightedDef.baseMaterial.friction = 0.7;
 weightedDef.baseMaterial.restitution = 0.2;
-const frictionWeight = 3, elasticityWeight = 1;
-weightedDef.baseMaterial.userMaterialId =
-    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(elasticityWeight * 1000)) << 32n);
+const frictionWeight = 3, restitutionWeight = 1;
+weightedDef.baseMaterial.userMaterialId = (1n << 63n) |
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(restitutionWeight * 1000)) << 32n);
 b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
 ```
 
@@ -1055,7 +1056,7 @@ const unitCube = b3.b3CreateHull([
     -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
     -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
 ])!;
-const resized = b3.b3Shape_SetHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+const resized = b3.b3Shape_SetBakedHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
 if (!resized) console.warn('degenerate hull; the shape is unchanged');
 b3.b3DestroyHull(unitCube);
 
@@ -1381,7 +1382,7 @@ customFilter.maskBits = 1n; // only hit shapes in category 0x0001
 
 ### Filtered Queries
 
-The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively, returning one copied array.
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively. `b3World_CollideMoverPacked` and the closest-hit variants return one copied `Float64Array`; `b3World_CastMoverFiltered` returns the sweep fraction, like `b3World_CastMover`.
 
 ```ts
 // Skip candidates natively instead of with a JS callback per shape: list bodies and shapes as

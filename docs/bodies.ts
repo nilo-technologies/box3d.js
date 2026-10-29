@@ -208,16 +208,17 @@ b3.b3Body_ClearConstantForces(hovering); // also dropped when the body is destro
 /* SNIPPET_START: mixing-rules */
 // Friction/restitution mixing for every contact in the world, as native callbacks.
 // Rules: geometric (default friction), average, min, max (default restitution), multiply,
-// and robloxWeighted, which mixes (a*wA + b*wB) / (wA + wB) with Roblox weights packed into
-// each shape's userMaterialId: bits 0-31 FrictionWeight * 1000, bits 32-63 ElasticityWeight * 1000.
-// A shape with userMaterialId 0n uses box3d's default rule.
-b3.b3World_SetMixingRules(world, b3.b3MixingRule.robloxWeighted, b3.b3MixingRule.robloxWeighted);
+// and weighted, which mixes (a*wA + b*wB) / (wA + wB) with per-shape weights packed into each
+// shape's userMaterialId: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000,
+// bit 63 set = weights present. While this rule is active, userMaterialId holds the weights, so
+// it can't double as a material tag. A shape without bit 63 uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.weighted, b3.b3MixingRule.weighted);
 const weightedDef = b3.b3DefaultShapeDef();
 weightedDef.baseMaterial.friction = 0.7;
 weightedDef.baseMaterial.restitution = 0.2;
-const frictionWeight = 3, elasticityWeight = 1;
-weightedDef.baseMaterial.userMaterialId =
-    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(elasticityWeight * 1000)) << 32n);
+const frictionWeight = 3, restitutionWeight = 1;
+weightedDef.baseMaterial.userMaterialId = (1n << 63n) |
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(restitutionWeight * 1000)) << 32n);
 b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
 /* SNIPPET_END: mixing-rules */
 

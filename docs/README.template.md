@@ -172,7 +172,7 @@ Friction and restitution can be set per shape at creation, or updated at runtime
 
 <Snippet source="./bodies.ts" select="material" />
 
-Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a Roblox-style weighted average.
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a weighted average with per-shape weights. The weighted rule reads the weights from `userMaterialId`, so while it is active that field can't double as a material tag.
 
 <Snippet source="./bodies.ts" select="mixing-rules" />
 
@@ -340,7 +340,7 @@ Sweep a sphere proxy through the world and find the closest hit.
 
 ### Filtered Queries
 
-The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively, returning one copied array.
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively. `b3World_CollideMoverPacked` and the closest-hit variants return one copied `Float64Array`; `b3World_CastMoverFiltered` returns the sweep fraction, like `b3World_CastMover`.
 
 <Snippet source="./queries.ts" select="filtered-queries" />
 

@@ -975,24 +975,57 @@ function slidingFriction( b3, rules, groundFriction, groundMaterialId, boxFricti
 	return ( v0 - v1 ) / ( 10 * 30 / 60 );
 }
 
-// Roblox weights: bits 0-31 friction weight * 1000, bits 32-63 elasticity weight * 1000
-const robloxWeights = ( friction, elasticity ) => BigInt( Math.round( friction * 1000 ) ) | ( BigInt( Math.round( elasticity * 1000 ) ) << 32n );
+// Packed weights: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000, bit 63 = present
+const packWeights = ( friction, restitution ) =>
+	( 1n << 63n ) | BigInt( Math.round( friction * 1000 ) ) | ( BigInt( Math.round( restitution * 1000 ) ) << 32n );
+
+// Bounce a sphere off the ground with no gravity: rebound speed / impact speed = mixed restitution.
+function bounceRestitution( b3, rule, groundRestitution, groundMaterialId, ballRestitution, ballMaterialId )
+{
+	const world = zeroGravityWorld( b3 );
+	b3.b3World_SetMixingRules( world, b3.b3MixingRule.geometric, rule );
+	const groundShapeDef = b3.b3DefaultShapeDef();
+	groundShapeDef.baseMaterial.restitution = groundRestitution;
+	groundShapeDef.baseMaterial.userMaterialId = groundMaterialId;
+	b3.b3CreateBoxShape( staticBody( b3, world ), groundShapeDef, 5, 0.5, 5 );
+	const ballDef = b3.b3DefaultBodyDef();
+	ballDef.type = b3.b3BodyType.b3_dynamicBody;
+	ballDef.position = [ 0, 1.5, 0 ];
+	ballDef.linearVelocity = [ 0, -5, 0 ];
+	const ball = b3.b3CreateBody( world, ballDef );
+	const ballShapeDef = b3.b3DefaultShapeDef();
+	ballShapeDef.baseMaterial.restitution = ballRestitution;
+	ballShapeDef.baseMaterial.userMaterialId = ballMaterialId;
+	b3.b3CreateSphereShape( ball, ballShapeDef, { center: [ 0, 0, 0 ], radius: 0.5 } );
+	const v = [ 0, 0, 0 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const rebound = b3.b3Body_GetLinearVelocity( v, ball )[ 1 ];
+	b3.b3DestroyWorld( world );
+	return rebound / 5;
+}
 
 function mixingRules( b3 )
 {
 	const R = b3.b3MixingRule;
-	assert.deepEqual( { ...R }, { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, robloxWeighted: 5 }, 'b3MixingRule values' );
+	assert.deepEqual( { ...R }, { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, weighted: 5 }, 'b3MixingRule values' );
 
-	const weighted = [ R.robloxWeighted, R.robloxWeighted ];
+	const weighted = [ R.weighted, R.weighted ];
 	// (0.2 * 1 + 1.0 * 3) / (1 + 3) = 0.8
-	near( slidingFriction( b3, weighted, 0.2, robloxWeights( 1, 1 ), 1.0, robloxWeights( 3, 1 ) ), 0.8, 0.03, 'weighted friction' );
-	// zero weights fall back to a plain average
-	near( slidingFriction( b3, weighted, 0.2, robloxWeights( 0, 1 ), 1.0, robloxWeights( 0, 1 ) ), 0.6, 0.03, 'zero weights average' );
-	// a shape without packed weights uses box3d's default geometric mean
-	near( slidingFriction( b3, weighted, 0.2, 0n, 1.0, robloxWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'unweighted shape falls back' );
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 1, 1 ), 1.0, packWeights( 3, 1 ) ), 0.8, 0.03, 'weighted friction' );
+	// zero friction weights on both shapes: a plain average
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 0, 1 ), 1.0, packWeights( 0, 1 ) ), 0.6, 0.03, 'zero weights average' );
+	// all-zero weights still carry the presence bit, so they average instead of falling back
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 0, 0 ), 1.0, packWeights( 0, 0 ) ), 0.6, 0.03, 'all-zero weights average' );
+	// a shape without the presence bit uses box3d's default geometric mean, even with other bits set
+	near( slidingFriction( b3, weighted, 0.2, 0n, 1.0, packWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'unweighted shape falls back' );
+	near( slidingFriction( b3, weighted, 0.2, 3000n, 1.0, packWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'no presence bit falls back' );
 	near( slidingFriction( b3, null, 0.2, 0n, 1.0, 0n ), Math.sqrt( 0.2 ), 0.03, 'default rule is geometric' );
 	near( slidingFriction( b3, [ R.min, R.max ], 0.2, 0n, 1.0, 0n ), 0.2, 0.03, 'min rule' );
 	near( slidingFriction( b3, [ R.average, R.max ], 0.2, 0n, 1.0, 0n ), 0.6, 0.03, 'average rule' );
+
+	// Restitution reads its weight from bits 32-62: (0.2 * 3 + 0.8 * 1) / 4 = 0.35
+	near( bounceRestitution( b3, R.weighted, 0.2, packWeights( 0, 3 ), 0.8, packWeights( 0, 1 ) ), 0.35, 0.03, 'weighted restitution' );
+	near( bounceRestitution( b3, R.weighted, 0.2, 0n, 0.8, packWeights( 0, 1 ) ), 0.8, 0.03, 'unweighted restitution falls back to max' );
 
 	const world = zeroGravityWorld( b3 );
 	assert.throws( () => b3.b3World_SetMixingRules( world, 6, 0 ), RangeError, 'unknown rule throws' );
@@ -1136,7 +1169,7 @@ function distanceStiffness( b3 )
 	}
 }
 
-// b3Shape_SetHull resizes a shape in place; b3Shape_Disable takes it out of contacts and queries.
+// b3Shape_SetBakedHull / b3Shape_SetHull resize a shape in place; b3Shape_Disable takes it out of contacts and queries.
 function shapeEditing( b3 )
 {
 	const worldDef = b3.b3DefaultWorldDef();
@@ -1149,13 +1182,25 @@ function shapeEditing( b3 )
 
 	const unitCube = b3.b3CreateHull( [ -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5,
 		-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5 ] );
-	assert.ok( b3.b3Shape_SetHull( shape, unitCube, { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] }, [ 2, 3, 4 ], true ), 'SetHull succeeds' );
+	assert.ok( b3.b3Shape_SetBakedHull( shape, unitCube, { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] }, [ 2, 3, 4 ], true ), 'SetBakedHull succeeds' );
 	b3.b3DestroyHull( unitCube );
 	const aabb = b3.b3Shape_GetAABB( [ 0, 0, 0, 0, 0, 0 ], shape );
 	near( aabb[ 3 ] - aabb[ 0 ], 2, 0.05, 'resized x extent' );
 	near( aabb[ 4 ] - aabb[ 1 ], 3, 0.05, 'resized y extent' );
 	near( aabb[ 5 ] - aabb[ 2 ], 4, 0.05, 'resized z extent' );
 	near( b3.b3Body_GetMass( body ), mass * 24, mass * 0.01, 'updateBodyMass recomputes the mass' );
+
+	// 1:1 b3Shape_SetHull: swaps in a copy of the hull as is and leaves the mass alone
+	const { body: probeBody, shape: probe } = dynamicBox( b3, world, [ 20, 5, 0 ], 0.5 );
+	const probeMass = b3.b3Body_GetMass( probeBody );
+	const smallCube = b3.b3CreateHull( [ -0.25, -0.25, -0.25, 0.25, -0.25, -0.25, 0.25, 0.25, -0.25, -0.25, 0.25, -0.25,
+		-0.25, -0.25, 0.25, 0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, 0.25, 0.25 ] );
+	b3.b3Shape_SetHull( probe, smallCube );
+	b3.b3DestroyHull( smallCube );
+	const probeBox = b3.b3Shape_GetAABB( [ 0, 0, 0, 0, 0, 0 ], probe );
+	near( probeBox[ 3 ] - probeBox[ 0 ], 0.5, 0.05, 'SetHull swaps the geometry' );
+	assert.equal( b3.b3Body_GetMass( probeBody ), probeMass, 'SetHull leaves the mass alone' );
+	b3.b3DestroyBody( probeBody );
 
 	// Rest on the ground, then disable the ground: no contact, no ray hit, the body falls
 	const p = [ 0, 0, 0 ];

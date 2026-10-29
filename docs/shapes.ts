@@ -187,7 +187,7 @@ const unitCube = b3.b3CreateHull([
     -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
     -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
 ])!;
-const resized = b3.b3Shape_SetHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+const resized = b3.b3Shape_SetBakedHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
 if (!resized) console.warn('degenerate hull; the shape is unchanged');
 b3.b3DestroyHull(unitCube);
 
