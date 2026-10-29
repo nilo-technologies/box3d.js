@@ -4,12 +4,13 @@ This repository is **Nilo's fork** of box3d.js.
 
 - Our repo (`origin`): `nilo-technologies/box3d.js`
 - Original fork / upstream: `isaac-mason/box3d.js` (still referenced in `package.json`)
-- Vendored submodules: `erincatto/box3d` (`vendor/box3d`), `kmammou/v-hacd` (`vendor/v-hacd`)
+- Vendored submodules: `nilo-technologies/box3d` (`vendor/box3d`, Nilo's fork of `erincatto/box3d`), `kmammou/v-hacd` (`vendor/v-hacd`)
 
 ## Pull requests: never target the original fork
 
-- **Never create pull requests against `isaac-mason/box3d.js`**, or against the submodule repos `erincatto/box3d` and `kmammou/v-hacd`.
+- **Never create pull requests against `isaac-mason/box3d.js`**, or against the upstream repos `erincatto/box3d` and `kmammou/v-hacd`.
 - All PRs go to `nilo-technologies/box3d.js`, usually with `main` as the base branch.
+- Changes to the box3d engine itself go to `nilo-technologies/box3d` (base `main`), and only when the user explicitly asks for them.
 - Also do not open issues, comments, reviews, or pushes on those upstream repos.
 - `gh pr create` in a fork **defaults to the upstream parent repo**. Always pass the repo explicitly:
 
