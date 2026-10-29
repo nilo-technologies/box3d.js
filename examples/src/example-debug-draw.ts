@@ -232,7 +232,7 @@ b3.b3CreateBoxShape(staticBody([12.2, 1.7, 3.4]), postDef, 0.28, 1.7, 0.28);
 
 // Hollow pipe in front of the gallery. The body stays disabled until V-HACD has
 // attached one hull per piece, then it is dropped. Motion locks leave only the
-// vertical axis free, so restitution bounces it straight up and down. If the
+// vertical axis free, so restitution 1 bounces it straight up and down forever. If the
 // center leaves the pad, it is put back at the drop pose.
 const PIPE_X = 0;
 const PIPE_Z = 7.35;
@@ -292,7 +292,7 @@ pipeDef.isAwake = true;
 pipeDef.isEnabled = false;
 const pipe = b3.b3CreateBody(world, pipeDef);
 const pipeShape = b3.b3DefaultShapeDef();
-pipeShape.baseMaterial.restitution = 0.9;
+pipeShape.baseMaterial.restitution = 1;
 pipeShape.baseMaterial.friction = 0.45;
 const pipePieces = b3.b3CreateConvexDecompositionShapesAsync(
 	pipe,
