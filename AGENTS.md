@@ -42,6 +42,11 @@ pnpm docs:check     # type-checks doc snippets
 pnpm check          # biome lint + format check for examples/src
 ```
 
+## Vehicle presets
+
+- `examples/src/vehicle-presets.js` holds the vehicle presets: the four originals and a 45 car matrix (sports, rally, super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers (car, then drivetrain, then realism level).
+- To build or tune a car, follow the skill in `.claude/skills/vehicle-tuning/SKILL.md`, and check the result with `node examples/scripts/vehicle-metrics.mjs` (`--preset <name>`, `--car <name>`, `--all`, or `--file <module>`). Every matrix preset must pass it.
+
 ## Conventions
 
 - Do not edit `README.md` directly. Edit `docs/README.template.md` and the snippets in `docs/`, then run `pnpm docs:build`.
