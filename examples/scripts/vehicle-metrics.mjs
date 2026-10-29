@@ -38,6 +38,7 @@ export const archetypes = {
 		topSpeed: [245, 290],
 		braking: [32, 40],
 		lateralG: [0.95, 1.15],
+		stepRoll: [1.4, 4],
 	},
 	rally: {
 		title: 'Rally2 hatch on gravel tires, measured on tarmac',
@@ -45,13 +46,17 @@ export const archetypes = {
 		topSpeed: [180, 215],
 		braking: [36, 46],
 		lateralG: [0.85, 1.05],
+		stepRoll: [1.8, 6],
 	},
 	super: {
 		title: 'mid engine supercar (720S, Huracan class)',
-		zeroTo100: { fwd: [4.0, 6.0], rwd: [2.9, 4.0], awd: [2.7, 3.5] },
+		// No mid engine car is front wheel drive. Its FWD range comes from the front axle carrying
+		// about 40% of the weight: roughly half the RWD car's traction.
+		zeroTo100: { fwd: [5.0, 8.0], rwd: [2.9, 4.0], awd: [2.7, 3.5] },
 		topSpeed: [300, 350],
 		braking: [28, 35],
 		lateralG: [1.1, 1.4],
+		stepRoll: [0.7, 3],
 	},
 	hatch: {
 		title: 'hot hatch (Golf GTI, Civic Type R class)',
@@ -59,36 +64,42 @@ export const archetypes = {
 		topSpeed: [235, 275],
 		braking: [33, 40],
 		lateralG: [0.9, 1.08],
+		stepRoll: [1.4, 5],
 	},
 };
 
 // How each realism level moves the targets. Grip scales braking and lateral g; the stability
 // rules say what a level must or must not do in the step steer and side tests.
+// How each realism level moves the targets. Grip scales braking and lateral g. Roll scales the
+// archetype's step steer roll range: a realistic car must roll, an arcade car hardly at all.
+// The rest says what a level must or must not do in the step steer and self righting tests.
 export const realismTargets = {
-	100: { grip: 1.0, maxRoll: 8, minRoll: 1.5, mayspin: true, mustRight: false, mustNotRight: true },
-	75: { grip: 1.1, maxRoll: 6.5, minRoll: 1, mayspin: true, mustRight: false, mustNotRight: false },
-	50: { grip: 1.2, maxRoll: 5, minRoll: 0, mayspin: false, mustRight: true, mustNotRight: false },
-	25: { grip: 1.32, maxRoll: 3.5, minRoll: 0, mayspin: false, mustRight: true, mustNotRight: false },
-	0: { grip: 1.45, maxRoll: 2.5, minRoll: 0, mayspin: false, mustRight: true, mustNotRight: false },
+	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true },
+	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false },
+	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false },
+	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false },
+	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false },
 };
 
-// The archetype 0-100 figures are launch control runs. The test is a flat out launch, so a car
-// without traction control spins its tires and gets this much slack (s).
-const NO_TC_LAUNCH_SLACK = 0.6;
+// The archetype 0-100 figures are launch control runs. The test is a flat out launch, so a two
+// wheel drive car loses time either to wheelspin (no traction control) or to traction control,
+// which caps the engine at the tire's peak before the engine's own inertia and friction take
+// their share, so the tire runs well under its peak. AWD cars are not traction limited.
+const TWO_WHEEL_LAUNCH_SLACK = 0.6;
 
-export function targetRanges({ archetype, realism, drive }, tractionControl = true) {
+export function targetRanges({ archetype, realism, drive }) {
 	const a = archetypes[archetype];
 	const r = realismTargets[realism];
 	const arcade = 1 - realism / 100;
 	const [z0, z1] = a.zeroTo100[drive];
 	return {
 		// More grip and traction control can only help the launch
-		zeroTo100: [z0 * (1 - 0.2 * arcade), z1 + (tractionControl ? 0 : NO_TC_LAUNCH_SLACK)],
+		zeroTo100: [z0 * (1 - 0.2 * arcade), z1 + (drive === 'awd' ? 0 : TWO_WHEEL_LAUNCH_SLACK)],
 		// Downforce loads the tires and adds rolling resistance
 		topSpeed: [a.topSpeed[0] * (1 - 0.05 * arcade), a.topSpeed[1]],
 		braking: [a.braking[0] / r.grip / 1.05, a.braking[1] / r.grip],
 		lateralG: [a.lateralG[0] * r.grip, a.lateralG[1] * r.grip * 1.08],
-		stepRoll: [r.minRoll, r.maxRoll],
+		stepRoll: [a.stepRoll[0] * r.roll[0], a.stepRoll[1] * r.roll[1]],
 		handbrakeYaw: [45, 360],
 		handbrakeRate: [60, 400],
 		rideHeight: [0.3, 1.2],
@@ -255,6 +266,14 @@ function testLaunchAndBrake(preset) {
 	let braking = Number.NaN;
 	let brakeUpright = 1;
 	if (reached) {
+		// Foot off the throttle for a quarter second before the brake, as a driver does. Lifting
+		// at high rpm sends an engine braking pulse into the driven wheels, and landing it on top of
+		// full brake pushes them past their peak slip, where ABS cannot recover them.
+		for (let i = 0; i < 15; i++) {
+			b3.b3Vehicle_SetInput(car.vehicle, input(0));
+			step(car);
+		}
+		const v0 = readState(car.vehicle).speed;
 		const from = pose(car.chassis).position;
 		let t = 0;
 		while (readState(car.vehicle).speed > 0.3 && t < 15) {
@@ -264,7 +283,8 @@ function testLaunchAndBrake(preset) {
 			t += dt;
 		}
 		const to = pose(car.chassis).position;
-		braking = Math.hypot(to[0] - from[0], to[2] - from[2]);
+		// Scaled to a stop from exactly 100 km/h
+		braking = Math.hypot(to[0] - from[0], to[2] - from[2]) * (100 / kmh / v0) ** 2;
 	}
 	b3.b3DestroyWorld(car.world);
 	return {
@@ -455,7 +475,7 @@ export function measure(preset, { quick = false } = {}) {
 // ---------------------------------------------------------------------------
 
 export function check(m, target, { quick = false } = {}) {
-	const t = targetRanges(target, m.tractionControl);
+	const t = targetRanges(target);
 	const checks = [];
 	const range = (key, unit, digits = 2) => {
 		const [lo, hi] = t[key];
@@ -479,7 +499,7 @@ export function check(m, target, { quick = false } = {}) {
 	rule('stepReached', m.stepReached, 'reaches 120 km/h');
 	range('stepRoll', 'deg', 1);
 	rule('noFlip', !m.flipped, m.flipped ? 'flipped in the step steer' : 'stays on its wheels');
-	if (!t.mayspin) {
+	if (!t.maySpin) {
 		rule('noSpin', !m.spun, `peak sideslip ${m.stepSideslip.toFixed(0)} deg (want < 35)`);
 	}
 	range('handbrakeYaw', 'deg', 0);
