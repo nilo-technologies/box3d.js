@@ -2533,6 +2533,34 @@ EMSCRIPTEN_BINDINGS( box3d )
 		b3ShapeProxy proxy{ reinterpret_cast<const b3Vec3*>( f.data() ), (int)( f.size() / 3 ), radius };
 		return b3Body_OverlapShape( bodyId, origin, &proxy, filter, bodyTransform );
 	} );
+	// Character mover vs one body at a given transform (e.g. a dynamic body's
+	// predicted pose). box3d reports at most one plane per shape, so the shape count
+	// is the capacity. Returns { count, data, shapeIds }: data is the PlaneResultBuffer
+	// layout, shapeIds the ShapeIdBuffer layout; read with getBodyPlaneResultAt.
+	ret_function( "b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform): BodyPlaneResultBuffer",
+		+[]( b3BodyId bodyId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, b3Transform bodyTransform ) -> val
+	{
+		std::vector<b3BodyPlaneResult> results( (size_t)b3Body_GetShapeCount( bodyId ) );
+		int n = results.empty() ? 0 : b3Body_CollideMover( bodyId, results.data(), (int)results.size(), origin, &mover, filter, bodyTransform );
+		std::vector<float> planes;
+		std::vector<int32_t> ids;
+		planes.reserve( (size_t)n * layout::plane );
+		ids.reserve( (size_t)n * layout::shapeId );
+		for ( int i = 0; i < n; ++i )
+		{
+			const b3PlaneResult& pr = results[i].result;
+			planes.insert( planes.end(), {
+				pr.plane.normal.x, pr.plane.normal.y, pr.plane.normal.z, pr.plane.offset,
+				pr.point.x, pr.point.y, pr.point.z } );
+			const b3ShapeId& id = results[i].shapeId;
+			ids.insert( ids.end(), { id.index1, id.world0, id.generation } );
+		}
+		val out = val::object();
+		out.set( "count", n );
+		out.set( "data", toF32( planes ) );
+		out.set( "shapeIds", toI32( ids ) );
+		return out;
+	} );
 
 	register_vector<b3ShapeId>( "b3ShapeIdVector" );
 	register_vector<b3JointId>( "b3JointIdVector" );

@@ -43,6 +43,7 @@ New upstream API:
   - `b3Joint_IsAwake`.
   - Mover and pogo joints: `b3CreateMoverJoint`, `b3CreatePogoJoint`, their default defs and accessors. These are what upstream uses for dynamic character movers.
 - Replay: `b3RecPlayer_SubStepFrame` and `b3RecPlayer_IsAtPreStep`.
+- `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
 ## v0.3.0
 
