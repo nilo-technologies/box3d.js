@@ -31,11 +31,9 @@ Initialize the WASM module once with `await Box3D()`, then call the physics API 
 
 <Snippet source="./quick-start.ts" />
 
-## How Does This Compare to Jolt / Rapier / Others?
+## What Is box3d?
 
 box3d is Erin Catto's 3D rigid body engine — the 3D sibling of Box2D, from the author of Box2D itself.
-
-For comparisons across engines (box3d.js, Jolt, Rapier, and others), see the **[JS physics benchmarks](https://isaac-mason.github.io/js-physics-benchmarks/)**.
 
 ## Physics World
 

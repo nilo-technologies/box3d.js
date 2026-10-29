@@ -3,7 +3,7 @@
 This repository is **Nilo's fork** of box3d.js.
 
 - Our repo (`origin`): `nilo-technologies/box3d.js`
-- Original fork / upstream: `isaac-mason/box3d.js` (still referenced in `package.json`)
+- Original fork / upstream: `isaac-mason/box3d.js` (credited in `LICENSE`)
 - Vendored submodules: `nilo-technologies/box3d` (`vendor/box3d`, Nilo's fork of `erincatto/box3d`), `kmammou/v-hacd` (`vendor/v-hacd`)
 
 ## Pull requests: never target the original fork
