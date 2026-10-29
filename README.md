@@ -247,6 +247,32 @@ npm install box3d.js
         Replay
       </a>
     </td>
+    <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-fwd">
+        <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: FWD hatchback
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-rwd">
+        <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: RWD sports car
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-awd">
+        <img src="./examples/public/screenshots/example-vehicle-awd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: AWD road car
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-offroad">
+        <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: AWD off-roader
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -259,6 +285,7 @@ npm install box3d.js
 - [Rigid Bodies](#rigid-bodies)
 - [Shapes](#shapes)
 - [Joints](#joints)
+- [Vehicles](#vehicles)
 - [Queries](#queries)
 - [Events](#events)
 - [Debug Draw](#debug-draw)
@@ -1129,6 +1156,111 @@ wheelDef.suspensionHertz = 4.0;         // spring frequency (Hz)
 wheelDef.suspensionDampingRatio = 0.7;  // 0 = undamped, 1 = critically damped
 b3.b3CreateWheelJoint(world, wheelDef);
 ```
+
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts a rounded cylinder against the world once per step, and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+```ts
+// The vehicle drives an existing dynamic body. Create the chassis shapes first.
+const chassisDef = b3.b3DefaultBodyDef();
+chassisDef.type = b3.b3BodyType.b3_dynamicBody;
+chassisDef.position = [0, 1, 0];
+const chassis = b3.b3CreateBody(world, chassisDef);
+b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), 0.9, 0.3, 2.1);
+
+// The default is a 1300 kg rear wheel drive sedan: +Z forward, +Y up, wheels in the order
+// front left, front right, rear left, rear right.
+const vehicleDef = b3.b3DefaultVehicleDef();
+vehicleDef.chassisId = chassis;
+vehicleDef.engine.maxTorque = 420;
+vehicleDef.assists.abs = true;
+
+// Make it all wheel drive: 40% of the torque to the front axle, 60% to the rear
+vehicleDef.drivetrain.differentials[0] = { leftWheel: 0, rightWheel: 1, torqueRatio: 0.4, leftRightSplit: 0.5, limitedSlipRatio: 1 };
+vehicleDef.drivetrain.differentials[1] = { leftWheel: 2, rightWheel: 3, torqueRatio: 0.6, leftRightSplit: 0.5, limitedSlipRatio: 1.3 };
+vehicleDef.drivetrain.differentialCount = 2;
+
+const vehicle = b3.b3CreateVehicle(world, vehicleDef);
+```
+
+### Driving
+
+```ts
+// forward: -1..1 (the automatic gearbox brakes first, then selects reverse), steer: -1 left
+// to 1 right, brake and handbrake: 0..1. Input wakes the chassis.
+b3.b3Vehicle_SetInput(vehicle, { forward: 1, brake: 0, steer: -0.3, handbrake: 0 });
+b3.b3World_Step(world, 1 / 60, 4);
+```
+
+### Reading the Vehicle State
+
+```ts
+// One call per frame packs the vehicle and wheel state into a reusable wasm buffer
+const stateBuffer = b3.createVehicleStateBuffer();
+const state = b3.createVehicleStateRecord();
+const wheel = b3.createVehicleWheelRecord();
+
+b3.getVehicleStateData(stateBuffer, vehicle);
+b3.getVehicleStateAt(state, stateBuffer);
+console.log(`${(state.speed * 3.6).toFixed(0)} km/h, gear ${state.gear}, ${state.engineRpm.toFixed(0)} rpm`);
+
+for (let i = 0; i < b3.getNumVehicleWheels(stateBuffer); i++) {
+    b3.getVehicleWheelAt(wheel, stateBuffer, i);
+    // wheel.position / wheel.rotation: world space wheel transform including steering and spin
+    // wheel.load, slipRatio, slipAngle, compression, hasContact, contactPoint, ...
+}
+
+b3.destroyVehicleStateBuffer(stateBuffer);
+```
+
+### Live Tuning
+
+```ts
+// Every part of the definition can be changed while driving. Changes apply on the next step.
+const suspension = b3.b3Vehicle_GetWheel(vehicle, 0);
+suspension.suspension.frequency = 2.2;
+b3.b3Vehicle_SetWheel(vehicle, 0, suspension);
+
+const assists = b3.b3Vehicle_GetAssists(vehicle);
+assists.tractionControl = false;
+assists.driftGripScale = 0.5; // the handbrake makes the rear loose
+b3.b3Vehicle_SetAssists(vehicle, assists);
+
+// Flip the car back onto its wheels
+b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
+```
+
+The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which edits every setting of any vehicle live. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-fwd">
+      <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: FWD hatchback</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-rwd">
+      <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: RWD sports car</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-awd">
+      <img src="./examples/public/screenshots/example-vehicle-awd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: AWD road car</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-offroad">
+      <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: AWD off-roader</strong>
+    </a>
+  </td>
+  </tr>
+</table>
 
 ## Queries
 

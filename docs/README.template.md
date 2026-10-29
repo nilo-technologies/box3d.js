@@ -281,6 +281,28 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="wheel" />
 
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts a rounded cylinder against the world once per step, and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+<Snippet source="./vehicle.ts" select="create" />
+
+### Driving
+
+<Snippet source="./vehicle.ts" select="drive" />
+
+### Reading the Vehicle State
+
+<Snippet source="./vehicle.ts" select="read" />
+
+### Live Tuning
+
+<Snippet source="./vehicle.ts" select="tune" />
+
+The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which edits every setting of any vehicle live. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad" />
+
 ## Queries
 
 Queries ask questions about the physics world without advancing the simulation.

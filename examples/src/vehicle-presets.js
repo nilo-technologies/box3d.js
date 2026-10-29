@@ -55,10 +55,10 @@ function fwd(def) {
 	setWheels(
 		def,
 		[
-			[0.74, -0.05, 1.25],
-			[-0.74, -0.05, 1.25],
-			[0.74, -0.05, -1.2],
-			[-0.74, -0.05, -1.2],
+			[0.78, -0.05, 1.25],
+			[-0.78, -0.05, 1.25],
+			[0.78, -0.05, -1.2],
+			[-0.78, -0.05, -1.2],
 		],
 		(wheel, front) => {
 			wheel.radius = 0.31;
@@ -88,10 +88,10 @@ function rwd(def) {
 	setWheels(
 		def,
 		[
-			[0.8, -0.02, 1.35],
-			[-0.8, -0.02, 1.35],
-			[0.8, -0.02, -1.3],
-			[-0.8, -0.02, -1.3],
+			[0.84, -0.02, 1.35],
+			[-0.84, -0.02, 1.35],
+			[0.84, -0.02, -1.3],
+			[-0.84, -0.02, -1.3],
 		],
 		(wheel, front) => {
 			wheel.radius = 0.33;
@@ -111,8 +111,8 @@ function rwd(def) {
 	setDifferentials(def, [axle(2, 3, 1, 1.4)]);
 	setAntiRoll(def, 20000, 26000);
 	def.assists.driftGripScale = 0.5;
-	def.assists.counterSteer = 0.3;
-	def.assists.tractionControl = false;
+	def.assists.counterSteer = 0.4;
+	def.assists.tractionControl = true;
 	def.assists.abs = false;
 	return def;
 }
@@ -122,10 +122,10 @@ function awd(def) {
 	setWheels(
 		def,
 		[
-			[0.8, -0.05, 1.32],
-			[-0.8, -0.05, 1.32],
-			[0.8, -0.05, -1.3],
-			[-0.8, -0.05, -1.3],
+			[0.84, -0.05, 1.32],
+			[-0.84, -0.05, 1.32],
+			[0.84, -0.05, -1.3],
+			[-0.84, -0.05, -1.3],
 		],
 		(wheel, front) => {
 			wheel.radius = 0.34;
@@ -149,10 +149,10 @@ function offroad(def) {
 	setWheels(
 		def,
 		[
-			[0.88, -0.1, 1.45],
-			[-0.88, -0.1, 1.45],
-			[0.88, -0.1, -1.4],
-			[-0.88, -0.1, -1.4],
+			[0.95, -0.1, 1.45],
+			[-0.95, -0.1, 1.45],
+			[0.95, -0.1, -1.4],
+			[-0.95, -0.1, -1.4],
 		],
 		(wheel, front) => {
 			wheel.radius = 0.42;
@@ -198,12 +198,12 @@ function offroad(def) {
 }
 
 export const vehiclePresets = {
-	fwd: { title: 'FWD hatchback', halfExtents: [0.72, 0.32, 1.95], apply: fwd },
-	rwd: { title: 'RWD sports car', halfExtents: [0.82, 0.28, 2.15], apply: rwd },
-	awd: { title: 'AWD road car', halfExtents: [0.82, 0.32, 2.15], apply: awd },
+	fwd: { title: 'FWD hatchback', halfExtents: [0.66, 0.32, 1.95], apply: fwd },
+	rwd: { title: 'RWD sports car', halfExtents: [0.7, 0.28, 2.15], apply: rwd },
+	awd: { title: 'AWD road car', halfExtents: [0.7, 0.32, 2.15], apply: awd },
 	offroad: {
 		title: 'AWD off-roader',
-		halfExtents: [0.9, 0.45, 2.3],
+		halfExtents: [0.78, 0.45, 2.3],
 		apply: offroad,
 	},
 };
