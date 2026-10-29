@@ -1092,6 +1092,125 @@ function getDebugTransformAt( out, buf, i )
 	return out;
 }
 
+// --- vehicle readout (reusable, wasm-backed; zero JS alloc per frame) ---------
+//
+//   const vb = b3.createVehicleStateBuffer();     // allocate once
+//   const state = b3.createVehicleStateRecord();  // reusable records, once
+//   const wheel = b3.createVehicleWheelRecord();
+//   // each frame, after stepping:
+//   b3.getVehicleStateData( vb, vehicleId );      // one crossing for the vehicle and all wheels
+//   b3.getVehicleStateAt( state, vb );
+//   for ( let i = 0, n = b3.getNumVehicleWheels( vb ); i < n; i++ )
+//   {
+//     b3.getVehicleWheelAt( wheel, vb, i );       // wheel.position, wheel.rotation, wheel.load, ...
+//   }
+//   b3.destroyVehicleStateBuffer( vb );
+//
+// The field read order below must match the VehicleStateBuffer packing order in src/bindings.cpp.
+
+const VEHICLE_I32 = LAYOUT.vehicleI32; //            gear isShifting wheelsInContact stuck wheelCount
+const VEHICLE_F32 = LAYOUT.vehicleF32; //            speed engineRpm throttle brake steerAngle
+const VEHICLE_WHEEL_I32 = LAYOUT.vehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
+const VEHICLE_WHEEL_F32 = LAYOUT.vehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
+const VEHICLE_WHEEL_F64 = LAYOUT.vehicleWheelF64; // position(3) contactPoint(3)
+
+function createVehicleStateBuffer()
+{
+	return { _impl: new Module.VehicleStateBufferImpl(), wheelCount: 0, i32: null, f32: null, f64: null, i32Base: 0, f32Base: 0, f64Base: 0 };
+}
+
+function getVehicleStateData( buf, vehicleId )
+{
+	const impl = buf._impl;
+	if ( impl === null ) throw new Error( 'getVehicleStateData: the vehicle state buffer was destroyed' );
+	impl.load( vehicleId );
+	buf.wheelCount = impl.wheelCount();
+	buf.i32 = HEAP32; buf.i32Base = impl.i32Ptr() >> 2;
+	buf.f32 = HEAPF32; buf.f32Base = impl.f32Ptr() >> 2;
+	buf.f64 = HEAPF64; buf.f64Base = impl.f64Ptr() >> 3;
+	return buf;
+}
+
+function destroyVehicleStateBuffer( buf )
+{
+	if ( buf._impl === null ) return;
+	buf._impl.delete();
+	buf._impl = null;
+	buf.wheelCount = 0;
+	buf.i32 = null; buf.f32 = null; buf.f64 = null;
+}
+
+function getNumVehicleWheels( buf ) { return buf.wheelCount; }
+
+function createVehicleStateRecord()
+{
+	return { speed: 0, engineRpm: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false };
+}
+
+function getVehicleStateAt( out, buf )
+{
+	if ( buf.i32 === null ) throw new Error( 'getVehicleStateAt: call getVehicleStateData first' );
+	const a = buf.i32; const is = buf.i32Base;
+	const f = buf.f32; const fs = buf.f32Base;
+	out.gear = a[ is ];
+	out.isShifting = a[ is + 1 ] !== 0;
+	out.wheelsInContact = a[ is + 2 ];
+	out.stuck = a[ is + 3 ] !== 0;
+	out.speed = f[ fs ];
+	out.engineRpm = f[ fs + 1 ];
+	out.throttle = f[ fs + 2 ];
+	out.brake = f[ fs + 3 ];
+	out.steerAngle = f[ fs + 4 ];
+	return out;
+}
+
+function createVehicleWheelRecord()
+{
+	return {
+		position: [ 0, 0, 0 ], rotation: [ 0, 0, 0, 1 ],
+		hasContact: false, isSticky: false,
+		contactPoint: [ 0, 0, 0 ], contactNormal: [ 0, 1, 0 ],
+		groundShapeId: { index1: 0, world0: 0, generation: 0 }, userMaterialId: 0n,
+		suspensionLength: 0, compression: 0, load: 0, longitudinalForce: 0, lateralForce: 0,
+		slipRatio: 0, slipAngle: 0, angularVelocity: 0, rotationAngle: 0, steerAngle: 0,
+		driveTorque: 0, brakeTorque: 0,
+	};
+}
+
+function getVehicleWheelAt( out, buf, i )
+{
+	// Only wheelCount records were packed, so any other index would read unrelated wasm memory
+	if ( !( Number.isInteger( i ) && i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
+	const a = buf.i32; const is = buf.i32Base + VEHICLE_I32 + i * VEHICLE_WHEEL_I32;
+	const f = buf.f32; const fs = buf.f32Base + VEHICLE_F32 + i * VEHICLE_WHEEL_F32;
+	const d = buf.f64; const ds = buf.f64Base + i * VEHICLE_WHEEL_F64;
+	out.hasContact = a[ is ] !== 0;
+	out.isSticky = a[ is + 1 ] !== 0;
+	readShapeId( out.groundShapeId, a, is + 2 );
+	out.userMaterialId = readU64( a, is + 5 );
+	const q = out.rotation;
+	q[ 0 ] = f[ fs ]; q[ 1 ] = f[ fs + 1 ]; q[ 2 ] = f[ fs + 2 ]; q[ 3 ] = f[ fs + 3 ];
+	const n = out.contactNormal;
+	n[ 0 ] = f[ fs + 4 ]; n[ 1 ] = f[ fs + 5 ]; n[ 2 ] = f[ fs + 6 ];
+	out.suspensionLength = f[ fs + 7 ];
+	out.compression = f[ fs + 8 ];
+	out.load = f[ fs + 9 ];
+	out.longitudinalForce = f[ fs + 10 ];
+	out.lateralForce = f[ fs + 11 ];
+	out.slipRatio = f[ fs + 12 ];
+	out.slipAngle = f[ fs + 13 ];
+	out.angularVelocity = f[ fs + 14 ];
+	out.rotationAngle = f[ fs + 15 ];
+	out.steerAngle = f[ fs + 16 ];
+	out.driveTorque = f[ fs + 17 ];
+	out.brakeTorque = f[ fs + 18 ];
+	const p = out.position;
+	p[ 0 ] = d[ ds ]; p[ 1 ] = d[ ds + 1 ]; p[ 2 ] = d[ ds + 2 ];
+	const c = out.contactPoint;
+	c[ 0 ] = d[ ds + 3 ]; c[ 1 ] = d[ ds + 4 ]; c[ 2 ] = d[ ds + 5 ];
+	return out;
+}
+
 // --- out-param math reads (conventions documented in src/bindings.cpp header) ---
 // Each raw `b3X_GetYInto(out, ...)` writes floats to a static wasm scratch; the
 // public `b3X_GetY(out, ...) -> out` copies scratch -> the caller's mathcat array.
@@ -1206,6 +1325,8 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createDebugBoxPrimitive, getDebugBoxAt,
 		createDebugBoundsPrimitive, getDebugBoundsAt,
 		createDebugTransformPrimitive, getDebugTransformAt,
+		createVehicleStateBuffer, getVehicleStateData, destroyVehicleStateBuffer, getNumVehicleWheels,
+		createVehicleStateRecord, getVehicleStateAt, createVehicleWheelRecord, getVehicleWheelAt,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,

@@ -31,11 +31,9 @@ Initialize the WASM module once with `await Box3D()`, then call the physics API 
 
 <Snippet source="./quick-start.ts" />
 
-## How Does This Compare to Jolt / Rapier / Others?
+## What Is box3d?
 
 box3d is Erin Catto's 3D rigid body engine — the 3D sibling of Box2D, from the author of Box2D itself.
-
-For comparisons across engines (box3d.js, Jolt, Rapier, and others), see the **[JS physics benchmarks](https://isaac-mason.github.io/js-physics-benchmarks/)**.
 
 ## Physics World
 
@@ -304,6 +302,28 @@ Springs can also be given in physical units (stiffness and damping), which keeps
 
 <Snippet source="./joints.ts" select="wheel" />
 
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+<Snippet source="./vehicle.ts" select="create" />
+
+### Driving
+
+<Snippet source="./vehicle.ts" select="drive" />
+
+### Reading the Vehicle State
+
+<Snippet source="./vehicle.ts" select="read" />
+
+### Live Tuning
+
+<Snippet source="./vehicle.ts" select="tune" />
+
+The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad" />
+
 ## Queries
 
 Queries ask questions about the physics world without advancing the simulation.
@@ -391,6 +411,16 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 <Snippet source="./debug-draw.ts" select="debug-draw" />
 
 <ExamplesTable ids="example-debug-draw" />
+
+## Character Controller
+
+`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it. As in upstream, only the platform's linear velocity is matched, so translating platforms carry the character and spinning ones don't.
+
+It is plain JavaScript on top of the bindings, not part of the wasm. Upstream intends this controller to be changed for each game, so every tuning value is a public field, and the class is small enough to subclass or copy.
+
+<Snippet source="./character.ts" select="dynamic-mover" />
+
+<ExamplesTable ids="example-dynamic-mover" />
 
 ## Multithreading
 

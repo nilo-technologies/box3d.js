@@ -207,6 +207,9 @@ mkdirSync( join( root, 'dist' ), { recursive: true } );
 // Hand-written Three.js helper. It does not go through emscripten.
 copyFileSync( join( root, 'src', 'three.js' ), join( root, 'dist', 'three.mjs' ) );
 copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts' ) );
+// Hand-written DynamicMover port (box3d's samples/dynamic_mover.cpp).
+copyFileSync( join( root, 'src', 'character.js' ), join( root, 'dist', 'character.mjs' ) );
+copyFileSync( join( root, 'src', 'character.d.ts' ), join( root, 'dist', 'character.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 
@@ -425,6 +428,51 @@ export interface b3ConvexDecompositionCacheStats { entries: number; hits: number
  * plus the number of pieces that could not become a box3d hull. */
 export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
 export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
+/** Reusable, wasm-backed vehicle readout. Fill with getVehicleStateData after each
+ * b3World_Step; free with destroyVehicleStateBuffer. */
+export interface VehicleStateBuffer { readonly _brand?: 'VehicleStateBuffer'; }
+export interface VehicleStateRecord {
+  /** Forward speed (m/s) */
+  speed: number;
+  engineRpm: number;
+  /** -1 reverse, 0 neutral, 1 and up forward gears */
+  gear: number;
+  isShifting: boolean;
+  throttle: number;
+  brake: number;
+  /** Center steer angle, positive left (radians) */
+  steerAngle: number;
+  wheelsInContact: number;
+  stuck: boolean;
+}
+export interface VehicleWheelRecord {
+  /** Wheel center, world space */
+  position: b3Vec3;
+  /** Wheel orientation including steering and spin */
+  rotation: b3Quat;
+  hasContact: boolean;
+  isSticky: boolean;
+  contactPoint: b3Vec3;
+  contactNormal: b3Vec3;
+  groundShapeId: b3ShapeId;
+  userMaterialId: bigint;
+  suspensionLength: number;
+  /** 0 fully extended, 1 at the bump stop */
+  compression: number;
+  /** Normal force (N) */
+  load: number;
+  longitudinalForce: number;
+  lateralForce: number;
+  slipRatio: number;
+  /** Radians */
+  slipAngle: number;
+  /** Spin (rad/s) */
+  angularVelocity: number;
+  rotationAngle: number;
+  steerAngle: number;
+  driveTorque: number;
+  brakeTorque: number;
+}
 export interface Box3DFacade {
   /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
    * blocking the calling thread, then attaches one hull shape per piece in a single call.
@@ -529,6 +577,15 @@ export interface Box3DFacade {
   getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
   createDebugTransformPrimitive(): DebugTransformPrimitive;
   getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
+  createVehicleStateBuffer(): VehicleStateBuffer;
+  /** Packs the vehicle state and every wheel's state and transform in one call. */
+  getVehicleStateData(buf: VehicleStateBuffer, vehicleId: b3VehicleId): VehicleStateBuffer;
+  destroyVehicleStateBuffer(buf: VehicleStateBuffer): void;
+  getNumVehicleWheels(buf: VehicleStateBuffer): number;
+  createVehicleStateRecord(): VehicleStateRecord;
+  getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
+  createVehicleWheelRecord(): VehicleWheelRecord;
+  getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
 }`;
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
