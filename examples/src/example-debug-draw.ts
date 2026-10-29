@@ -231,8 +231,15 @@ postDef.filter.categoryBits = 2n;
 b3.b3CreateBoxShape(staticBody([12.2, 1.7, 3.4]), postDef, 0.28, 1.7, 0.28);
 
 // Hollow pipe in front of the gallery. The body stays disabled until V-HACD has
-// attached one hull per piece, then it is dropped. Nothing writes its velocity:
-// restitution on the pipe is what bounces it.
+// attached one hull per piece, then it is dropped. Motion locks leave only the
+// vertical axis free, so restitution bounces it straight up and down. If the
+// center leaves the pad, it is put back at the drop pose.
+const PIPE_X = 0;
+const PIPE_Z = 7.35;
+const PIPE_DROP_Y = 2.8;
+const PIPE_HALF_X = 2.3;
+const PIPE_HALF_Z = 1.7;
+
 function pipeMesh(outerR: number, innerR: number, length: number, slices = 16) {
 	const positions: number[] = [];
 	const indices: number[] = [];
@@ -269,11 +276,17 @@ function pipeMesh(outerR: number, innerR: number, length: number, slices = 16) {
 const pipeMeshData = pipeMesh(0.62, 0.36, 0.42);
 const padShape = b3.b3DefaultShapeDef();
 padShape.baseMaterial.friction = 0.45;
-b3.b3CreateBoxShape(staticBody([0, -0.1, 7.35]), padShape, 2.3, 0.1, 1.7);
+b3.b3CreateBoxShape(
+	staticBody([PIPE_X, -0.1, PIPE_Z]),
+	padShape,
+	PIPE_HALF_X,
+	0.1,
+	PIPE_HALF_Z,
+);
 
 const pipeDef = b3.b3DefaultBodyDef();
 pipeDef.type = b3.b3BodyType.b3_dynamicBody;
-pipeDef.position = [0, 2.8, 7.35];
+pipeDef.position = [PIPE_X, PIPE_DROP_Y, PIPE_Z];
 pipeDef.enableSleep = false;
 pipeDef.isAwake = true;
 pipeDef.isEnabled = false;
@@ -602,6 +615,8 @@ const debug = createDebugRenderer(b3, world, {
 });
 
 const settings = debug.settings;
+const sim = { timeScale: 1 };
+app.gui.add(sim, 'timeScale', 0, 2, 0.05);
 const show = app.gui.addFolder('Debug');
 const flags = [
 	'shapes',
@@ -720,12 +735,28 @@ filter.close();
 
 await pipePieces;
 b3.b3Body_Enable(pipe);
+b3.b3Body_SetMotionLocks(pipe, {
+	linearX: true,
+	linearY: false,
+	linearZ: true,
+	angularX: true,
+	angularY: true,
+	angularZ: true,
+});
 
 const scratch: b3Vec3 = [0, 0, 0];
 let time = 0;
 
+function resetPipe(): void {
+	b3.b3Body_SetTransform(pipe, [PIPE_X, PIPE_DROP_Y, PIPE_Z], IDENTITY);
+	b3.b3Body_SetLinearVelocity(pipe, [0, 0, 0]);
+	b3.b3Body_SetAngularVelocity(pipe, [0, 0, 0]);
+	b3.b3Body_SetAwake(pipe, true);
+}
+
 app.onFrame((dt) => {
-	time += dt;
+	const scaled = dt * sim.timeScale;
+	time += scaled;
 	b3.b3Body_SetTransform(
 		mover,
 		[-8.6 + Math.sin(time) * 0.35, 0.55, 0.6],
@@ -746,11 +777,21 @@ app.onFrame((dt) => {
 	}
 	b3.b3Body_SetLinearVelocity(slide, [5, 0, 0]);
 
-	for (const update of updates) update(dt);
+	for (const update of updates) update(scaled);
 
-	app.step(() => b3.b3World_Step(world, 1 / 60, 4));
+	if (sim.timeScale > 0) {
+		app.step(() => b3.b3World_Step(world, (1 / 60) * sim.timeScale, 4));
+	}
 	b3.b3Body_SetAwake(sleeper, false);
 	b3.b3Body_SetAwake(kinematicSleeper, false);
+	b3.b3Body_GetPosition(scratch, pipe);
+	if (
+		Math.abs(scratch[0] - PIPE_X) > PIPE_HALF_X ||
+		Math.abs(scratch[2] - PIPE_Z) > PIPE_HALF_Z ||
+		scratch[1] < 0
+	) {
+		resetPipe();
+	}
 	debug.update();
 });
 app.start();
