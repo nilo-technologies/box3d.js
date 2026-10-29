@@ -1,6 +1,6 @@
 # Realism levels
 
-One table, shared by every car. Apply the row for the brief's level after the car and drivetrain layers. Do not tune these per car: when a car fails a realism check, fix the car layer. (The single exception so far is noted below.)
+One table, shared by every car. Apply the row for the brief's level after the car and drivetrain layers. Do not tune these per car: when a car fails a realism check, fix the car layer.
 
 | Field | 100 | 75 | 50 | 25 | 0 (arcade) | How to apply |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -27,6 +27,23 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | may spin in the 120 km/h step steer | yes | yes | no | no | no |
 | back on its wheels from side and roof | must stay on the roof | either | must | must | must |
 | braking, lateral g | archetype | ÷ and × 1.1 | 1.2 | 1.32 | 1.45 |
+
+## How the targets scale
+
+The metrics script turns an archetype range [lo, hi] (from archetypes.md) into the range for a level with `grip` from the table above and `arcade` = 1 - realism ÷ 100 (0 at 100%, 1 at arcade):
+
+| Metric | Range |
+| --- | --- |
+| 0-100 | lo × (1 - 0.2 × arcade) to hi, plus 0.6 s on hi for FWD and RWD (no launch control) |
+| top speed | lo × (1 - 0.05 × arcade) to hi (downforce adds rolling resistance) |
+| braking | lo ÷ grip ÷ 1.05 to hi ÷ grip |
+| lateral g | lo × grip to hi × grip × 1.08 |
+| step steer roll | archetype roll range × the level's roll factors in the table above: 100% is [lo, hi], 75% is [0.6 lo, 0.85 hi], 50% is [0, 0.65 hi] and so on. Below 75% there is no lower bound. |
+| handbrake | heading change 45-360°, peak yaw rate 60-400°/s |
+| ride height | chassis 0.3-1.2 m above the ground after settling |
+| launch line | under 2 m off the line by 100 km/h |
+
+Example, hatch at 75% FWD: 0-100 5.32-7.80 s, top speed 232-275 km/h, braking 28.6-36.4 m, lateral g 0.99-1.28, roll 0.84-4.25°.
 
 Across a car's levels, lateral g must not fall, braking must not get longer, roll must not grow and handbrake rotation must not slow as realism drops.
 

@@ -313,8 +313,19 @@ function testTopSpeed(preset) {
 		}
 	}
 	const upright = pose(car.chassis).upright;
+	const s = readState(car.vehicle);
+	const out = {
+		topSpeed: top,
+		topSpeedUpright: upright,
+		// Tells a drag limited car (top gear, below the limiter) from one stuck in a lower gear
+		// or held by the limiter
+		topGear: s.gear,
+		topRpm: s.engineRpm,
+		topGearCount: car.def.transmission.gearCount,
+		topMaxRpm: car.def.engine.maxRpm,
+	};
 	b3.b3DestroyWorld(car.world);
-	return { topSpeed: top, topSpeedUpright: upright };
+	return out;
 }
 
 // Steady speed, steering ramped from straight to half lock over 6 s. Lateral acceleration is
@@ -535,7 +546,11 @@ export function check(m, target, { quick = false } = {}) {
 	rule('drivesStraight', m.launchDrift < 2, `${m.launchDrift.toFixed(2)} m off line`);
 	range('braking', 'm', 1);
 	rule('brakesUpright', m.brakeUpright > 0.95, `upright ${m.brakeUpright.toFixed(2)}`);
-	if (!quick) range('topSpeed', 'km/h', 0);
+	if (!quick) {
+		range('topSpeed', 'km/h', 0);
+		const t = checks[checks.length - 1];
+		t.detail += ` in gear ${m.topGear}/${m.topGearCount} at ${m.topRpm.toFixed(0)} rpm (limiter ${m.topMaxRpm})`;
+	}
 	range('lateralG', 'g');
 	rule('stepReached', m.stepReached, 'reaches 120 km/h');
 	range('stepRoll', 'deg', 1);
@@ -599,7 +614,7 @@ export function checkOrdering(rows) {
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-	const args = { presets: [], json: false, quick: false };
+	const args = { presets: [], json: false, quick: false, perturb: false };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === '--preset') args.presets.push(argv[++i]);
@@ -608,6 +623,7 @@ function parseArgs(argv) {
 		else if (a === '--file') args.file = argv[++i];
 		else if (a === '--json') args.json = true;
 		else if (a === '--quick') args.quick = true;
+		else if (a === '--perturb') args.perturb = true;
 		else throw new Error(`unknown argument ${a}`);
 	}
 	return args;
@@ -639,8 +655,30 @@ if (isMain) {
 		jobs.push({ name: path.basename(args.file), preset: mod.preset, target });
 	}
 	if (jobs.length === 0) {
-		console.error('usage: vehicle-metrics.mjs --preset <name> | --car <sports|rally|super> | --all | --file <module> [--json] [--quick]');
+		console.error('usage: vehicle-metrics.mjs --preset <name> | --car <sports|rally|super> | --all | --file <module> [--json] [--quick] [--perturb]');
 		process.exit(2);
+	}
+
+	// --perturb: every job again with the mass 3% off and the tire grip 2% off each way, so a
+	// preset that only just passes shows up. ABS lockups and spins are threshold effects.
+	if (args.perturb) {
+		const frictionKeys = ['longitudinalPeakFriction', 'longitudinalSlideFriction', 'lateralPeakFriction', 'lateralSlideFriction'];
+		const variants = [
+			['mass-3%', (d) => { d.chassis.mass *= 0.97; }],
+			['mass+3%', (d) => { d.chassis.mass *= 1.03; }],
+			['grip-2%', (d) => { for (let i = 0; i < d.wheelCount; i++) for (const k of frictionKeys) d.wheels[i].tire[k] *= 0.98; }],
+			['grip+2%', (d) => { for (let i = 0; i < d.wheelCount; i++) for (const k of frictionKeys) d.wheels[i].tire[k] *= 1.02; }],
+		];
+		for (const job of [...jobs]) {
+			for (const [label, edit] of variants) {
+				jobs.push({
+					...job,
+					name: `${job.name} ${label}`,
+					perturbed: true,
+					preset: { ...job.preset, matrix: undefined, apply: (d) => { job.preset.apply(d); edit(d); return d; } },
+				});
+			}
+		}
 	}
 
 	const rows = [];
@@ -652,7 +690,7 @@ if (isMain) {
 			const failed = checks.filter((c) => !c.pass);
 			const m = metrics;
 			console.log(
-				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(16)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${m.topSpeed.toFixed(0)} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
+				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(24)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${args.quick ? 'skipped' : `${m.topSpeed.toFixed(0)} (gear ${m.topGear}, ${m.topRpm.toFixed(0)} rpm)`} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
 			);
 			for (const c of failed) console.log(`       x ${c.name}: ${c.detail}`);
 		}
