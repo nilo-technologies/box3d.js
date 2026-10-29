@@ -1155,8 +1155,8 @@ function createVehicleWheelRecord()
 
 function getVehicleWheelAt( out, buf, i )
 {
-	// Only wheelCount records were packed, so a larger index would read unrelated wasm memory
-	if ( !( i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
+	// Only wheelCount records were packed, so any other index would read unrelated wasm memory
+	if ( !( Number.isInteger( i ) && i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
 	const a = buf.i32; const is = buf.i32Base + VEHICLE_I32 + i * VEHICLE_WHEEL_I32;
 	const f = buf.f32; const fs = buf.f32Base + VEHICLE_F32 + i * VEHICLE_WHEEL_F32;
 	const d = buf.f64; const ds = buf.f64Base + i * VEHICLE_WHEEL_F64;

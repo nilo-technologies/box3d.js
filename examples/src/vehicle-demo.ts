@@ -691,7 +691,7 @@ export async function runVehicleDemo(
 		let steer = down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft');
 		let handbrake = down('Space');
 
-		const pad = navigator.getGamepads?.().find((p) => p !== null);
+		const pad = (navigator.getGamepads?.() ?? []).find((p) => p !== null);
 		if (pad) {
 			const axis = pad.axes[0] ?? 0;
 			if (Math.abs(axis) > 0.08)

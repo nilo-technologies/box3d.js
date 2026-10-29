@@ -259,14 +259,14 @@ npm install box3d.js
         Vehicle: FWD hatchback
       </a>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-rwd">
         <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Vehicle: RWD sports car
       </a>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://isaac-mason.github.io/box3d.js/#example-vehicle-awd">
         <img src="./examples/public/screenshots/example-vehicle-awd.png" width="180" height="120" style="object-fit:cover;"/><br/>
@@ -1166,7 +1166,7 @@ b3.b3CreateWheelJoint(world, wheelDef);
 
 ## Vehicles
 
-`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts a rounded cylinder against the world once per step, and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
 
 ```ts
 // The vehicle drives an existing dynamic body. Create the chassis shapes first.
@@ -1238,7 +1238,7 @@ b3.b3Vehicle_SetAssists(vehicle, assists);
 b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
 ```
 
-The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which edits every setting of any vehicle live. The presets they drive are in `examples/src/vehicle-presets.js`.
+The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
 
 <table>
   <tr>
