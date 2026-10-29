@@ -35,7 +35,7 @@ export type DebugDrawRole = DebugDrawRoleValue<0>|DebugDrawRoleValue<1>|DebugDra
 export interface b3JointTypeValue<T extends number> {
   value: T;
 }
-export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>;
+export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>|b3JointTypeValue<11>;
 
 export interface b3HullData extends ClassHandle {
 }
@@ -136,6 +136,24 @@ export interface DebugDrawBufferImpl extends ClassHandle {
   loadFrom(_0: b3WorldId, _1: any): void;
 }
 
+export interface b3VehicleCastTypeValue<T extends number> {
+  value: T;
+}
+export type b3VehicleCastType = b3VehicleCastTypeValue<0>|b3VehicleCastTypeValue<1>|b3VehicleCastTypeValue<2>;
+
+export interface b3VehicleTransmissionModeValue<T extends number> {
+  value: T;
+}
+export type b3VehicleTransmissionMode = b3VehicleTransmissionModeValue<0>|b3VehicleTransmissionModeValue<1>;
+
+export interface VehicleStateBufferImpl extends ClassHandle {
+  load(_0: b3VehicleId): void;
+  wheelCount(): number;
+  i32Ptr(): number;
+  f32Ptr(): number;
+  f64Ptr(): number;
+}
+
 export type b3MotionLocks = {
   linearX: boolean,
   linearY: boolean,
@@ -199,6 +217,12 @@ export type b3Capacity = {
 export type b3TreeStats = {
   nodeVisits: number,
   leafVisits: number
+};
+
+export type b3VehicleId = {
+  index1: number,
+  world0: number,
+  generation: number
 };
 
 export type b3ContactId = {
@@ -627,12 +651,195 @@ export type b3ContactHitEvent = {
   userMaterialIdB: bigint
 };
 
+export type b3VehicleSuspension = {
+  minLength: number,
+  maxLength: number,
+  preload: number,
+  frequency: number,
+  compressionDamping: number,
+  reboundDamping: number,
+  enableBumpStop: boolean
+};
+
+export type b3VehicleTire = {
+  longitudinalPeakSlip: number,
+  longitudinalPeakFriction: number,
+  longitudinalSlideSlip: number,
+  longitudinalSlideFriction: number,
+  lateralPeakAngle: number,
+  lateralPeakFriction: number,
+  lateralSlideAngle: number,
+  lateralSlideFriction: number,
+  rollingResistance: number
+};
+
+export type b3VehicleWheelDef = {
+  position: b3Vec3,
+  radius: number,
+  width: number,
+  inertia: number,
+  steerFactor: number,
+  maxBrakeTorque: number,
+  maxHandBrakeTorque: number,
+  angularDamping: number,
+  castType: b3VehicleCastType,
+  suspension: b3VehicleSuspension,
+  tire: b3VehicleTire
+};
+
+export type b3VehicleWheels = [ b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef ];
+
+export type b3VehicleChassis = {
+  mass: number,
+  autoCenterOfMass: boolean,
+  centerOfMassOffset: b3Vec3,
+  forward: b3Vec3,
+  up: b3Vec3,
+  maxSlopeAngle: number,
+  castFilter: b3QueryFilter
+};
+
+export type b3VehicleEngine = {
+  maxTorque: number,
+  peakTorqueRpm: number,
+  idleTorqueScale: number,
+  maxRpmTorqueScale: number,
+  idleRpm: number,
+  maxRpm: number,
+  inertia: number,
+  angularDamping: number
+};
+
+export type b3VehicleGearRatios = [ number, number, number, number, number, number, number, number ];
+
+export type b3VehicleTransmission = {
+  mode: b3VehicleTransmissionMode,
+  gearRatios: b3VehicleGearRatios,
+  gearCount: number,
+  reverseRatio: number,
+  finalDrive: number,
+  shiftUpRpm: number,
+  shiftDownRpm: number,
+  shiftTime: number,
+  clutchReleaseTime: number,
+  shiftLatency: number,
+  clutchStrength: number
+};
+
+export type b3VehicleDifferential = {
+  leftWheel: number,
+  rightWheel: number,
+  torqueRatio: number,
+  leftRightSplit: number,
+  limitedSlipRatio: number
+};
+
+export type b3VehicleDifferentials = [ b3VehicleDifferential, b3VehicleDifferential, b3VehicleDifferential, b3VehicleDifferential ];
+
+export type b3VehicleDrivetrain = {
+  differentials: b3VehicleDifferentials,
+  differentialCount: number,
+  centerLimitedSlipRatio: number
+};
+
+export type b3VehicleAntiRollBar = {
+  leftWheel: number,
+  rightWheel: number,
+  stiffness: number
+};
+
+export type b3VehicleAntiRollBars = [ b3VehicleAntiRollBar, b3VehicleAntiRollBar, b3VehicleAntiRollBar, b3VehicleAntiRollBar ];
+
+export type b3VehicleAntiRoll = {
+  bars: b3VehicleAntiRollBars,
+  barCount: number
+};
+
+export type b3VehicleSteering = {
+  maxAngle: number,
+  speedReference: number,
+  steerSpeed: number,
+  returnSpeed: number,
+  ackermann: number
+};
+
+export type b3VehicleAssists = {
+  counterSteer: number,
+  driftGripScale: number,
+  tractionControl: boolean,
+  abs: boolean,
+  downforce: number,
+  drag: number,
+  rollInfluence: number,
+  airControl: number,
+  airAngularDamping: number,
+  selfRighting: number,
+  maxTiltAngle: number,
+  stickyTire: boolean,
+  stickySpeed: number,
+  stickyTime: number
+};
+
+export type b3VehicleDef = {
+  chassisId: b3BodyId,
+  chassis: b3VehicleChassis,
+  wheels: b3VehicleWheels,
+  wheelCount: number,
+  engine: b3VehicleEngine,
+  transmission: b3VehicleTransmission,
+  drivetrain: b3VehicleDrivetrain,
+  antiRoll: b3VehicleAntiRoll,
+  steering: b3VehicleSteering,
+  assists: b3VehicleAssists,
+  internalValue: number
+};
+
+export type b3VehicleInput = {
+  forward: number,
+  brake: number,
+  steer: number,
+  handbrake: number
+};
+
+export type b3VehicleState = {
+  speed: number,
+  engineRpm: number,
+  gear: number,
+  isShifting: boolean,
+  throttle: number,
+  brake: number,
+  steerAngle: number,
+  wheelsInContact: number,
+  stuck: boolean
+};
+
+export type b3VehicleWheelState = {
+  hasContact: boolean,
+  contactPoint: b3Vec3,
+  contactNormal: b3Vec3,
+  groundShapeId: b3ShapeId,
+  userMaterialId: bigint,
+  suspensionLength: number,
+  compression: number,
+  load: number,
+  longitudinalForce: number,
+  lateralForce: number,
+  slipRatio: number,
+  slipAngle: number,
+  angularVelocity: number,
+  rotationAngle: number,
+  steerAngle: number,
+  driveTorque: number,
+  brakeTorque: number,
+  isSticky: boolean
+};
+
 interface EmbindModule {
   b3BodyType: {b3_staticBody: b3BodyTypeValue<0>, b3_kinematicBody: b3BodyTypeValue<1>, b3_dynamicBody: b3BodyTypeValue<2>};
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
   DebugShapeState: {static: DebugShapeStateValue<0>, kinematic: DebugShapeStateValue<1>, kinematicSleeping: DebugShapeStateValue<2>, awake: DebugShapeStateValue<3>, sleeping: DebugShapeStateValue<4>, sensor: DebugShapeStateValue<5>, disabled: DebugShapeStateValue<6>, fast: DebugShapeStateValue<7>, bullet: DebugShapeStateValue<8>, speedCapped: DebugShapeStateValue<9>, timeOfImpact: DebugShapeStateValue<10>, invalidMass: DebugShapeStateValue<11>, custom: DebugShapeStateValue<12>};
   DebugDrawRole: {bounds: DebugDrawRoleValue<0>, joints: DebugDrawRoleValue<1>, mass: DebugDrawRoleValue<2>, contactPoints: DebugDrawRoleValue<3>, contactNormals: DebugDrawRoleValue<4>, contactForces: DebugDrawRoleValue<5>, frictionForces: DebugDrawRoleValue<6>, contactFeatures: DebugDrawRoleValue<7>, islands: DebugDrawRoleValue<8>, graphColors: DebugDrawRoleValue<9>};
-  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>};
+  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>, b3_vehicleWheelJoint: b3JointTypeValue<11>};
   b3HullData: {};
   b3MeshData: {};
   b3CompoundData: {};
@@ -653,6 +860,11 @@ interface EmbindModule {
   b3DynamicTree: {};
   DebugDrawBufferImpl: {
     new(): DebugDrawBufferImpl;
+  };
+  b3VehicleCastType: {b3_vehicleCastCylinder: b3VehicleCastTypeValue<0>, b3_vehicleCastSphere: b3VehicleCastTypeValue<1>, b3_vehicleCastRay: b3VehicleCastTypeValue<2>};
+  b3VehicleTransmissionMode: {b3_vehicleTransmissionAuto: b3VehicleTransmissionModeValue<0>, b3_vehicleTransmissionManual: b3VehicleTransmissionModeValue<1>};
+  VehicleStateBufferImpl: {
+    new(): VehicleStateBufferImpl;
   };
   b3DestroyHull(hull: b3HullData | null): void;
   b3DestroyMesh(mesh: b3MeshData | null): void;
@@ -774,7 +986,13 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
+  b3DestroyVehicle(vehicleId: b3VehicleId): void;
+  b3Vehicle_IsValid(vehicleId: b3VehicleId): boolean;
+  b3Vehicle_GetChassisBody(vehicleId: b3VehicleId): b3BodyId;
+  b3Vehicle_GetWheelCount(vehicleId: b3VehicleId): number;
+  b3Vehicle_SetGear(vehicleId: b3VehicleId, gear: number): void;
+  b3World_GetVehicleCount(worldId: b3WorldId): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -813,6 +1031,7 @@ interface EmbindModule {
   b3RecPlayer_HasDiverged(player: number): boolean;
   b3RecPlayer_GetDivergeFrame(player: number): number;
   b3RecPlayer_SetWorkerCount(player: number, count: number): void;
+  b3Vehicle_GetWheelTransform(outPosition: b3Vec3, outRotation: b3Quat, vehicleId: b3VehicleId, wheelIndex: number): [ b3Vec3, b3Quat ];
   b3GetByteCount(): bigint;
   b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3DefaultFilter(): b3Filter;
@@ -855,6 +1074,7 @@ interface EmbindModule {
   b3Body_SetTransform(bodyId: b3BodyId, position: b3Vec3, rotation: b3Quat): void;
   b3SphericalJoint_SetTargetRotation(jointId: b3JointId, targetRotation: b3Quat): void;
   b3SphericalJoint_GetTargetRotation(jointId: b3JointId): b3Quat;
+  b3Vehicle_Reset(vehicleId: b3VehicleId, position: b3Vec3, rotation: b3Quat): void;
   b3ComputeHullAABB(hull: b3HullData | null, transform: b3Transform): b3AABB;
   b3DynamicTree_CreateProxy(tree: b3DynamicTree | null, aabb: b3AABB, categoryBits: number, userData: number): number;
   b3DynamicTree_MoveProxy(tree: b3DynamicTree | null, proxyId: number, aabb: b3AABB): void;
@@ -1097,6 +1317,30 @@ interface EmbindModule {
   b3World_CastRayClosest(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter): b3RayResult;
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
+  b3DefaultVehicleWheelDef(): b3VehicleWheelDef;
+  b3Vehicle_SetWheel(vehicleId: b3VehicleId, wheelIndex: number, wheel: b3VehicleWheelDef): void;
+  b3Vehicle_GetWheel(vehicleId: b3VehicleId, wheelIndex: number): b3VehicleWheelDef;
+  b3Vehicle_SetChassis(vehicleId: b3VehicleId, chassis: b3VehicleChassis): void;
+  b3Vehicle_GetChassis(vehicleId: b3VehicleId): b3VehicleChassis;
+  b3Vehicle_SetEngine(vehicleId: b3VehicleId, engine: b3VehicleEngine): void;
+  b3Vehicle_GetEngine(vehicleId: b3VehicleId): b3VehicleEngine;
+  b3Vehicle_SetTransmission(vehicleId: b3VehicleId, transmission: b3VehicleTransmission): void;
+  b3Vehicle_GetTransmission(vehicleId: b3VehicleId): b3VehicleTransmission;
+  b3Vehicle_SetDrivetrain(vehicleId: b3VehicleId, drivetrain: b3VehicleDrivetrain): void;
+  b3Vehicle_GetDrivetrain(vehicleId: b3VehicleId): b3VehicleDrivetrain;
+  b3Vehicle_SetAntiRoll(vehicleId: b3VehicleId, antiRoll: b3VehicleAntiRoll): void;
+  b3Vehicle_GetAntiRoll(vehicleId: b3VehicleId): b3VehicleAntiRoll;
+  b3Vehicle_SetSteering(vehicleId: b3VehicleId, steering: b3VehicleSteering): void;
+  b3Vehicle_GetSteering(vehicleId: b3VehicleId): b3VehicleSteering;
+  b3DefaultVehicleDef(): b3VehicleDef;
+  b3CreateVehicle(worldId: b3WorldId, vehicleDef: b3VehicleDef): b3VehicleId;
+  b3Vehicle_SetAssists(vehicleId: b3VehicleId, assists: b3VehicleAssists): void;
+  b3Vehicle_GetAssists(vehicleId: b3VehicleId): b3VehicleAssists;
+  b3Vehicle_SetInput(vehicleId: b3VehicleId, input: b3VehicleInput): void;
+  b3Vehicle_GetInput(vehicleId: b3VehicleId): b3VehicleInput;
+  b3Vehicle_GetState(vehicleId: b3VehicleId): b3VehicleState;
+  b3Vehicle_GetWheelState(vehicleId: b3VehicleId, wheelIndex: number): b3VehicleWheelState;
+  b3Vehicle_GetSprungMass(vehicleId: b3VehicleId, wheelIndex: number): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
   b3Body_GetName(bodyId: b3BodyId): string;  b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
@@ -1292,6 +1536,51 @@ export interface b3ConvexDecompositionCacheStats { entries: number; hits: number
  * plus the number of pieces that could not become a box3d hull. */
 export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
 export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
+/** Reusable, wasm-backed vehicle readout. Fill with getVehicleStateData after each
+ * b3World_Step; free with destroyVehicleStateBuffer. */
+export interface VehicleStateBuffer { readonly _brand?: 'VehicleStateBuffer'; }
+export interface VehicleStateRecord {
+  /** Forward speed (m/s) */
+  speed: number;
+  engineRpm: number;
+  /** -1 reverse, 0 neutral, 1 and up forward gears */
+  gear: number;
+  isShifting: boolean;
+  throttle: number;
+  brake: number;
+  /** Center steer angle, positive left (radians) */
+  steerAngle: number;
+  wheelsInContact: number;
+  stuck: boolean;
+}
+export interface VehicleWheelRecord {
+  /** Wheel center, world space */
+  position: b3Vec3;
+  /** Wheel orientation including steering and spin */
+  rotation: b3Quat;
+  hasContact: boolean;
+  isSticky: boolean;
+  contactPoint: b3Vec3;
+  contactNormal: b3Vec3;
+  groundShapeId: b3ShapeId;
+  userMaterialId: bigint;
+  suspensionLength: number;
+  /** 0 fully extended, 1 at the bump stop */
+  compression: number;
+  /** Normal force (N) */
+  load: number;
+  longitudinalForce: number;
+  lateralForce: number;
+  slipRatio: number;
+  /** Radians */
+  slipAngle: number;
+  /** Spin (rad/s) */
+  angularVelocity: number;
+  rotationAngle: number;
+  steerAngle: number;
+  driveTorque: number;
+  brakeTorque: number;
+}
 export interface Box3DFacade {
   /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
    * blocking the calling thread, then attaches one hull shape per piece in a single call.
@@ -1381,6 +1670,15 @@ export interface Box3DFacade {
   getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
   createDebugTransformPrimitive(): DebugTransformPrimitive;
   getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
+  createVehicleStateBuffer(): VehicleStateBuffer;
+  /** Packs the vehicle state and every wheel's state and transform in one call. */
+  getVehicleStateData(buf: VehicleStateBuffer, vehicleId: b3VehicleId): VehicleStateBuffer;
+  destroyVehicleStateBuffer(buf: VehicleStateBuffer): void;
+  getNumVehicleWheels(buf: VehicleStateBuffer): number;
+  createVehicleStateRecord(): VehicleStateRecord;
+  getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
+  createVehicleWheelRecord(): VehicleWheelRecord;
+  getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
 export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;

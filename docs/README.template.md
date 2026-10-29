@@ -279,6 +279,28 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="wheel" />
 
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+<Snippet source="./vehicle.ts" select="create" />
+
+### Driving
+
+<Snippet source="./vehicle.ts" select="drive" />
+
+### Reading the Vehicle State
+
+<Snippet source="./vehicle.ts" select="read" />
+
+### Live Tuning
+
+<Snippet source="./vehicle.ts" select="tune" />
+
+The four vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad" />
+
 ## Queries
 
 Queries ask questions about the physics world without advancing the simulation.

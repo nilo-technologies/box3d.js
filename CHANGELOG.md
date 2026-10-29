@@ -8,6 +8,20 @@
 - New example: Dynamic Mover, an obstacle course for the capsule character (stair flights, ramps, a bridge, stepping posts, props, a seesaw, a sweeper arm, and a slider, an elevator and a ferry to ride).
 - `b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform)` collides a character mover with one body at a caller-given transform, for example to move a character against dynamic bodies at their predicted pose. It returns a packed buffer (`{ count, data, shapeIds }`, read with `getBodyPlaneResultAt`, which fills `{ shapeId, result }`). The `data` part has the same layout as `b3World_CollideMover` planes, so `getPlaneResultAt` reads it too. box3d reports at most one plane per shape, so the buffer is sized from the body's shape count and needs no capacity argument.
 
+Wheeled vehicles. The [nilo-technologies/box3d](https://github.com/nilo-technologies/box3d) fork adds a vehicle controller to box3d, and box3d.js binds all of it.
+
+- `b3CreateVehicle(worldId, def)` drives an existing dynamic chassis body. `b3DefaultVehicleDef()` is a 1300 kg rear wheel drive sedan.
+  - Up to 8 wheels, each with a suspension (frequency, bump and rebound damping, travel, preload, bump stop), a tire (longitudinal and lateral slip curves, rolling resistance), brakes, a handbrake, steering and a ground probe (rounded cylinder, sphere or ray).
+  - Engine torque curve, an automatic or manual gearbox with up to 8 gears and a clutch, up to 4 differentials with limited slip, a center limited slip, and anti-roll bars.
+  - Steering with speed falloff and Ackermann geometry.
+  - Assists: traction control, ABS, a sticky tire that holds the car on slopes, counter steer, handbrake drift grip, downforce, drag, roll influence, air control, self righting and a tilt limit.
+  - The car rides on moving and dynamic ground, and pushes back on what it drives over.
+- `b3Vehicle_SetInput` takes `{ forward, brake, steer, handbrake }`. `b3Vehicle_SetGear`, `b3Vehicle_Reset`, and `b3Vehicle_Set*`/`Get*` for the chassis, each wheel, the engine, transmission, drivetrain, anti-roll, steering and assists change any setting while driving.
+- `createVehicleStateBuffer` / `getVehicleStateData` read the vehicle and all wheels in one call. Decode with `getVehicleStateAt` and `getVehicleWheelAt` into reusable records. `b3Vehicle_GetWheelTransform(outPosition, outRotation, vehicleId, i)` returns one wheel's transform. `b3Vehicle_GetState`, `b3Vehicle_GetWheelState` and `b3Vehicle_GetSprungMass` are also bound.
+  - `getVehicleWheelAt` throws a `RangeError` for an index past the packed wheel count (none after the vehicle is destroyed) instead of reading unrelated memory. `destroyVehicleStateBuffer` can be called twice, and a destroyed buffer throws when refilled.
+- 50 cars step in about 0.55 ms in Node.
+- New examples: Vehicle FWD hatchback, RWD sports car, AWD road car and AWD off-roader, with a shared settings panel and telemetry. Hovering a setting in the panel explains what it does.
+
 box3d now comes from the [nilo-technologies/box3d](https://github.com/nilo-technologies/box3d) fork, updated to upstream `main` (`3362633`, "Dynamic Mover").
 
 Breaking renames that follow upstream:
