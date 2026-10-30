@@ -7,7 +7,13 @@
 // One mesh per shape (cached by shape id). Simple and robust; a THREE.BatchedMesh
 // variant is a drop-in optimization if a scene ever needs one draw call.
 
-import type { Box3DModule, b3AABB, b3BodyId, b3ShapeId, b3WorldId } from 'box3d.js';
+import type {
+	Box3DModule,
+	b3AABB,
+	b3BodyId,
+	b3ShapeId,
+	b3WorldId,
+} from 'box3d.js';
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 
@@ -55,6 +61,12 @@ export type WorldRenderer = {
 export type WorldRendererOptions = {
 	/** Return false to skip drawing a shape this frame. */
 	shouldDraw?: (shapeId: b3ShapeId, bodyId: b3BodyId) => boolean;
+	/** Return a material to use for a shape instead of the default colour scheme. */
+	materialFor?: (
+		shapeId: b3ShapeId,
+		bodyId: b3BodyId,
+		isStatic: boolean,
+	) => THREE.Material | undefined;
 };
 
 export function createWorldRenderer(
@@ -82,7 +94,11 @@ export function createWorldRenderer(
 		if (type === b3.b3ShapeType.b3_capsuleShape.value) {
 			const c = b3.b3Shape_GetCapsule(shapeId);
 			const [c1, c2] = [c.center1, c.center2];
-			const axis = new THREE.Vector3(c2[0] - c1[0], c2[1] - c1[1], c2[2] - c1[2]);
+			const axis = new THREE.Vector3(
+				c2[0] - c1[0],
+				c2[1] - c1[1],
+				c2[2] - c1[2],
+			);
 			const g = new THREE.CapsuleGeometry(c.radius, axis.length(), 8, 16);
 			g.applyQuaternion(
 				new THREE.Quaternion().setFromUnitVectors(
@@ -90,7 +106,11 @@ export function createWorldRenderer(
 					axis.clone().normalize(),
 				),
 			);
-			g.translate((c1[0] + c2[0]) / 2, (c1[1] + c2[1]) / 2, (c1[2] + c2[2]) / 2);
+			g.translate(
+				(c1[0] + c2[0]) / 2,
+				(c1[1] + c2[1]) / 2,
+				(c1[2] + c2[2]) / 2,
+			);
 			return g;
 		}
 
@@ -122,11 +142,15 @@ export function createWorldRenderer(
 			if (mesh === undefined) {
 				const geometry = geometryFor(shapeId);
 				if (geometry === null) return true; // unsupported shape — example renders it
-				const material = new THREE.MeshStandardMaterial({
-					color: colorFor(b3, body, colorIdx),
-					roughness: 0.5,
-					metalness: 0.05,
-				});
+				const isStatic =
+					b3.b3Body_GetType(body).value === b3.b3BodyType.b3_staticBody.value;
+				const material =
+					options.materialFor?.(shapeId, body, isStatic) ??
+					new THREE.MeshStandardMaterial({
+						color: colorFor(b3, body, colorIdx),
+						roughness: 0.5,
+						metalness: 0.05,
+					});
 				// Only advance the bright palette for dynamic/kinematic bodies.
 				if (b3.b3Body_GetType(body).value !== b3.b3BodyType.b3_staticBody.value)
 					colorIdx++;

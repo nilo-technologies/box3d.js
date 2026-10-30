@@ -1,7 +1,8 @@
-// Shared driving demo used by the four vehicle examples: builds the world (paved track or
-// off-road terrain), the car visuals, a chase camera, the HUD, keyboard and gamepad input,
-// and the reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is
-// interpolated between steps for high refresh rate displays.
+// Shared driving demo used by the vehicle examples: builds the world (paved track or off-road
+// terrain), the car visuals, a chase camera, the HUD, keyboard and gamepad input, and the
+// reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is interpolated
+// between steps for high refresh rate displays. The car is built by spawnCar and can be
+// swapped for another preset while driving, which the showcase uses.
 
 import type {
 	Box3DModule,
@@ -9,6 +10,8 @@ import type {
 	b3Quat,
 	b3Vec3,
 	b3VehicleDef,
+	b3VehicleId,
+	b3VehicleWheelDef,
 	VehicleWheelRecord,
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -16,20 +19,51 @@ import * as THREE from 'three';
 import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
+import { createVehicleAudio } from './vehicle-audio';
 import {
 	createPresetVehicleDef,
 	type VehiclePresetName,
 	vehiclePresets,
 } from './vehicle-presets';
-import { createVehicleSettings } from './vehicle-settings';
+import {
+	createVehicleSettings,
+	type VehicleSettings,
+} from './vehicle-settings';
+import { addShowcase } from './vehicle-showcase';
+import {
+	addRaceTrackArt,
+	applyTopoAtmosphere,
+	heightColors,
+	overlayMaterial,
+	topo,
+	topoMaterial,
+} from './vehicle-track-art';
+import {
+	buildRaceTrack,
+	createRaceTrackBodies,
+	type RaceTrack,
+} from './vehicle-tracks';
+import {
+	type BodySway,
+	createBodySway,
+	createWeightTransferView,
+} from './vehicle-weight-transfer';
+
+/**
+ * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. circuit and stage:
+ * the race tracks from vehicle-tracks.js, a paved circuit and an off-road stage.
+ */
+export type VehicleTerrain = 'track' | 'offroad' | 'circuit' | 'stage';
 
 export type VehicleDemoOptions = {
 	preset: VehiclePresetName;
-	terrain: 'track' | 'offroad';
+	terrain: VehicleTerrain;
 	/** Body paint */
 	color: number;
 	/** One line under the title */
 	blurb: string;
+	/** Adds the Preset folder and hotkeys that swap between the preset matrix cars */
+	showcase?: boolean;
 };
 
 const STEP = 1 / 60;
@@ -41,7 +75,6 @@ export async function runVehicleDemo(
 	const b3: Box3DModule = await Box3D();
 	const app = createHarness({ camera: [0, 4, -9], target: [0, 1, 0] });
 	app.controls.enabled = false;
-	app.scene.fog = new THREE.Fog(0x1a1a1a, 90, 320);
 	app.camera.far = 600;
 	app.camera.updateProjectionMatrix();
 
@@ -99,35 +132,11 @@ export async function runVehicleDemo(
 		hullBody([x, 0, 0], pts);
 	}
 
-	function gridTexture(
-		base: string,
-		line: string,
-		cells: number,
-	): THREE.CanvasTexture {
-		const canvas = document.createElement('canvas');
-		canvas.width = canvas.height = 256;
-		const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-		ctx.fillStyle = base;
-		ctx.fillRect(0, 0, 256, 256);
-		ctx.strokeStyle = line;
-		ctx.lineWidth = 2;
-		const step = 256 / cells;
-		for (let i = 0; i <= cells; i++) {
-			ctx.beginPath();
-			ctx.moveTo(i * step, 0);
-			ctx.lineTo(i * step, 256);
-			ctx.moveTo(0, i * step);
-			ctx.lineTo(256, i * step);
-			ctx.stroke();
-		}
-		const texture = new THREE.CanvasTexture(canvas);
-		texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-		texture.anisotropy = 8;
-		texture.colorSpace = THREE.SRGBColorSpace;
-		return texture;
-	}
-
-	let spawn: b3Vec3 = [0, 1.4, 0];
+	/** Height of a fresh car's chassis above the ground (m) */
+	const spawnClearance = 1.5;
+	let spawn: b3Vec3 = [0, spawnClearance, 0];
+	let spawnYaw = 0;
+	let raceTrack: RaceTrack | null = null;
 
 	function buildTrack(): void {
 		const size = 250;
@@ -135,11 +144,9 @@ export async function runVehicleDemo(
 		b3.b3CreateBoxShape(ground, b3.b3DefaultShapeDef(), size, 0.5, size);
 		hidden.add(ground.index1);
 
-		const texture = gridTexture('#3a3d40', '#4a4e52', 4);
-		texture.repeat.set(size / 4, size / 4);
 		const floor = new THREE.Mesh(
 			new THREE.PlaneGeometry(size * 2, size * 2),
-			new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 }),
+			topoMaterial({ color: topo.ground[0] }),
 		);
 		floor.rotation.x = -Math.PI / 2;
 		app.scene.add(floor);
@@ -158,7 +165,7 @@ export async function runVehicleDemo(
 		ribbon.holes.push(hole);
 		const circuit = new THREE.Mesh(
 			new THREE.ShapeGeometry(ribbon, 48),
-			new THREE.MeshStandardMaterial({ color: 0x24272a, roughness: 0.8 }),
+			overlayMaterial(topo.asphalt),
 		);
 		circuit.rotation.x = Math.PI / 2;
 		circuit.position.y = 0.01;
@@ -181,15 +188,18 @@ export async function runVehicleDemo(
 			}
 		}
 
-		// Speed bumps in the left lane
-		for (let i = 0; i < 6; i++) {
-			const bump = staticBody([-22, 0, 15 + i * 12]);
-			b3.b3CreateCapsuleShape(bump, b3.b3DefaultShapeDef(), {
-				center1: [-5, 0, 0],
-				center2: [5, 0, 0],
-				radius: 0.14,
-			});
+		// Speed humps in the left lane, shaped like real ones: 8 cm high and 3.7 m long with a
+		// rounded profile. A short, sharp ridge kicks the car far harder than any real road does.
+		const humpHeight = 0.08;
+		const humpLength = 3.7;
+		const humpPoints: number[] = [];
+		for (let k = 0; k <= 12; k++) {
+			const z = -humpLength / 2 + (k / 12) * humpLength;
+			const y =
+				humpHeight * 0.5 * (1 + Math.cos((2 * Math.PI * z) / humpLength));
+			for (const x of [-5, 5]) humpPoints.push(x, y, z, x, -0.01, z);
 		}
+		for (let i = 0; i < 6; i++) hullBody([-22, 0, 15 + i * 12], humpPoints);
 
 		// Jump ramp in the right lane, rising toward +z
 		wedge(22, 4, 20, 34, 2.6);
@@ -279,20 +289,11 @@ export async function runVehicleDemo(
 		);
 
 		const positions = new Float32Array(count * count * 3);
-		const colors = new Float32Array(count * count * 3);
-		const low = new THREE.Color(0x4a5a34);
-		const high = new THREE.Color(0x8a7a58);
-		const color = new THREE.Color();
 		for (let iz = 0, p = 0; iz < count; iz++) {
 			for (let ix = 0; ix < count; ix++, p += 3) {
-				const h = heights[iz * count + ix];
 				positions[p] = ix * cell - half;
-				positions[p + 1] = h;
+				positions[p + 1] = heights[iz * count + ix];
 				positions[p + 2] = iz * cell - half;
-				color.copy(low).lerp(high, Math.min(Math.max((h + 2) / 14, 0), 1));
-				colors[p] = color.r;
-				colors[p + 1] = color.g;
-				colors[p + 2] = color.b;
 			}
 		}
 		const indices: number[] = [];
@@ -307,25 +308,14 @@ export async function runVehicleDemo(
 		}
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-		const uv = new Float32Array(count * count * 2);
-		for (let i = 0; i < count * count; i++) {
-			uv[i * 2] = positions[i * 3] / 4;
-			uv[i * 2 + 1] = positions[i * 3 + 2] / 4;
-		}
-		geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+		geometry.setAttribute(
+			'color',
+			new THREE.BufferAttribute(heightColors(heights), 3),
+		);
 		geometry.setIndex(indices);
 		geometry.computeVertexNormals();
-		const texture = gridTexture('#ffffff', '#d8d8d8', 2);
 		app.scene.add(
-			new THREE.Mesh(
-				geometry,
-				new THREE.MeshStandardMaterial({
-					vertexColors: true,
-					map: texture,
-					roughness: 1,
-				}),
-			),
+			new THREE.Mesh(geometry, topoMaterial({ vertexColors: true })),
 		);
 
 		// Ramp on the flattened pad ahead of the spawn
@@ -366,79 +356,58 @@ export async function runVehicleDemo(
 				40,
 			);
 		}
-		spawn = [0, heightAt(0, 0) + 1.6, 0];
+		spawn = [0, heightAt(0, 0) + spawnClearance, 0];
+	}
+
+	function buildRaceTrackTerrain(name: 'circuit' | 'stage'): void {
+		const track = buildRaceTrack(name);
+		raceTrack = track;
+		const { ground, bumpBodies, walls } = createRaceTrackBodies(
+			b3,
+			world,
+			track,
+		);
+		for (const body of [ground, ...bumpBodies, ...walls])
+			hidden.add(body.index1);
+		addRaceTrackArt(app.scene, track);
+		app.camera.far = 1000;
+		app.camera.updateProjectionMatrix();
+
+		spawn = [
+			track.start.position[0],
+			track.start.position[1] + spawnClearance,
+			track.start.position[2],
+		];
+		spawnYaw = track.start.yaw;
 	}
 
 	if (options.terrain === 'track') buildTrack();
-	else buildOffroad();
+	else if (options.terrain === 'offroad') buildOffroad();
+	else buildRaceTrackTerrain(options.terrain);
+	applyTopoAtmosphere(app.scene);
 
 	// ---------------------------------------------------------------------------
 	// Vehicle
 	// ---------------------------------------------------------------------------
 
-	const preset = vehiclePresets[options.preset];
-	const [hx, hy, hz] = preset.halfExtents;
-	const bodyDef = b3.b3DefaultBodyDef();
-	bodyDef.type = b3.b3BodyType.b3_dynamicBody;
-	bodyDef.position = spawn;
-	const chassis = b3.b3CreateBody(world, bodyDef);
-	b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
-	hidden.add(chassis.index1);
-
-	const defaults: b3VehicleDef = createPresetVehicleDef(b3, options.preset);
-	const def = createPresetVehicleDef(b3, options.preset);
-	def.chassisId = chassis;
-	const vehicle = b3.b3CreateVehicle(world, def);
-	const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
-
-	// The settings panel edits the live vehicle, so anything drawn from its settings reads this
-	// cache instead of the preset. Reading them through embind builds a fresh object each time,
-	// so refresh a few times a second rather than every frame.
-	const live = {
-		maxRpm: defaults.engine.maxRpm,
-		manual: false,
-		tractionControl: false,
-		abs: false,
-		wheels: defaults.wheels.slice(0, wheelCount),
-	};
-	function refreshLive(): void {
-		live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
-		live.manual =
-			b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
-			b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
-		const assists = b3.b3Vehicle_GetAssists(vehicle);
-		live.tractionControl = assists.tractionControl;
-		live.abs = assists.abs;
-		for (let i = 0; i < wheelCount; i++)
-			live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
-	}
-	refreshLive();
-
 	const stateBuffer = b3.createVehicleStateBuffer();
 	const state = b3.createVehicleStateRecord();
 	const wheelRecord: VehicleWheelRecord = b3.createVehicleWheelRecord();
 
+	// Ramps, hills and rocks in the ground's tone with its contour lines, props in the accent
+	const solidMaterial = topoMaterial({ color: topo.solid });
+	const propMaterial = new THREE.MeshStandardMaterial({
+		color: topo.accent,
+		roughness: 0.8,
+	});
 	const worldRenderer = createWorldRenderer(b3, world, {
 		shouldDraw: (_shape, body) => !hidden.has(body.index1),
+		materialFor: (_shape, _body, isStatic) =>
+			isStatic ? solidMaterial : propMaterial,
 	});
 	app.scene.add(worldRenderer.object3d);
 
-	const settings = createVehicleSettings(
-		app.gui,
-		b3,
-		vehicle,
-		defaults,
-		stateBuffer,
-	);
-
-	// ---- Car visuals
-	const car = new THREE.Group();
-	app.scene.add(car);
-	const paint = new THREE.MeshStandardMaterial({
-		color: options.color,
-		roughness: 0.35,
-		metalness: 0.3,
-	});
+	// Shared by every car, so swapping cars does not leak materials
 	const glass = new THREE.MeshStandardMaterial({
 		color: 0x1b2430,
 		roughness: 0.15,
@@ -448,44 +417,6 @@ export async function runVehicleDemo(
 		color: 0x18181a,
 		roughness: 0.8,
 	});
-	const addBox = (
-		w: number,
-		h: number,
-		d: number,
-		x: number,
-		y: number,
-		z: number,
-		m: THREE.Material,
-	) => {
-		const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-		mesh.position.set(x, y, z);
-		car.add(mesh);
-		return mesh;
-	};
-	addBox(hx * 2, hy * 2, hz * 2, 0, 0, 0, paint);
-	const offroad = options.preset === 'offroad';
-	const cabinLength = hz * (offroad ? 1.25 : 1.0);
-	const cabinHeight = offroad ? hy * 1.5 : hy * 1.6;
-	addBox(
-		hx * 1.75,
-		cabinHeight,
-		cabinLength,
-		0,
-		hy + cabinHeight / 2,
-		offroad ? -hz * 0.2 : -hz * 0.12,
-		glass,
-	);
-	addBox(
-		hx * 1.6,
-		0.05,
-		cabinLength * 0.9,
-		0,
-		hy + cabinHeight + 0.025,
-		offroad ? -hz * 0.2 : -hz * 0.12,
-		paint,
-	);
-	addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, hz + 0.02, trim);
-	addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, -hz - 0.02, trim);
 	const lamp = new THREE.MeshStandardMaterial({
 		color: 0xfff3c4,
 		emissive: 0xfff0b0,
@@ -496,10 +427,11 @@ export async function runVehicleDemo(
 		emissive: 0xff2010,
 		emissiveIntensity: 0.3,
 	});
-	for (const side of [-1, 1]) {
-		addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, hz + 0.01, lamp);
-		addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, -hz - 0.01, tail);
-	}
+	const rimMaterial = new THREE.MeshStandardMaterial({
+		color: 0xb8bcc2,
+		metalness: 0.8,
+		roughness: 0.3,
+	});
 
 	type WheelVisual = {
 		group: THREE.Group;
@@ -510,64 +442,235 @@ export async function runVehicleDemo(
 		localY: number;
 		initialized: boolean;
 	};
-	const wheelVisuals: WheelVisual[] = [];
-	for (let i = 0; i < wheelCount; i++) {
-		const w = defaults.wheels[i];
-		const group = new THREE.Group();
-		const tire = new THREE.MeshStandardMaterial({
-			color: 0x1c1c1c,
-			roughness: 0.9,
-		});
-		const tireMesh = new THREE.Mesh(
-			new THREE.CylinderGeometry(w.radius, w.radius, w.width, 28),
-			tire,
+
+	type Car = {
+		name: VehiclePresetName;
+		chassis: b3BodyId;
+		vehicle: b3VehicleId;
+		halfExtents: b3Vec3;
+		wheelCount: number;
+		settings: VehicleSettings;
+		group: THREE.Group;
+		/** The painted body, a child of group that sways over the wheels */
+		body: THREE.Group;
+		sway: BodySway;
+		wheelVisuals: WheelVisual[];
+		lastMark: (THREE.Vector3 | null)[];
+		/**
+		 * The settings panel edits the live vehicle, so anything drawn from its settings reads
+		 * this cache instead of the preset. Reading them through embind builds a fresh object
+		 * each time, so refresh a few times a second rather than every frame.
+		 */
+		live: {
+			maxRpm: number;
+			manual: boolean;
+			tractionControl: boolean;
+			abs: boolean;
+			wheels: b3VehicleWheelDef[];
+		};
+		refreshLive(): void;
+		destroy(): void;
+	};
+
+	/** Builds a car from a preset at a pose, with its visuals and settings panel */
+	function spawnCar(
+		name: VehiclePresetName,
+		color: number,
+		position: b3Vec3,
+		rotation: b3Quat = [0, 0, 0, 1],
+	): Car {
+		const preset = vehiclePresets[name];
+		const halfExtents = preset.halfExtents;
+		const [hx, hy, hz] = halfExtents;
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = position;
+		bodyDef.rotation = rotation;
+		const chassis = b3.b3CreateBody(world, bodyDef);
+		b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
+		hidden.add(chassis.index1);
+
+		const defaults: b3VehicleDef = createPresetVehicleDef(b3, name);
+		const def = createPresetVehicleDef(b3, name);
+		def.chassisId = chassis;
+		const vehicle = b3.b3CreateVehicle(world, def);
+		const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
+
+		const live: Car['live'] = {
+			maxRpm: defaults.engine.maxRpm,
+			manual: false,
+			tractionControl: false,
+			abs: false,
+			wheels: defaults.wheels.slice(0, wheelCount),
+		};
+		function refreshLive(): void {
+			live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
+			live.manual =
+				b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
+				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
+			const assists = b3.b3Vehicle_GetAssists(vehicle);
+			live.tractionControl = assists.tractionControl;
+			live.abs = assists.abs;
+			for (let i = 0; i < wheelCount; i++)
+				live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
+		}
+		refreshLive();
+
+		const settings = createVehicleSettings(
+			app.gui,
+			b3,
+			vehicle,
+			defaults,
+			stateBuffer,
 		);
-		tireMesh.rotation.z = Math.PI / 2;
-		group.add(tireMesh);
-		const rimMaterial = new THREE.MeshStandardMaterial({
-			color: 0xb8bcc2,
-			metalness: 0.8,
-			roughness: 0.3,
+
+		// ---- Car visuals
+		const group = new THREE.Group();
+		app.scene.add(group);
+		const body = new THREE.Group();
+		group.add(body);
+		const paint = new THREE.MeshStandardMaterial({
+			color,
+			roughness: 0.35,
+			metalness: 0.3,
 		});
-		const rim = new THREE.Mesh(
-			new THREE.CylinderGeometry(
+		const geometries: THREE.BufferGeometry[] = [];
+		const tires: THREE.Material[] = [paint];
+		const addBox = (
+			w: number,
+			h: number,
+			d: number,
+			x: number,
+			y: number,
+			z: number,
+			m: THREE.Material,
+		) => {
+			const geometry = new THREE.BoxGeometry(w, h, d);
+			geometries.push(geometry);
+			const mesh = new THREE.Mesh(geometry, m);
+			mesh.position.set(x, y, z);
+			body.add(mesh);
+			return mesh;
+		};
+		addBox(hx * 2, hy * 2, hz * 2, 0, 0, 0, paint);
+		const offroad = name === 'offroad';
+		const cabinLength = hz * (offroad ? 1.25 : 1.0);
+		const cabinHeight = offroad ? hy * 1.5 : hy * 1.6;
+		addBox(
+			hx * 1.75,
+			cabinHeight,
+			cabinLength,
+			0,
+			hy + cabinHeight / 2,
+			offroad ? -hz * 0.2 : -hz * 0.12,
+			glass,
+		);
+		addBox(
+			hx * 1.6,
+			0.05,
+			cabinLength * 0.9,
+			0,
+			hy + cabinHeight + 0.025,
+			offroad ? -hz * 0.2 : -hz * 0.12,
+			paint,
+		);
+		addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, hz + 0.02, trim);
+		addBox(hx * 2.02, hy * 0.5, 0.12, 0, -hy * 0.35, -hz - 0.02, trim);
+		for (const side of [-1, 1]) {
+			addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, hz + 0.01, lamp);
+			addBox(0.3, 0.12, 0.05, side * hx * 0.7, hy * 0.35, -hz - 0.01, tail);
+		}
+
+		const wheelVisuals: WheelVisual[] = [];
+		for (let i = 0; i < wheelCount; i++) {
+			const w = defaults.wheels[i];
+			const wheelGroup = new THREE.Group();
+			const tire = new THREE.MeshStandardMaterial({
+				color: 0x1c1c1c,
+				roughness: 0.9,
+			});
+			tires.push(tire);
+			const tireGeometry = new THREE.CylinderGeometry(
+				w.radius,
+				w.radius,
+				w.width,
+				28,
+			);
+			const tireMesh = new THREE.Mesh(tireGeometry, tire);
+			tireMesh.rotation.z = Math.PI / 2;
+			wheelGroup.add(tireMesh);
+			const rimGeometry = new THREE.CylinderGeometry(
 				w.radius * 0.62,
 				w.radius * 0.62,
 				w.width * 1.04,
 				20,
-			),
-			rimMaterial,
-		);
-		rim.rotation.z = Math.PI / 2;
-		group.add(rim);
-		for (let s = 0; s < 3; s++) {
-			const spoke = new THREE.Mesh(
-				new THREE.BoxGeometry(w.width * 1.08, w.radius * 1.15, w.radius * 0.16),
-				trim,
 			);
-			spoke.rotation.x = (s * Math.PI) / 3;
-			group.add(spoke);
+			const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+			rim.rotation.z = Math.PI / 2;
+			wheelGroup.add(rim);
+			const spokeGeometry = new THREE.BoxGeometry(
+				w.width * 1.08,
+				w.radius * 1.15,
+				w.radius * 0.16,
+			);
+			geometries.push(tireGeometry, rimGeometry, spokeGeometry);
+			for (let s = 0; s < 3; s++) {
+				const spoke = new THREE.Mesh(spokeGeometry, trim);
+				spoke.rotation.x = (s * Math.PI) / 3;
+				wheelGroup.add(spoke);
+			}
+			group.add(wheelGroup);
+			wheelVisuals.push({
+				group: wheelGroup,
+				tire,
+				radius: w.radius,
+				width: w.width,
+				localY: 0,
+				initialized: false,
+			});
 		}
-		car.add(group);
-		wheelVisuals.push({
+
+		return {
+			name,
+			chassis,
+			vehicle,
+			halfExtents,
+			wheelCount,
+			settings,
 			group,
-			tire,
-			radius: w.radius,
-			width: w.width,
-			localY: 0,
-			initialized: false,
-		});
+			body,
+			sway: createBodySway(),
+			wheelVisuals,
+			lastMark: new Array(wheelCount).fill(null),
+			live,
+			refreshLive,
+			destroy() {
+				settings.destroy();
+				// Destroying the chassis destroys the vehicle with it
+				hidden.delete(chassis.index1);
+				b3.b3DestroyBody(chassis);
+				app.scene.remove(group);
+				for (const geometry of geometries) geometry.dispose();
+				for (const material of tires) material.dispose();
+			},
+		};
 	}
 
 	// ---- Skid marks: instanced quads dropped under sliding tires
+	// Just above the circuit's road strip (drawn 5 cm up) or the bare ground elsewhere; the
+	// polygon offset keeps them in front of what they lie on
+	const markLift = options.terrain === 'circuit' ? 0.07 : 0.02;
 	const maxMarks = 3000;
 	const marks = new THREE.InstancedMesh(
 		new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
 		new THREE.MeshBasicMaterial({
 			color: 0x0b0b0b,
 			transparent: true,
-			opacity: 0.55,
+			opacity: 0.7,
 			depthWrite: false,
+			polygonOffset: true,
+			polygonOffsetFactor: -4,
+			polygonOffsetUnits: -4,
 		}),
 		maxMarks,
 	);
@@ -576,7 +679,6 @@ export async function runVehicleDemo(
 	marks.renderOrder = 1;
 	app.scene.add(marks);
 	let markCursor = 0;
-	const lastMark: (THREE.Vector3 | null)[] = new Array(wheelCount).fill(null);
 	const markMatrix = new THREE.Matrix4();
 	const markQuat = new THREE.Quaternion();
 	const markScale = new THREE.Vector3();
@@ -587,6 +689,7 @@ export async function runVehicleDemo(
 	const tangentQuat = new THREE.Quaternion();
 
 	function addMark(
+		lastMark: (THREE.Vector3 | null)[],
 		i: number,
 		point: THREE.Vector3,
 		n: THREE.Vector3,
@@ -603,7 +706,7 @@ export async function runVehicleDemo(
 		markPos
 			.addVectors(point, last)
 			.multiplyScalar(0.5)
-			.addScaledVector(n, 0.02);
+			.addScaledVector(n, markLift);
 		markQuat.setFromUnitVectors(up, n);
 		const localDir = dir.clone().applyQuaternion(markQuat.clone().invert());
 		tangentQuat.setFromAxisAngle(up, Math.atan2(localDir.x, localDir.z));
@@ -615,6 +718,40 @@ export async function runVehicleDemo(
 		marks.count = Math.min(marks.count + 1, maxMarks);
 		marks.instanceMatrix.needsUpdate = true;
 		last.copy(point);
+	}
+
+	let car = spawnCar(
+		options.preset,
+		options.color,
+		spawn,
+		quatFromAxisAngle([0, 1, 0], spawnYaw),
+	);
+
+	// ---- Sound. The cylinder count sets the engine's pitch for a given rpm.
+	const cylinderCounts: Record<string, number> = {
+		fwd: 4,
+		rwd: 6,
+		awd: 6,
+		offroad: 8,
+		sports: 6,
+		rally: 4,
+		super: 8,
+	};
+	const cylindersFor = (name: VehiclePresetName) =>
+		cylinderCounts[vehiclePresets[name].matrix?.car ?? name] ?? 6;
+	const audio = createVehicleAudio();
+	audio.setCylinders(cylindersFor(options.preset));
+	const soundSettings = { volume: audio.volume };
+	let unmutedVolume = soundSettings.volume || 0.5;
+	const volumeController = app.gui
+		.add(soundSettings, 'volume', 0, 1, 0.05)
+		.name('sound volume (N mutes)')
+		.onChange((value: number) => audio.setVolume(value));
+	function toggleMute(): void {
+		if (soundSettings.volume > 0) unmutedVolume = soundSettings.volume;
+		soundSettings.volume = soundSettings.volume > 0 ? 0 : unmutedVolume;
+		audio.setVolume(soundSettings.volume);
+		volumeController.updateDisplay();
 	}
 
 	// ---------------------------------------------------------------------------
@@ -631,6 +768,7 @@ export async function runVehicleDemo(
 	]);
 	window.addEventListener('keydown', (e) => {
 		if (e.target instanceof HTMLInputElement) return;
+		if (e.target instanceof HTMLSelectElement) return;
 		if (driveKeys.has(e.code)) e.preventDefault();
 		if (!e.repeat) onPress(e.code);
 		keys.add(e.code);
@@ -638,48 +776,92 @@ export async function runVehicleDemo(
 	window.addEventListener('keyup', (e) => keys.delete(e.code));
 	window.addEventListener('blur', () => keys.clear());
 
-	const isManual = () => live.manual;
+	const isManual = () => car.live.manual;
 
 	function setManual(manual: boolean): void {
-		const transmission = b3.b3Vehicle_GetTransmission(vehicle);
+		const transmission = b3.b3Vehicle_GetTransmission(car.vehicle);
 		transmission.mode = manual
 			? b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual
 			: b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto;
-		b3.b3Vehicle_SetTransmission(vehicle, transmission);
-		settings.sync();
-		refreshLive();
+		b3.b3Vehicle_SetTransmission(car.vehicle, transmission);
+		car.settings.sync();
+		car.refreshLive();
 	}
 
 	function shift(delta: number): void {
 		if (!isManual()) setManual(true);
-		const gearCount = b3.b3Vehicle_GetTransmission(vehicle).gearCount;
-		const gear = b3.b3Vehicle_GetState(vehicle).gear;
+		const gearCount = b3.b3Vehicle_GetTransmission(car.vehicle).gearCount;
+		const gear = b3.b3Vehicle_GetState(car.vehicle).gear;
 		b3.b3Vehicle_SetGear(
-			vehicle,
+			car.vehicle,
 			Math.min(Math.max(gear + delta, -1), gearCount),
 		);
 	}
 
-	function resetCar(toSpawn: boolean): void {
-		const [p, q] = b3.b3Body_GetTransform([0, 0, 0], [0, 0, 0, 1], chassis);
+	/** Yaw of the car's heading, 0 along +z */
+	function carYaw(): number {
+		const q = b3.b3Body_GetRotation([0, 0, 0, 1], car.chassis);
 		const fx = 2 * (q[0] * q[2] + q[3] * q[1]);
 		const fz = 1 - 2 * (q[0] * q[0] + q[1] * q[1]);
-		const yaw = toSpawn ? 0 : Math.atan2(fx, fz);
-		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
-		b3.b3Vehicle_Reset(vehicle, position, quatFromAxisAngle([0, 1, 0], yaw));
-		lastMark.fill(null);
-		for (const w of wheelVisuals) w.initialized = false;
+		return Math.atan2(fx, fz);
+	}
+
+	function clearTrail(): void {
+		car.lastMark.fill(null);
+		for (const w of car.wheelVisuals) w.initialized = false;
 		readPose();
 		prevPos.copy(currPos);
 		prevQuat.copy(currQuat);
 	}
 
+	function resetCar(toSpawn: boolean): void {
+		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
+		const yaw = toSpawn ? spawnYaw : carYaw();
+		if (toSpawn) resetLap();
+		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
+		b3.b3Vehicle_Reset(
+			car.vehicle,
+			position,
+			quatFromAxisAngle([0, 1, 0], yaw),
+		);
+		car.sway = createBodySway();
+		clearTrail();
+	}
+
+	/** Replaces the car with another preset, upright and at rest where the old one was */
+	function swapCar(name: VehiclePresetName, color: number): void {
+		if (name === car.name) return;
+		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
+		const rotation = quatFromAxisAngle([0, 1, 0], carYaw());
+		car.destroy();
+		// Spawn at the start height above the ground under the old car, so quick swaps while it
+		// is airborne do not stack it ever higher
+		const ray = b3.b3World_CastRayClosest(
+			world,
+			[p[0], p[1] + 2, p[2]],
+			[0, -60, 0],
+			b3.b3DefaultQueryFilter(),
+		);
+		const groundY = ray.hit ? ray.point[1] : p[1];
+		car = spawnCar(
+			name,
+			color,
+			[p[0], groundY + spawnClearance, p[2]],
+			rotation,
+		);
+		audio.setCylinders(cylindersFor(name));
+		clearTrail();
+	}
+
+	const pressHandlers = new Map<string, () => void>();
 	function onPress(code: string): void {
 		if (code === 'KeyE') shift(1);
 		else if (code === 'KeyQ') shift(-1);
 		else if (code === 'KeyM') setManual(!isManual());
 		else if (code === 'KeyR') resetCar(false);
 		else if (code === 'KeyT') resetCar(true);
+		else if (code === 'KeyN') toggleMute();
+		else pressHandlers.get(code)?.();
 	}
 
 	const padPrev: boolean[] = [];
@@ -721,12 +903,17 @@ export async function runVehicleDemo(
 	// HUD
 	// ---------------------------------------------------------------------------
 
+	const controlsHelp =
+		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
+		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · gamepad works too';
 	const info = document.createElement('div');
 	info.className = 'overlay';
-	info.innerHTML =
-		`<b>${preset.title}</b><br>${options.blurb}<br>` +
-		'<span style="opacity:.75">W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
-		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · gamepad works too</span>';
+	function setInfo(title: string, blurb: string, extra = ''): void {
+		info.innerHTML =
+			`<b>${title}</b><br>${blurb}<br>` +
+			`<span style="opacity:.75">${controlsHelp}${extra}</span>`;
+	}
+	setInfo(vehiclePresets[options.preset].title, options.blurb);
 	document.body.appendChild(info);
 
 	const hud = document.createElement('div');
@@ -738,28 +925,96 @@ export async function runVehicleDemo(
 		'<div><span id="hud-speed" style="font-size:30px">0</span> km/h &nbsp; <span id="hud-gear" style="font-size:22px">N</span></div>' +
 		'<div style="height:6px;background:#333;border-radius:3px;margin:6px 0;overflow:hidden">' +
 		'<div id="hud-rpm" style="height:100%;width:0;background:#4d96ff"></div></div>' +
-		'<div id="hud-flags" style="font-size:11px;opacity:.8"></div>';
+		'<div id="hud-flags" style="font-size:11px;opacity:.8"></div>' +
+		'<div id="hud-lap" style="font-size:13px;margin-top:4px"></div>';
 	document.body.appendChild(hud);
 	const hudSpeed = hud.querySelector('#hud-speed') as HTMLElement;
 	const hudGear = hud.querySelector('#hud-gear') as HTMLElement;
 	const hudRpm = hud.querySelector('#hud-rpm') as HTMLElement;
 	const hudFlags = hud.querySelector('#hud-flags') as HTMLElement;
+	const hudLap = hud.querySelector('#hud-lap') as HTMLElement;
+
+	// ---- Lap timer on the race tracks: progress along the centreline, counted in simulated
+	// time so a slow frame rate does not change the lap time
+	const lap = { index: 0, progress: 0, start: 0, last: 0, best: 0, count: 0 };
+	let simTime = 0;
+	function resetLap(): void {
+		if (!raceTrack) return;
+		lap.index = Math.round(raceTrack.start.s) % raceTrack.centerline.length;
+		lap.progress = 0;
+		lap.start = simTime;
+	}
+	resetLap();
+	function updateLap(): void {
+		if (!raceTrack) return;
+		const line = raceTrack.centerline;
+		const n = line.length;
+		// The nearest centreline sample in a window around the last one
+		let best = lap.index;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (let k = -20; k <= 40; k++) {
+			const p = line[(lap.index + k + n) % n];
+			const d = (p.x - currPos.x) ** 2 + (p.z - currPos.z) ** 2;
+			if (d < bestD) {
+				bestD = d;
+				best = lap.index + k;
+			}
+		}
+		// Far off the track (after a reset elsewhere), look everywhere
+		if (bestD > 40 * 40) {
+			const r = raceTrack.roadAt(currPos.x, currPos.z);
+			if (r)
+				best =
+					lap.index +
+					((Math.round(r.sample.s) - lap.index + n * 1.5) % n) -
+					n / 2;
+		}
+		lap.progress += best - lap.index;
+		lap.index = ((Math.round(best) % n) + n) % n;
+		if (lap.progress >= n) {
+			lap.last = simTime - lap.start;
+			lap.best = lap.best ? Math.min(lap.best, lap.last) : lap.last;
+			lap.count++;
+			lap.progress -= n;
+			lap.start = simTime;
+		}
+	}
+	const clock = (t: number) =>
+		`${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
 	function updateHud(): void {
 		hudSpeed.textContent = Math.abs(state.speed * 3.6).toFixed(0);
 		hudGear.textContent =
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
-		const rpm = Math.min(state.engineRpm / live.maxRpm, 1);
+		const rpm = Math.min(state.engineRpm / car.live.maxRpm, 1);
 		hudRpm.style.width = `${(rpm * 100).toFixed(1)}%`;
 		hudRpm.style.background = rpm > 0.9 ? '#ff6b6b' : '#4d96ff';
 		const flags = [
 			isManual() ? 'MANUAL' : 'AUTO',
 			`${state.engineRpm.toFixed(0)} rpm`,
-			live.tractionControl ? 'TC' : '',
-			live.abs ? 'ABS' : '',
+			car.live.tractionControl ? 'TC' : '',
+			car.live.abs ? 'ABS' : '',
 			state.stuck ? 'stuck: press R' : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
+		if (raceTrack) {
+			const parts = [`lap ${clock(simTime - lap.start)}`];
+			if (lap.last) parts.push(`last ${clock(lap.last)}`);
+			if (lap.best) parts.push(`best ${clock(lap.best)}`);
+			hudLap.textContent = parts.join(' · ');
+		}
+	}
+
+	if (options.showcase) {
+		addShowcase({
+			gui: app.gui,
+			b3,
+			terrain: options.terrain,
+			current: () => car,
+			swap: (name, color) => swapCar(name, color),
+			setInfo,
+			onPress: pressHandlers,
+		});
 	}
 
 	// ---------------------------------------------------------------------------
@@ -772,9 +1027,13 @@ export async function runVehicleDemo(
 	const currQuat = new THREE.Quaternion();
 	const scratchPos: b3Vec3 = [0, 0, 0];
 	const scratchQuat: b3Quat = [0, 0, 0, 1];
+	const scratchVel: b3Vec3 = [0, 0, 0];
+	const velocity = new THREE.Vector3();
+	const weightTransfer = createWeightTransferView(app.gui);
+	const wheelLoads = new Float32Array(8);
 
 	function readPose(): void {
-		b3.b3Body_GetTransform(scratchPos, scratchQuat, chassis);
+		b3.b3Body_GetTransform(scratchPos, scratchQuat, car.chassis);
 		currPos.set(scratchPos[0], scratchPos[1], scratchPos[2]);
 		currQuat.set(
 			scratchQuat[0],
@@ -782,7 +1041,7 @@ export async function runVehicleDemo(
 			scratchQuat[2],
 			scratchQuat[3],
 		);
-		b3.getVehicleStateData(stateBuffer, vehicle);
+		b3.getVehicleStateData(stateBuffer, car.vehicle);
 		b3.getVehicleStateAt(state, stateBuffer);
 	}
 	readPose();
@@ -795,14 +1054,16 @@ export async function runVehicleDemo(
 	const wheelPos = new THREE.Vector3();
 	const wheelQuat = new THREE.Quaternion();
 	const contact = new THREE.Vector3();
-	const camPos = new THREE.Vector3(spawn[0], spawn[1] + 3, spawn[2] - 9);
+	const camPos = new THREE.Vector3(
+		spawn[0] - 9 * Math.sin(spawnYaw),
+		spawn[1] + 3,
+		spawn[2] - 9 * Math.cos(spawnYaw),
+	);
 	const camTarget = new THREE.Vector3();
 	const forward = new THREE.Vector3();
 	const slipColor = new THREE.Color();
 	const tireBase = new THREE.Color(0x1c1c1c);
 	const tireHot = new THREE.Color(0xff5a1f);
-	const camDistance = hz * 2 + 4.5;
-	const camHeight = hy + (offroad ? 2.6 : 2.0);
 
 	let accumulator = 0;
 	let telemetryTimer = 0;
@@ -815,9 +1076,20 @@ export async function runVehicleDemo(
 			while (accumulator >= STEP && steps < 4) {
 				prevPos.copy(currPos);
 				prevQuat.copy(currQuat);
-				b3.b3Vehicle_SetInput(vehicle, input);
+				b3.b3Vehicle_SetInput(car.vehicle, input);
 				b3.b3World_Step(world, STEP, SUBSTEPS);
+				simTime += STEP;
 				readPose();
+				b3.b3Body_GetLinearVelocity(scratchVel, car.chassis);
+				velocity.set(scratchVel[0], scratchVel[1], scratchVel[2]);
+				weightTransfer.sample(
+					car.sway,
+					velocity,
+					currQuat,
+					state.wheelsInContact > 0,
+					STEP,
+				);
+				updateLap();
 				accumulator -= STEP;
 				steps++;
 			}
@@ -829,16 +1101,19 @@ export async function runVehicleDemo(
 		const alpha = accumulator / STEP;
 		renderPos.lerpVectors(prevPos, currPos, alpha);
 		renderQuat.slerpQuaternions(prevQuat, currQuat, alpha);
-		car.position.copy(renderPos);
-		car.quaternion.copy(renderQuat);
+		car.group.position.copy(renderPos);
+		car.group.quaternion.copy(renderQuat);
 
 		// Wheels in chassis space, with the suspension travel smoothed so debris does not
 		// make them jitter
 		invQuat.copy(currQuat).invert();
 		const smoothing = 1 - Math.exp(-dt * 35);
-		for (let i = 0; i < wheelCount; i++) {
+		let skid = 0;
+		let compression = 0;
+		let axleY = 0;
+		for (let i = 0; i < car.wheelCount; i++) {
 			b3.getVehicleWheelAt(wheelRecord, stateBuffer, i);
-			const visual = wheelVisuals[i];
+			const visual = car.wheelVisuals[i];
 			const p = wheelRecord.position;
 			const q = wheelRecord.rotation;
 			wheelPos.set(p[0], p[1], p[2]).sub(currPos).applyQuaternion(invQuat);
@@ -849,9 +1124,11 @@ export async function runVehicleDemo(
 			}
 			visual.localY += (wheelPos.y - visual.localY) * smoothing;
 			visual.group.position.set(wheelPos.x, visual.localY, wheelPos.z);
+			axleY += visual.localY / car.wheelCount;
+			wheelLoads[i] = wheelRecord.hasContact ? wheelRecord.load : 0;
 			visual.group.quaternion.copy(wheelQuat);
 
-			const wheelDef = live.wheels[i];
+			const wheelDef = car.live.wheels[i];
 			visual.group.scale.set(
 				wheelDef.width / visual.width,
 				wheelDef.radius / visual.radius,
@@ -866,6 +1143,9 @@ export async function runVehicleDemo(
 					)
 				: 0;
 			const heat = Math.min(Math.max((slide - 0.35) / 0.65, 0), 1);
+			skid = Math.max(skid, heat);
+			if (wheelRecord.hasContact)
+				compression = Math.max(compression, wheelRecord.compression);
 			slipColor.copy(tireBase).lerp(tireHot, heat);
 			visual.tire.color.copy(slipColor);
 			if (wheelRecord.hasContact && heat > 0.2 && Math.abs(state.speed) > 1) {
@@ -873,13 +1153,19 @@ export async function runVehicleDemo(
 				const n = wheelRecord.contactNormal;
 				contact.set(c[0], c[1], c[2]);
 				normal.set(n[0], n[1], n[2]);
-				addMark(i, contact, normal, wheelDef.width);
+				addMark(car.lastMark, i, contact, normal, wheelDef.width);
 			} else {
-				lastMark[i] = null;
+				car.lastMark[i] = null;
 			}
 		}
 
+		weightTransfer.pose(car.sway, car.body, axleY, dt);
+		weightTransfer.showLoads(wheelLoads, car.wheelCount, dt);
+
 		// Chase camera behind the car, flattened to the horizon
+		const [, hy, hz] = car.halfExtents;
+		const camDistance = hz * 2 + 4.5;
+		const camHeight = hy + (car.name === 'offroad' ? 2.6 : 2.0);
 		forward.set(0, 0, 1).applyQuaternion(renderQuat);
 		forward.y = 0;
 		if (forward.lengthSq() < 1e-4) forward.set(0, 0, 1);
@@ -897,13 +1183,39 @@ export async function runVehicleDemo(
 		app.controls.target.copy(camTarget);
 		app.camera.lookAt(camTarget);
 
+		const sound = {
+			engineRpm: state.engineRpm,
+			throttle: state.throttle,
+			speed: state.speed,
+			skid,
+			compression,
+		};
+		audio.update(sound, dt);
+
+		// Opt-in readout for scripted test drives: a page script that sets
+		// window.vehicleTelemetry = {} gets the car's sound inputs, pose, visual body sway
+		// (degrees) and wheel loads (N) every frame
+		const telemetry = (window as { vehicleTelemetry?: object })
+			.vehicleTelemetry;
+		if (telemetry) {
+			Object.assign(telemetry, sound, {
+				preset: car.name,
+				cylinders: cylindersFor(car.name),
+				position: [currPos.x, currPos.y, currPos.z],
+				yaw: carYaw(),
+				bodyRoll: (car.sway.roll * 180) / Math.PI,
+				bodyPitch: (car.sway.pitch * 180) / Math.PI,
+				loads: Array.from(wheelLoads.subarray(0, car.wheelCount)),
+			});
+		}
+
 		worldRenderer.update();
 		updateHud();
 		telemetryTimer += dt;
 		if (telemetryTimer > 0.1) {
 			telemetryTimer = 0;
-			settings.update();
-			refreshLive();
+			car.settings.update();
+			car.refreshLive();
 		}
 	});
 	app.start();

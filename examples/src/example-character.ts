@@ -21,8 +21,8 @@ import type {
 import Box3D from 'box3d.js/inline';
 import * as THREE from 'three';
 import { createWorldRenderer } from './box3d-three';
-import { quatFromAxisAngle } from './math';
 import { createHarness } from './harness';
+import { quatFromAxisAngle } from './math';
 
 const b3: Box3DModule = await Box3D();
 // crashcat's KCC camera: eye (0,10,20) looking at the character's start (0,10,0)
@@ -269,7 +269,10 @@ for (const [x, z, r] of bumps) staticSphere(x, r * -0.5, z, r);
 		jd.base.bodyIdA = anchor;
 		jd.base.bodyIdB = plat;
 		jd.base.localFrameA = { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
-		jd.base.localFrameB = { position: [sx, half[1], sz], quaternion: [0, 0, 0, 1] };
+		jd.base.localFrameB = {
+			position: [sx, half[1], sz],
+			quaternion: [0, 0, 0, 1],
+		};
 		jd.length = anchorHeight - center[1];
 		jd.enableSpring = true;
 		jd.hertz = 1.5;
@@ -325,7 +328,10 @@ app.scene.add(charMesh);
 // These are read from the packed plane buffer via getPlaneResultAt (see solveMove).
 // ---------------------------------------------------------------------------
 const MAX_PLANES = 64;
-const planeMat = new THREE.MeshBasicMaterial({ color: 0xffcc33, depthTest: false });
+const planeMat = new THREE.MeshBasicMaterial({
+	color: 0xffcc33,
+	depthTest: false,
+});
 const planePointsMesh = new THREE.InstancedMesh(
 	new THREE.SphereGeometry(0.07, 8, 6),
 	planeMat,
@@ -449,7 +455,12 @@ function solveMove(
 		position[1] + CAP1[1],
 		position[2] + CAP1[2],
 	];
-	const ray = b3.b3World_CastRayClosest(world, rayOrigin, [0, -rayLength, 0], filter);
+	const ray = b3.b3World_CastRayClosest(
+		world,
+		rayOrigin,
+		[0, -rayLength, 0],
+		filter,
+	);
 	if (ray.hit && velocity[1] <= 0.1) {
 		onGround = true;
 		const currentLength = ray.fraction * rayLength;
@@ -490,7 +501,10 @@ function solveMove(
 					// normal out since planeResult is reused each iteration.
 					const nrm = planeResult.plane.normal;
 					planes.push({
-						plane: { normal: [nrm[0], nrm[1], nrm[2]], offset: planeResult.plane.offset },
+						plane: {
+							normal: [nrm[0], nrm[1], nrm[2]],
+							offset: planeResult.plane.offset,
+						},
 						pushLimit: PUSH_LIMIT,
 						push: 0,
 						clipVelocity: true,
@@ -516,10 +530,24 @@ function solveMove(
 		];
 		const solved = b3.b3SolvePlanes(targetDelta, planes);
 		let delta = solved.delta;
-		const fraction = b3.b3World_CastMover(world, position, capsule, delta, filter, () => true);
+		const fraction = b3.b3World_CastMover(
+			world,
+			position,
+			capsule,
+			delta,
+			filter,
+			() => true,
+		);
 		delta = [delta[0] * fraction, delta[1] * fraction, delta[2] * fraction];
-		position = [position[0] + delta[0], position[1] + delta[1], position[2] + delta[2]];
-		if (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2] < tol * tol)
+		position = [
+			position[0] + delta[0],
+			position[1] + delta[1],
+			position[2] + delta[2],
+		];
+		if (
+			delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2] <
+			tol * tol
+		)
 			break;
 	}
 
