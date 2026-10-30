@@ -1,6 +1,7 @@
-// Preset picker for the vehicle showcase: car, realism and drivetrain dropdowns that swap the
-// car in place, hotkeys for the same, a terrain switch, and a button that copies the live
-// settings as JSON (including anything changed in the Vehicle folder).
+// Preset picker for the vehicle showcase: car, realism, drivetrain and turbo dropdowns that swap
+// the car in place, hotkeys for the same, a terrain switch, and a button that copies the live
+// settings as JSON (including anything changed in the Vehicle folder). Each car has a turbo by
+// default (carTurbos), so the showcase plays the turbo whistle, blow-off and stutter.
 
 import type { Box3DModule, b3VehicleId } from 'box3d.js';
 import type GUI from 'lil-gui';
@@ -8,10 +9,12 @@ import type { VehicleTerrain } from './vehicle-demo';
 import {
 	drivetrainLayers,
 	realismLevels,
+	turboTypes,
 	type VehicleCarName,
 	type VehicleDrive,
 	type VehiclePresetName,
 	type VehicleRealism,
+	type VehicleTurboName,
 	vehicleCars,
 	vehiclePresetName,
 	vehiclePresets,
@@ -23,8 +26,8 @@ export type ShowcaseHost = {
 	terrain: VehicleTerrain;
 	/** The car being driven */
 	current(): { name: VehiclePresetName; vehicle: b3VehicleId };
-	/** Replace the car with another preset where it stands */
-	swap(name: VehiclePresetName, color: number): void;
+	/** Replace the car with another preset or turbo where it stands */
+	swap(name: VehiclePresetName, color: number, turbo: VehicleTurboName): void;
 	setInfo(title: string, blurb: string, extra?: string): void;
 	/** Key code to handler, for keys the demo does not use itself */
 	onPress: Map<string, () => void>;
@@ -34,16 +37,42 @@ const realismOrder: VehicleRealism[] = [100, 75, 50, 25, 0];
 
 const terrains: VehicleTerrain[] = ['track', 'offroad', 'circuit', 'stage'];
 
-/** Reads the start preset and terrain from the URL, e.g. ?preset=rally-50-awd&terrain=stage */
+/**
+ * The turbo each car gets unless another is picked, so the showcase plays the turbo sound. All
+ * 45 presets pass vehicle-metrics.mjs with these (--car <car> --turbo <type>).
+ */
+export const carTurbos: Record<VehicleCarName, VehicleTurboName> = {
+	sports: 'twinScroll',
+	rally: 'antiLag',
+	super: 'parallel',
+};
+
+/** 'car' follows the car (carTurbos), anything else is that turbo type on every car */
+export type ShowcaseTurbo = 'car' | VehicleTurboName;
+
+export function showcaseTurbo(
+	choice: ShowcaseTurbo,
+	car: VehicleCarName,
+): VehicleTurboName {
+	return choice === 'car' ? carTurbos[car] : choice;
+}
+
+/**
+ * Reads the start preset, terrain and turbo from the URL, e.g.
+ * ?preset=rally-50-awd&terrain=stage&turbo=none
+ */
 export function showcaseStart(): {
 	preset: VehiclePresetName;
 	terrain: VehicleTerrain;
+	turbo: ShowcaseTurbo;
 } {
 	const params = new URLSearchParams(location.search);
 	const preset = params.get('preset') as VehiclePresetName | null;
+	const turbo = params.get('turbo') as VehicleTurboName | null;
 	return {
 		preset: preset && vehiclePresets[preset]?.matrix ? preset : 'sports-50-rwd',
 		terrain: terrains.find((t) => t === params.get('terrain')) ?? 'track',
+		turbo: turbo && turbo in turboTypes ? turbo : 'car',
 	};
 }
 
@@ -107,7 +136,7 @@ export function vehicleSettingsJson(
 	);
 }
 
-function toast(text: string): void {
+export function toast(text: string): void {
 	const el = document.createElement('div');
 	el.textContent = text;
 	el.style.cssText =
@@ -117,7 +146,7 @@ function toast(text: string): void {
 	setTimeout(() => el.remove(), 1600);
 }
 
-async function copyText(text: string): Promise<boolean> {
+export async function copyText(text: string): Promise<boolean> {
 	try {
 		await navigator.clipboard.writeText(text);
 		return true;
@@ -146,6 +175,7 @@ export function addShowcase(host: ShowcaseHost): void {
 		car: matrix.car,
 		realism: matrix.realism,
 		drive: matrix.drive,
+		turbo: showcaseStart().turbo,
 		terrain: host.terrain,
 		copy: async () => {
 			const { name, vehicle } = host.current();
@@ -187,6 +217,14 @@ export function addShowcase(host: ShowcaseHost): void {
 		.add(params, 'drive', driveOptions)
 		.name('drive (F/G/H)')
 		.onChange(apply);
+	const turboOptions: Record<string, ShowcaseTurbo> = { "Car's own": 'car' };
+	for (const [key, type] of Object.entries(turboTypes)) {
+		turboOptions[type.title] = key as VehicleTurboName;
+	}
+	const turboController = folder
+		.add(params, 'turbo', turboOptions)
+		.name('turbo (Y)')
+		.onChange(apply);
 	folder
 		.add(params, 'terrain', {
 			'Test track': 'track',
@@ -209,6 +247,8 @@ export function addShowcase(host: ShowcaseHost): void {
 		const url = new URL(location.href);
 		url.searchParams.set('preset', presetName());
 		url.searchParams.set('terrain', params.terrain);
+		if (params.turbo === 'car') url.searchParams.delete('turbo');
+		else url.searchParams.set('turbo', params.turbo);
 		history.replaceState(null, '', url);
 	}
 
@@ -216,16 +256,26 @@ export function addShowcase(host: ShowcaseHost): void {
 		const car = vehicleCars[params.car];
 		host.setInfo(
 			vehiclePresets[presetName()].title,
-			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.realism)}.`,
-			'<br>1/2/3 sports, rally, supercar · [ ] less or more realistic · F/G/H front, rear, all wheel drive',
+			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.realism)}.` +
+				`<br>${turboTypes[showcaseTurbo(params.turbo, params.car)].title}.`,
+			'<br>1/2/3 sports, rally, supercar · [ ] less or more realistic · F/G/H front, rear, all wheel drive · Y turbo',
 		);
 	}
 
 	function apply(): void {
 		// lil-gui hands option values back as given, but a stale string would build a bad name
 		params.realism = Number(params.realism) as VehicleRealism;
-		host.swap(presetName(), vehicleCars[params.car].color);
-		for (const c of [carController, realismController, driveController])
+		host.swap(
+			presetName(),
+			vehicleCars[params.car].color,
+			showcaseTurbo(params.turbo, params.car),
+		);
+		for (const c of [
+			carController,
+			realismController,
+			driveController,
+			turboController,
+		])
 			c.updateDisplay();
 		updateUrl();
 		updateInfo();
@@ -255,6 +305,13 @@ export function addShowcase(host: ShowcaseHost): void {
 	host.onPress.set('KeyF', setDrive('fwd'));
 	host.onPress.set('KeyG', setDrive('rwd'));
 	host.onPress.set('KeyH', setDrive('awd'));
+	// Y steps through the turbos, starting from the car's own
+	const turboOrder = Object.values(turboOptions);
+	host.onPress.set('KeyY', () => {
+		params.turbo =
+			turboOrder[(turboOrder.indexOf(params.turbo) + 1) % turboOrder.length];
+		apply();
+	});
 
 	updateUrl();
 	updateInfo();

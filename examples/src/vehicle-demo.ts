@@ -22,9 +22,11 @@ import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
 import { createVehicleAudio } from './vehicle-audio';
 import {
+	applyTurbo,
 	createPresetVehicleDef,
 	turboGain,
 	type VehiclePresetName,
+	type VehicleTurboName,
 	vehiclePresets,
 } from './vehicle-presets';
 import {
@@ -32,6 +34,7 @@ import {
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
+import { addSoundPanel, carEngines } from './vehicle-sound-panel';
 import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
@@ -68,6 +71,8 @@ export type VehicleDemoOptions = {
 	blurb: string;
 	/** Adds the Preset folder and hotkeys that swap between the preset matrix cars */
 	showcase?: boolean;
+	/** Fits a turbo type from vehicle-presets.js on top of the preset. 'none' by default. */
+	turbo?: VehicleTurboName;
 };
 
 const STEP = 1 / 60;
@@ -449,6 +454,7 @@ export async function runVehicleDemo(
 
 	type Car = {
 		name: VehiclePresetName;
+		turbo: VehicleTurboName;
 		chassis: b3BodyId;
 		vehicle: b3VehicleId;
 		halfExtents: b3Vec3;
@@ -479,9 +485,10 @@ export async function runVehicleDemo(
 		destroy(): void;
 	};
 
-	/** Builds a car from a preset at a pose, with its visuals and settings panel */
+	/** Builds a car from a preset and a turbo type at a pose, with its visuals and settings panel */
 	function spawnCar(
 		name: VehiclePresetName,
+		turbo: VehicleTurboName,
 		color: number,
 		position: b3Vec3,
 		rotation: b3Quat = [0, 0, 0, 1],
@@ -497,8 +504,12 @@ export async function runVehicleDemo(
 		b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
 		hidden.add(chassis.index1);
 
-		const defaults: b3VehicleDef = createPresetVehicleDef(b3, name);
-		const def = createPresetVehicleDef(b3, name);
+		const presetDef = () => {
+			const d = createPresetVehicleDef(b3, name);
+			return turbo === 'none' ? d : applyTurbo(d, turbo);
+		};
+		const defaults: b3VehicleDef = presetDef();
+		const def = presetDef();
 		def.chassisId = chassis;
 		const vehicle = b3.b3CreateVehicle(world, def);
 		const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
@@ -643,6 +654,7 @@ export async function runVehicleDemo(
 
 		return {
 			name,
+			turbo,
 			chassis,
 			vehicle,
 			halfExtents,
@@ -733,31 +745,26 @@ export async function runVehicleDemo(
 
 	let car = spawnCar(
 		options.preset,
+		options.turbo ?? 'none',
 		options.color,
 		spawn,
 		quatFromAxisAngle([0, 1, 0], spawnYaw),
 	);
 
-	// ---- Sound. The cylinder count sets the engine's pitch for a given rpm.
-	const cylinderCounts: Record<string, number> = {
-		fwd: 4,
-		rwd: 6,
-		awd: 6,
-		offroad: 8,
-		sports: 6,
-		rally: 4,
-		super: 8,
-	};
-	const cylindersFor = (name: VehiclePresetName) =>
-		cylinderCounts[vehiclePresets[name].matrix?.car ?? name] ?? 6;
+	// ---- Sound. Each car has its own engine voice, and its cylinder count sets the pitch.
+	const engineFor = (name: VehiclePresetName) =>
+		carEngines[vehiclePresets[name].matrix?.car ?? name] ?? carEngines.sports;
+	const cylindersFor = (name: VehiclePresetName) => engineFor(name).cylinders;
 	const audio = createVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
+	audio.setCarVoice(engineFor(options.preset).voice);
 	const soundSettings = { volume: audio.volume };
 	let unmutedVolume = soundSettings.volume || 0.5;
 	const volumeController = app.gui
 		.add(soundSettings, 'volume', 0, 1, 0.05)
 		.name('sound volume (N mutes)')
 		.onChange((value: number) => audio.setVolume(value));
+	addSoundPanel(app.gui, audio, { labLink: true });
 	function toggleMute(): void {
 		if (soundSettings.volume > 0) unmutedVolume = soundSettings.volume;
 		soundSettings.volume = soundSettings.volume > 0 ? 0 : unmutedVolume;
@@ -839,9 +846,13 @@ export async function runVehicleDemo(
 		clearTrail();
 	}
 
-	/** Replaces the car with another preset, upright and at rest where the old one was */
-	function swapCar(name: VehiclePresetName, color: number): void {
-		if (name === car.name) return;
+	/** Replaces the car with another preset or turbo, upright and at rest where the old one was */
+	function swapCar(
+		name: VehiclePresetName,
+		color: number,
+		turbo: VehicleTurboName = car.turbo,
+	): void {
+		if (name === car.name && turbo === car.turbo) return;
 		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
 		const rotation = quatFromAxisAngle([0, 1, 0], carYaw());
 		car.destroy();
@@ -856,11 +867,13 @@ export async function runVehicleDemo(
 		const groundY = ray.hit ? ray.point[1] : p[1];
 		car = spawnCar(
 			name,
+			turbo,
 			color,
 			[p[0], groundY + spawnClearance, p[2]],
 			rotation,
 		);
 		audio.setCylinders(cylindersFor(name));
+		audio.setCarVoice(engineFor(name).voice);
 		clearTrail();
 	}
 
@@ -917,7 +930,7 @@ export async function runVehicleDemo(
 
 	const controlsHelp =
 		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
-		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · gamepad works too';
+		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · V/C blow-off/stutter · gamepad works too';
 	const touchHelp =
 		'Left pad steers, further out for more lock · ▲ gas · ▼ brake, hold to reverse · HB handbrake · ↻ flip upright';
 	const info = document.createElement('div');
@@ -1045,7 +1058,7 @@ export async function runVehicleDemo(
 			b3,
 			terrain: options.terrain,
 			current: () => car,
-			swap: (name, color) => swapCar(name, color),
+			swap: (name, color, turbo) => swapCar(name, color, turbo),
 			setInfo,
 			onPress: pressHandlers,
 		});
