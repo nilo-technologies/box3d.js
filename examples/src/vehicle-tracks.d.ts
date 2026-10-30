@@ -67,10 +67,6 @@ export interface RaceTrack {
 	bumpSection: { from: number; to: number };
 	field: {
 		heights: number[];
-		/** 1 on the road, 0.5 on the strip beside it, 0 elsewhere */
-		roadMask: Float32Array;
-		/** Distance along the track of the nearest road point, -1 away from the road */
-		roadS: Float32Array;
 		countX: number;
 		countZ: number;
 		cell: number;

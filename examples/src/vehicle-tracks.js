@@ -388,10 +388,6 @@ export function buildRaceTrack(name) {
 		);
 	};
 	const heights = new Array(countX * countZ);
-	const roadMask = new Float32Array(countX * countZ);
-	// Distance along the track of the road point nearest each vertex near the road, -1 elsewhere,
-	// for painting kerbs and the start line
-	const roadS = new Float32Array(countX * countZ);
 	for (let iz = 0; iz < countZ; iz++) {
 		for (let ix = 0; ix < countX; ix++) {
 			const x = x0 + ix * cell;
@@ -415,9 +411,6 @@ export function buildRaceTrack(name) {
 			const edge = Math.min(ix, iz, countX - 1 - ix, countZ - 1 - iz) * cell;
 			h += 12 * (1 - smoothstep(0, 30, edge));
 			heights[iz * countX + ix] = h;
-			// 1 on the road, 0.5 on the kerb or verge strip beside it, 0 off it
-			roadMask[iz * countX + ix] = d <= half ? 1 : d <= half + 2 ? 0.5 : 0;
-			roadS[iz * countX + ix] = road && d <= half + 2 ? road.sample.s : -1;
 		}
 	}
 
@@ -465,7 +458,7 @@ export function buildRaceTrack(name) {
 		length,
 		centerline,
 		bumpSection: { from: bumpStart, to: bumpEnd },
-		field: { heights, roadMask, roadS, countX, countZ, cell, origin: [x0, z0] },
+		field: { heights, countX, countZ, cell, origin: [x0, z0] },
 		bumps,
 		start: {
 			position: [s0.x, s0.y, s0.z],

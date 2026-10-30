@@ -16,7 +16,6 @@ import type {
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
 import * as THREE from 'three';
-import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
@@ -31,6 +30,14 @@ import {
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
+import {
+	addRaceTrackArt,
+	applyTopoAtmosphere,
+	heightColors,
+	overlayMaterial,
+	topo,
+	topoMaterial,
+} from './vehicle-track-art';
 import {
 	buildRaceTrack,
 	createRaceTrackBodies,
@@ -63,7 +70,6 @@ export async function runVehicleDemo(
 	const b3: Box3DModule = await Box3D();
 	const app = createHarness({ camera: [0, 4, -9], target: [0, 1, 0] });
 	app.controls.enabled = false;
-	app.scene.fog = new THREE.Fog(0x1a1a1a, 90, 320);
 	app.camera.far = 600;
 	app.camera.updateProjectionMatrix();
 
@@ -121,34 +127,6 @@ export async function runVehicleDemo(
 		hullBody([x, 0, 0], pts);
 	}
 
-	function gridTexture(
-		base: string,
-		line: string,
-		cells: number,
-	): THREE.CanvasTexture {
-		const canvas = document.createElement('canvas');
-		canvas.width = canvas.height = 256;
-		const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-		ctx.fillStyle = base;
-		ctx.fillRect(0, 0, 256, 256);
-		ctx.strokeStyle = line;
-		ctx.lineWidth = 2;
-		const step = 256 / cells;
-		for (let i = 0; i <= cells; i++) {
-			ctx.beginPath();
-			ctx.moveTo(i * step, 0);
-			ctx.lineTo(i * step, 256);
-			ctx.moveTo(0, i * step);
-			ctx.lineTo(256, i * step);
-			ctx.stroke();
-		}
-		const texture = new THREE.CanvasTexture(canvas);
-		texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-		texture.anisotropy = 8;
-		texture.colorSpace = THREE.SRGBColorSpace;
-		return texture;
-	}
-
 	/** Height of a fresh car's chassis above the ground (m) */
 	const spawnClearance = 1.5;
 	let spawn: b3Vec3 = [0, spawnClearance, 0];
@@ -161,11 +139,9 @@ export async function runVehicleDemo(
 		b3.b3CreateBoxShape(ground, b3.b3DefaultShapeDef(), size, 0.5, size);
 		hidden.add(ground.index1);
 
-		const texture = gridTexture('#3a3d40', '#4a4e52', 4);
-		texture.repeat.set(size / 4, size / 4);
 		const floor = new THREE.Mesh(
 			new THREE.PlaneGeometry(size * 2, size * 2),
-			new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95 }),
+			topoMaterial({ color: topo.ground[0] }),
 		);
 		floor.rotation.x = -Math.PI / 2;
 		app.scene.add(floor);
@@ -184,7 +160,7 @@ export async function runVehicleDemo(
 		ribbon.holes.push(hole);
 		const circuit = new THREE.Mesh(
 			new THREE.ShapeGeometry(ribbon, 48),
-			new THREE.MeshStandardMaterial({ color: 0x24272a, roughness: 0.8 }),
+			overlayMaterial(topo.asphalt),
 		);
 		circuit.rotation.x = Math.PI / 2;
 		circuit.position.y = 0.01;
@@ -308,20 +284,11 @@ export async function runVehicleDemo(
 		);
 
 		const positions = new Float32Array(count * count * 3);
-		const colors = new Float32Array(count * count * 3);
-		const low = new THREE.Color(0x4a5a34);
-		const high = new THREE.Color(0x8a7a58);
-		const color = new THREE.Color();
 		for (let iz = 0, p = 0; iz < count; iz++) {
 			for (let ix = 0; ix < count; ix++, p += 3) {
-				const h = heights[iz * count + ix];
 				positions[p] = ix * cell - half;
-				positions[p + 1] = h;
+				positions[p + 1] = heights[iz * count + ix];
 				positions[p + 2] = iz * cell - half;
-				color.copy(low).lerp(high, Math.min(Math.max((h + 2) / 14, 0), 1));
-				colors[p] = color.r;
-				colors[p + 1] = color.g;
-				colors[p + 2] = color.b;
 			}
 		}
 		const indices: number[] = [];
@@ -336,25 +303,14 @@ export async function runVehicleDemo(
 		}
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-		const uv = new Float32Array(count * count * 2);
-		for (let i = 0; i < count * count; i++) {
-			uv[i * 2] = positions[i * 3] / 4;
-			uv[i * 2 + 1] = positions[i * 3 + 2] / 4;
-		}
-		geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+		geometry.setAttribute(
+			'color',
+			new THREE.BufferAttribute(heightColors(heights), 3),
+		);
 		geometry.setIndex(indices);
 		geometry.computeVertexNormals();
-		const texture = gridTexture('#ffffff', '#d8d8d8', 2);
 		app.scene.add(
-			new THREE.Mesh(
-				geometry,
-				new THREE.MeshStandardMaterial({
-					vertexColors: true,
-					map: texture,
-					roughness: 1,
-				}),
-			),
+			new THREE.Mesh(geometry, topoMaterial({ vertexColors: true })),
 		);
 
 		// Ramp on the flattened pad ahead of the spawn
@@ -408,126 +364,7 @@ export async function runVehicleDemo(
 		);
 		for (const body of [ground, ...bumpBodies, ...walls])
 			hidden.add(body.index1);
-		const paved = track.surface === 'asphalt';
-
-		// Terrain mesh from the same heights, coloured by surface: road, kerbs or verge, start
-		// line, and grass shaded by height
-		const { heights, roadMask, roadS, countX, countZ, cell, origin } =
-			track.field;
-		const positions = new Float32Array(countX * countZ * 3);
-		const colors = new Float32Array(countX * countZ * 3);
-		let lo = Number.POSITIVE_INFINITY;
-		let hi = Number.NEGATIVE_INFINITY;
-		for (const h of heights) {
-			lo = Math.min(lo, h);
-			hi = Math.max(hi, h);
-		}
-		const grassLow = new THREE.Color(paved ? 0x3d6b2f : 0x4b5a30);
-		const grassHigh = new THREE.Color(paved ? 0x6f9a4a : 0x6f7a45);
-		const road = new THREE.Color(paved ? 0x34363a : 0xb39466);
-		const roadAlt = new THREE.Color(paved ? 0x3a3c40 : 0xa6895c);
-		const kerbRed = new THREE.Color(paved ? 0xc8302c : 0x6e5a3e);
-		const kerbWhite = new THREE.Color(paved ? 0xeeeeee : 0x75603f);
-		const white = new THREE.Color(0xf2f2f2);
-		const color = new THREE.Color();
-		for (let iz = 0, i = 0; iz < countZ; iz++) {
-			for (let ix = 0; ix < countX; ix++, i++) {
-				const h = heights[i];
-				positions[i * 3] = origin[0] + ix * cell;
-				positions[i * 3 + 1] = h;
-				positions[i * 3 + 2] = origin[1] + iz * cell;
-				const along = roadS[i];
-				const atStart =
-					along >= 0 &&
-					Math.abs(
-						((along - track.start.s + track.length * 1.5) % track.length) -
-							track.length / 2,
-					) < 1.5;
-				if (roadMask[i] >= 1) {
-					color.copy(atStart ? white : (ix + iz) % 2 ? road : roadAlt);
-				} else if (roadMask[i] > 0) {
-					color.copy(Math.floor(along / 3) % 2 ? kerbRed : kerbWhite);
-				} else {
-					color
-						.copy(grassLow)
-						.lerp(
-							grassHigh,
-							Math.min(Math.max((h - lo) / (hi - lo + 1e-6), 0), 1),
-						);
-				}
-				colors[i * 3] = color.r;
-				colors[i * 3 + 1] = color.g;
-				colors[i * 3 + 2] = color.b;
-			}
-		}
-		const indices: number[] = [];
-		for (let iz = 0; iz < countZ - 1; iz++) {
-			for (let ix = 0; ix < countX - 1; ix++) {
-				const a = iz * countX + ix;
-				const b = a + 1;
-				const c = a + countX;
-				const d = c + 1;
-				indices.push(a, c, b, b, c, d);
-			}
-		}
-		const geometry = new THREE.BufferGeometry();
-		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-		geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-		geometry.setIndex(indices);
-		geometry.computeVertexNormals();
-		app.scene.add(
-			new THREE.Mesh(
-				geometry,
-				new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
-			),
-		);
-
-		// Bumps: yellow on the circuit, rock coloured on the stage
-		const bumpMaterial = new THREE.MeshStandardMaterial({
-			color: paved ? 0xe8c547 : 0x9a8466,
-			roughness: 0.8,
-		});
-		for (const bump of track.bumps) {
-			const points: THREE.Vector3[] = [];
-			for (let k = 0; k < bump.points.length; k += 3) {
-				points.push(
-					new THREE.Vector3(
-						bump.points[k],
-						bump.points[k + 1],
-						bump.points[k + 2],
-					),
-				);
-			}
-			const mesh = new THREE.Mesh(new ConvexGeometry(points), bumpMaterial);
-			mesh.position.set(...bump.position);
-			mesh.rotation.y = bump.yaw;
-			app.scene.add(mesh);
-		}
-
-		// Start gate over the start line
-		const gate = new THREE.Group();
-		const post = new THREE.MeshStandardMaterial({ color: 0xdddddd });
-		const banner = new THREE.MeshStandardMaterial({ color: 0xd2342c });
-		const span = track.width / 2 + 1.5;
-		for (const side of [-1, 1]) {
-			const pole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 0.3), post);
-			pole.position.set(side * span, 2.5, 0);
-			gate.add(pole);
-		}
-		const top = new THREE.Mesh(
-			new THREE.BoxGeometry(span * 2, 0.9, 0.2),
-			banner,
-		);
-		top.position.set(0, 4.8, 0);
-		gate.add(top);
-		gate.position.set(...track.start.position);
-		gate.rotation.y = track.start.yaw;
-		app.scene.add(gate);
-
-		// Daylight for the open tracks
-		const sky = new THREE.Color(0x9ec4e4);
-		app.scene.background = sky;
-		app.scene.fog = new THREE.Fog(sky, 160, 650);
+		addRaceTrackArt(app.scene, track);
 		app.camera.far = 1000;
 		app.camera.updateProjectionMatrix();
 
@@ -542,6 +379,7 @@ export async function runVehicleDemo(
 	if (options.terrain === 'track') buildTrack();
 	else if (options.terrain === 'offroad') buildOffroad();
 	else buildRaceTrackTerrain(options.terrain);
+	applyTopoAtmosphere(app.scene);
 
 	// ---------------------------------------------------------------------------
 	// Vehicle
@@ -551,8 +389,16 @@ export async function runVehicleDemo(
 	const state = b3.createVehicleStateRecord();
 	const wheelRecord: VehicleWheelRecord = b3.createVehicleWheelRecord();
 
+	// Ramps, hills and rocks in the ground's tone with its contour lines, props in the accent
+	const solidMaterial = topoMaterial({ color: topo.solid });
+	const propMaterial = new THREE.MeshStandardMaterial({
+		color: topo.accent,
+		roughness: 0.8,
+	});
 	const worldRenderer = createWorldRenderer(b3, world, {
 		shouldDraw: (_shape, body) => !hidden.has(body.index1),
+		materialFor: (_shape, _body, isStatic) =>
+			isStatic ? solidMaterial : propMaterial,
 	});
 	app.scene.add(worldRenderer.object3d);
 
