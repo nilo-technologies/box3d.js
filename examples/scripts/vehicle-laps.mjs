@@ -212,7 +212,11 @@ if (isMain) {
 		else if (a === '--car') args.cars.push(argv[++i]);
 		else if (a === '--all') args.all = true;
 		else if (a === '--json') args.json = true;
-		else if (a === '--pace') args.pace = Number(argv[++i]);
+		else if (a === '--pace') {
+			args.pace = Number(argv[++i]);
+			// A fraction of the grip limit: 0 or less would never move the car
+			if (!(args.pace > 0)) throw new Error(`--pace needs a number above 0, got ${argv[i]}`);
+		}
 		else throw new Error(`unknown argument ${a}`);
 	}
 	const trackNames = args.tracks.length ? args.tracks : ['circuit', 'stage'];
@@ -235,7 +239,7 @@ if (isMain) {
 			const r = driveLap(
 				trackName,
 				vehiclePresets[name],
-				args.pace ? { pace: args.pace } : {},
+				args.pace === undefined ? {} : { pace: args.pace },
 			);
 			const pass = r.completed && r.minUp > 0.3;
 			rows.push({ track: trackName, preset: name, pass, ...r });
