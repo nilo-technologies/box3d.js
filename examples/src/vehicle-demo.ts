@@ -193,15 +193,18 @@ export async function runVehicleDemo(
 			}
 		}
 
-		// Speed bumps in the left lane
-		for (let i = 0; i < 6; i++) {
-			const bump = staticBody([-22, 0, 15 + i * 12]);
-			b3.b3CreateCapsuleShape(bump, b3.b3DefaultShapeDef(), {
-				center1: [-5, 0, 0],
-				center2: [5, 0, 0],
-				radius: 0.14,
-			});
+		// Speed humps in the left lane, shaped like real ones: 8 cm high and 3.7 m long with a
+		// rounded profile. A short, sharp ridge kicks the car far harder than any real road does.
+		const humpHeight = 0.08;
+		const humpLength = 3.7;
+		const humpPoints: number[] = [];
+		for (let k = 0; k <= 12; k++) {
+			const z = -humpLength / 2 + (k / 12) * humpLength;
+			const y =
+				humpHeight * 0.5 * (1 + Math.cos((2 * Math.PI * z) / humpLength));
+			for (const x of [-5, 5]) humpPoints.push(x, y, z, x, -0.01, z);
 		}
+		for (let i = 0; i < 6; i++) hullBody([-22, 0, 15 + i * 12], humpPoints);
 
 		// Jump ramp in the right lane, rising toward +z
 		wedge(22, 4, 20, 34, 2.6);

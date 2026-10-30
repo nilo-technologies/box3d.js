@@ -293,7 +293,9 @@ export const vehicleCars = {
 		suspension: {
 			minLength: 0.17,
 			maxLength: 0.33,
-			compressionDamping: 0.5,
+			// Low compression damping against the rebound lets sharp bumps pass through the
+			// spring instead of kicking the body, as real dampers do
+			compressionDamping: 0.3,
 			reboundDamping: 0.75,
 		},
 		tire: {
@@ -350,7 +352,7 @@ export const vehicleCars = {
 		suspension: {
 			minLength: 0.12,
 			maxLength: 0.45,
-			compressionDamping: 0.45,
+			compressionDamping: 0.3,
 			reboundDamping: 0.7,
 		},
 		tire: {
@@ -409,7 +411,9 @@ export const vehicleCars = {
 		suspension: {
 			minLength: 0.18,
 			maxLength: 0.3,
-			compressionDamping: 0.55,
+			// Low compression damping against the rebound lets sharp bumps pass through the
+			// spring instead of kicking the body, as real dampers do
+			compressionDamping: 0.35,
 			reboundDamping: 0.8,
 		},
 		tire: {
