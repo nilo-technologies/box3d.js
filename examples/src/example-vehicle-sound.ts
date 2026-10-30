@@ -170,33 +170,49 @@ window.addEventListener('blur', () => held.clear());
 // Engine and turbo model
 // ---------------------------------------------------------------------------
 
-const stageBoost = [0, 0];
+// Per stage: the shaft spool, and the pressure it delivers
+const stageSpool = [0, 0];
+const stagePressure = [0, 0];
+/** Seconds for the manifold pressure to dump through the blow-off valve, as in the engine */
+const DUMP_TIME = 0.1;
 
 const smoothstep = (a: number, b: number, x: number) => {
 	const t = Math.min(Math.max((x - a) / Math.max(b - a, 1e-6), 0), 1);
 	return t * t * (3 - 2 * t);
 };
 
-/** Boost from the turbo type's stages, each lagging toward throttle x its rpm curve */
+/**
+ * Boost from the turbo type's stages, as the engine makes it: each shaft lags toward throttle x
+ * its rpm curve, the pressure is what the shaft makes (plus the instant fraction) capped by what
+ * the throttle asks for, and it dumps within a fraction of a second on a lift while the shaft
+ * keeps spinning. Anti-lag keeps the shaft driven and the pressure up off throttle.
+ */
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];
 	const maxRpm = vehicleCars[settings.car].engine.maxRpm;
+	const load = type.antiLag ? 1 : sound.throttle;
+	const instant = type.instantFraction ?? 0;
 	let total = 0;
 	let gains = 0;
 	type.stages.forEach((stage, i) => {
 		const target =
-			sound.throttle *
-			smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
-		const time = target > stageBoost[i] ? stage.spoolTime : stage.bleedTime;
-		stageBoost[i] +=
-			(target - stageBoost[i]) * Math.min(dt / Math.max(time, 0.01), 1);
-		total += stage.gain * stageBoost[i];
+			load * smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
+		const time = target > stageSpool[i] ? stage.spoolTime : stage.bleedTime;
+		stageSpool[i] +=
+			(target - stageSpool[i]) * Math.min(dt / Math.max(time, 0.01), 1);
+		const delivered = Math.min(
+			stageSpool[i] + (target - stageSpool[i]) * instant,
+			target,
+		);
+		stagePressure[i] =
+			delivered >= stagePressure[i]
+				? delivered
+				: stagePressure[i] +
+					(delivered - stagePressure[i]) * (dt / (DUMP_TIME + dt));
+		total += stage.gain * stagePressure[i];
 		gains += stage.gain;
 	});
-	const lagged = gains > 0 ? total / gains : 0;
-	const instant = type.instantFraction ?? 0;
-	sound.boost =
-		gains > 0 ? instant * sound.throttle + (1 - instant) * lagged : 0;
+	sound.boost = gains > 0 ? total / gains : 0;
 }
 
 /** Out of gear: the rpm climbs on throttle, falls back to idle off it and bounces off the limiter */
@@ -220,7 +236,8 @@ function resetDrive(): void {
 	clock = 0;
 	phase = 'launch';
 	phaseTime = 0;
-	stageBoost.fill(0);
+	stageSpool.fill(0);
+	stagePressure.fill(0);
 	sound.engineRpm = vehicleCars[settings.car].engine.idleRpm;
 	sound.throttle = 0;
 	sound.boost = 0;
@@ -311,6 +328,8 @@ function drift(dt: number): void {
 
 function step(dt: number): void {
 	clock += dt;
+	// Boost with no lag at all comes from a belt driven supercharger
+	sound.supercharged = (turboTypes[settings.turbo].instantFraction ?? 0) >= 1;
 	switch (settings.mode) {
 		case 'manual':
 			break;

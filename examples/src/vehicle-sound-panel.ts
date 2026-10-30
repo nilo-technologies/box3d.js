@@ -100,6 +100,13 @@ const characterSliders: Slider<EngineParams>[] = [
 	['crackle', 0, 5, 0.01, 'overrun crackle'],
 ];
 
+// When the exhaust crackles: on a lift after a hard pull, from high enough revs
+const crackleSliders: Slider<EngineParams>[] = [
+	['crackleMinRpm', 1000, 8000, 50, 'crackle above (rpm)'],
+	['crackleChance', 0, 1, 0.01, 'crackle chance per lift'],
+	['crackleLength', 0.1, 4, 0.05, 'crackle burst length (s)'],
+];
+
 const classicSliders: Slider<EngineParams>[] = [
 	['pitch', 0.25, 2, 0.01, 'pitch (x firing freq)'],
 	['minPitch', 0, 120, 1, 'lowest pitch (Hz)'],
@@ -135,6 +142,8 @@ const whineSliders: Slider<TurboParams>[] = [
 
 const valveSliders: Slider<TurboParams>[] = [
 	['blowOffMinBoost', 0, 1, 0.01, 'on lift above boost'],
+	['blowOffHold', 0, 2, 0.01, 'boost held before lift (s)'],
+	['blowOffCooldown', 0, 4, 0.05, 'cooldown (s)'],
 	['blowOffVolume', 0, 2, 0.01, 'blow-off volume'],
 	['blowOffPitch', 500, 8000, 10, 'blow-off pitch (Hz)'],
 	['blowOffResonance', 0.3, 10, 0.1, 'blow-off resonance (Q)'],
@@ -218,11 +227,12 @@ export function addSoundPanel(
 	sliders(engine, params.engine, engineVolumeSliders);
 	const character = engine.addFolder('Character');
 	sliders(character, params.engine, characterSliders);
+	sliders(character, params.engine, crackleSliders);
 	character
 		.add(
 			{
 				reset: () => {
-					for (const [field] of characterSliders)
+					for (const [field] of [...characterSliders, ...crackleSliders])
 						(params.engine[field] as number) = defaultSoundParams.engine[
 							field
 						] as number;
@@ -261,7 +271,7 @@ export function addSoundPanel(
 	turbo.add(params.turbo, 'valve', valveOptions).name('on lift');
 	turbo
 		.add(params.turbo, 'liftWithoutTurbo')
-		.name('play on every lift, even without a turbo');
+		.name('also on cars without a turbo valve');
 	sliders(turbo, params.turbo, whineSliders);
 	sliders(turbo, params.turbo, valveSliders);
 
