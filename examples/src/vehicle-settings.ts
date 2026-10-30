@@ -21,6 +21,7 @@ import type {
 } from 'box3d.js';
 import type GUI from 'lil-gui';
 import {
+	findTurboType,
 	makeVehicleTurbo,
 	turboGain,
 	turboTypes,
@@ -520,8 +521,11 @@ export function createVehicleSettings(
 
 	// ---- Turbo
 	const turboFolder = root.addFolder('Turbo').close();
+	// The dropdown names the type the live turbo matches, or Custom
+	const turboTypeOf = () =>
+		findTurboType(turbo, engine.maxRpm, engine.maxTorque) ?? 'custom';
 	const turboChoice: { type: VehicleTurboName | 'custom' } = {
-		type: turboGain(turbo) > 0 ? 'custom' : 'none',
+		type: turboTypeOf(),
 	};
 	const turboOptions: Record<string, string> = { Custom: 'custom' };
 	for (const [key, t] of Object.entries(turboTypes))
@@ -898,6 +902,7 @@ export function createVehicleSettings(
 			steering: b3.b3Vehicle_GetSteering(vehicle),
 			assists: b3.b3Vehicle_GetAssists(vehicle),
 		});
+		turboChoice.type = turboTypeOf();
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,
@@ -909,7 +914,7 @@ export function createVehicleSettings(
 
 	function reset(): void {
 		copyAll(defaults);
-		turboChoice.type = turboGain(turbo) > 0 ? 'custom' : 'none';
+		turboChoice.type = turboTypeOf();
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,

@@ -173,7 +173,7 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 		source.start(t);
 	}
 
-	// Blow-off valve: a short hiss of noise when the throttle closes on boost
+	// Blow-off valve: a short hiss when the throttle closes on boost
 	function blowOff(strength: number) {
 		if (!context || !nodes) return;
 		const source = context.createBufferSource();

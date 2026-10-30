@@ -198,6 +198,16 @@ export function makeVehicleTurbo(
 	ratedTorque: number,
 ): b3VehicleTurbo;
 
+/**
+ * The type in turboTypes this turbo was fitted from, for an engine with this max rpm and base
+ * peak torque, or null for a custom turbo
+ */
+export function findTurboType(
+	turbo: b3VehicleTurbo,
+	maxRpm: number,
+	maxTorque: number,
+): VehicleTurboName | null;
+
 /** Swaps the forced induction, keeping the engine's rated peak torque */
 export function applyTurbo(
 	def: b3VehicleDef,

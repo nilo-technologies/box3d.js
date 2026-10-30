@@ -654,7 +654,10 @@ function parseArgs(argv) {
 		else if (a === '--json') args.json = true;
 		else if (a === '--quick') args.quick = true;
 		else if (a === '--perturb') args.perturb = true;
-		else if (a === '--turbo') args.turbo = argv[++i];
+		else if (a === '--turbo') {
+			args.turbo = argv[++i];
+			if (!args.turbo || args.turbo.startsWith('--')) throw new Error('--turbo needs a type');
+		}
 		else throw new Error(`unknown argument ${a}`);
 	}
 	return args;

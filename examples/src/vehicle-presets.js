@@ -721,6 +721,28 @@ export function makeVehicleTurbo(type, maxRpm, ratedTorque) {
 	};
 }
 
+const close = (a, b) => Math.abs(a - b) <= 1e-3 * Math.max(1, Math.abs(b));
+
+/**
+ * The type in turboTypes this turbo was fitted from, for an engine with this max rpm and base
+ * peak torque, or null for a custom turbo
+ */
+export function findTurboType(turbo, maxRpm, maxTorque) {
+	const rated = maxTorque * (1 + turboGain(turbo));
+	for (const type of Object.keys(turboTypes)) {
+		const t = makeVehicleTurbo(type, maxRpm, rated);
+		const same =
+			turbo.stages.every((stage, i) =>
+				Object.keys(stage).every((key) => close(stage[key], t.stages[i][key])),
+			) &&
+			close(turbo.instantFraction, t.instantFraction) &&
+			close(turbo.parasiticTorque, t.parasiticTorque) &&
+			turbo.antiLag === t.antiLag;
+		if (same) return type;
+	}
+	return null;
+}
+
 /** Swaps the forced induction, keeping the engine's rated peak torque */
 export function applyTurbo(def, type) {
 	const rated = def.engine.maxTorque * (1 + turboGain(def.turbo));

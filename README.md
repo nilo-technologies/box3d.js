@@ -287,12 +287,6 @@ npm install box3d.js
         Vehicle: preset showcase
       </a>
     </td>
-    <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-sound">
-        <img src="./examples/public/screenshots/example-vehicle-sound.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: sound lab
-      </a>
-    </td>
   </tr>
 </table>
 
