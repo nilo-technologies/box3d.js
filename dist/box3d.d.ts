@@ -35,7 +35,7 @@ export type DebugDrawRole = DebugDrawRoleValue<0>|DebugDrawRoleValue<1>|DebugDra
 export interface b3JointTypeValue<T extends number> {
   value: T;
 }
-export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>;
+export type b3JointType = b3JointTypeValue<0>|b3JointTypeValue<1>|b3JointTypeValue<2>|b3JointTypeValue<3>|b3JointTypeValue<4>|b3JointTypeValue<5>|b3JointTypeValue<6>|b3JointTypeValue<7>|b3JointTypeValue<8>|b3JointTypeValue<9>|b3JointTypeValue<10>|b3JointTypeValue<11>|b3JointTypeValue<12>;
 
 export interface b3HullData extends ClassHandle {
 }
@@ -136,6 +136,24 @@ export interface DebugDrawBufferImpl extends ClassHandle {
   loadFrom(_0: b3WorldId, _1: any): void;
 }
 
+export interface b3VehicleCastTypeValue<T extends number> {
+  value: T;
+}
+export type b3VehicleCastType = b3VehicleCastTypeValue<0>|b3VehicleCastTypeValue<1>|b3VehicleCastTypeValue<2>;
+
+export interface b3VehicleTransmissionModeValue<T extends number> {
+  value: T;
+}
+export type b3VehicleTransmissionMode = b3VehicleTransmissionModeValue<0>|b3VehicleTransmissionModeValue<1>;
+
+export interface VehicleStateBufferImpl extends ClassHandle {
+  load(_0: b3VehicleId): void;
+  wheelCount(): number;
+  i32Ptr(): number;
+  f32Ptr(): number;
+  f64Ptr(): number;
+}
+
 export type b3MotionLocks = {
   linearX: boolean,
   linearY: boolean,
@@ -199,6 +217,12 @@ export type b3Capacity = {
 export type b3TreeStats = {
   nodeVisits: number,
   leafVisits: number
+};
+
+export type b3VehicleId = {
+  index1: number,
+  world0: number,
+  generation: number
 };
 
 export type b3ContactId = {
@@ -368,6 +392,7 @@ export type b3ShapeDef = {
   invokeContactCreation: boolean,
   updateBodyMass: boolean,
   enableSpeculativeContact: boolean,
+  meshRestOffset: number,
   internalValue: number
 };
 
@@ -474,7 +499,9 @@ export type b3DistanceJointDef = {
   maxLength: number,
   enableMotor: boolean,
   maxMotorForce: number,
-  motorSpeed: number
+  motorSpeed: number,
+  springStiffness: number,
+  springDamping: number
 };
 
 export type b3RevoluteJointDef = {
@@ -503,6 +530,49 @@ export type b3PrismaticJointDef = {
   enableMotor: boolean,
   maxMotorForce: number,
   motorSpeed: number
+};
+
+export type b3CylindricalJointDef = {
+  base: b3JointDef,
+  localSlideAxisA: b3Vec3,
+  enableSpring: boolean,
+  hertz: number,
+  dampingRatio: number,
+  targetTranslation: number,
+  enableLimit: boolean,
+  lowerTranslation: number,
+  upperTranslation: number,
+  enableMotor: boolean,
+  maxMotorForce: number,
+  motorSpeed: number,
+  enableAngularSpring: boolean,
+  angularHertz: number,
+  angularDampingRatio: number,
+  targetAngle: number,
+  enableAngularLimit: boolean,
+  lowerAngle: number,
+  upperAngle: number,
+  enableAngularMotor: boolean,
+  maxMotorTorque: number,
+  angularMotorSpeed: number
+};
+
+export type b3MoverJointDef = {
+  base: b3JointDef,
+  linearVelocity: b3Vec3,
+  maxForce: number
+};
+
+export type b3PogoJointDef = {
+  base: b3JointDef,
+  normal: b3Vec3,
+  hertz: number,
+  dampingRatio: number,
+  restLength: number,
+  maxTensionForce: number,
+  maxCompressionForce: number,
+  impulse: number,
+  velocity: number
 };
 
 export type b3WheelJointDef = {
@@ -571,24 +641,6 @@ export type b3ParallelJointDef = {
   maxTorque: number
 };
 
-export type b3MoverJointDef = {
-  base: b3JointDef,
-  linearVelocity: b3Vec3,
-  maxForce: number
-};
-
-export type b3PogoJointDef = {
-  base: b3JointDef,
-  normal: b3Vec3,
-  hertz: number,
-  dampingRatio: number,
-  restLength: number,
-  maxTensionForce: number,
-  maxCompressionForce: number,
-  impulse: number,
-  velocity: number
-};
-
 export type b3MassData = {
   mass: number,
   center: b3Vec3,
@@ -630,12 +682,218 @@ export type b3ContactHitEvent = {
   userMaterialIdB: bigint
 };
 
+export type b3VehicleSuspension = {
+  minLength: number,
+  maxLength: number,
+  preload: number,
+  frequency: number,
+  compressionDamping: number,
+  reboundDamping: number,
+  enableBumpStop: boolean
+};
+
+export type b3VehicleTire = {
+  longitudinalPeakSlip: number,
+  longitudinalPeakFriction: number,
+  longitudinalSlideSlip: number,
+  longitudinalSlideFriction: number,
+  lateralPeakAngle: number,
+  lateralPeakFriction: number,
+  lateralSlideAngle: number,
+  lateralSlideFriction: number,
+  rollingResistance: number,
+  longitudinalRelaxationLength: number
+};
+
+export type b3VehicleWheelDef = {
+  position: b3Vec3,
+  radius: number,
+  width: number,
+  inertia: number,
+  steerFactor: number,
+  maxBrakeTorque: number,
+  maxHandBrakeTorque: number,
+  angularDamping: number,
+  castType: b3VehicleCastType,
+  suspension: b3VehicleSuspension,
+  tire: b3VehicleTire
+};
+
+export type b3VehicleWheels = [ b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef, b3VehicleWheelDef ];
+
+export type b3VehicleChassis = {
+  mass: number,
+  autoCenterOfMass: boolean,
+  centerOfMassOffset: b3Vec3,
+  forward: b3Vec3,
+  up: b3Vec3,
+  maxSlopeAngle: number,
+  castFilter: b3QueryFilter
+};
+
+export type b3VehicleEngine = {
+  maxTorque: number,
+  peakTorqueRpm: number,
+  idleTorqueScale: number,
+  maxRpmTorqueScale: number,
+  idleRpm: number,
+  maxRpm: number,
+  inertia: number,
+  angularDamping: number
+};
+
+export type b3VehicleTurboStage = {
+  gain: number,
+  spoolRpm: number,
+  fullBoostRpm: number,
+  spoolTime: number,
+  bleedTime: number
+};
+
+export type b3VehicleTurboStages = [ b3VehicleTurboStage, b3VehicleTurboStage ];
+
+export type b3VehicleTurbo = {
+  stages: b3VehicleTurboStages,
+  instantFraction: number,
+  parasiticTorque: number,
+  antiLag: boolean
+};
+
+export type b3VehicleGearRatios = [ number, number, number, number, number, number, number, number ];
+
+export type b3VehicleTransmission = {
+  mode: b3VehicleTransmissionMode,
+  gearRatios: b3VehicleGearRatios,
+  gearCount: number,
+  reverseRatio: number,
+  finalDrive: number,
+  shiftUpRpm: number,
+  shiftDownRpm: number,
+  shiftTime: number,
+  clutchReleaseTime: number,
+  shiftLatency: number,
+  clutchStrength: number
+};
+
+export type b3VehicleDifferential = {
+  leftWheel: number,
+  rightWheel: number,
+  torqueRatio: number,
+  leftRightSplit: number,
+  limitedSlipRatio: number
+};
+
+export type b3VehicleDifferentials = [ b3VehicleDifferential, b3VehicleDifferential, b3VehicleDifferential, b3VehicleDifferential ];
+
+export type b3VehicleDrivetrain = {
+  differentials: b3VehicleDifferentials,
+  differentialCount: number,
+  centerLimitedSlipRatio: number
+};
+
+export type b3VehicleAntiRollBar = {
+  leftWheel: number,
+  rightWheel: number,
+  stiffness: number
+};
+
+export type b3VehicleAntiRollBars = [ b3VehicleAntiRollBar, b3VehicleAntiRollBar, b3VehicleAntiRollBar, b3VehicleAntiRollBar ];
+
+export type b3VehicleAntiRoll = {
+  bars: b3VehicleAntiRollBars,
+  barCount: number
+};
+
+export type b3VehicleSteering = {
+  maxAngle: number,
+  speedReference: number,
+  steerSpeed: number,
+  returnSpeed: number,
+  ackermann: number
+};
+
+export type b3VehicleAssists = {
+  counterSteer: number,
+  driftGripScale: number,
+  tractionControl: boolean,
+  abs: boolean,
+  downforce: number,
+  drag: number,
+  rollInfluence: number,
+  airControl: number,
+  airAngularDamping: number,
+  selfRighting: number,
+  maxTiltAngle: number,
+  stickyTire: boolean,
+  stickySpeed: number,
+  stickyTime: number,
+  brakeReverse: boolean,
+  launchControl: boolean
+};
+
+export type b3VehicleDef = {
+  chassisId: b3BodyId,
+  chassis: b3VehicleChassis,
+  wheels: b3VehicleWheels,
+  wheelCount: number,
+  engine: b3VehicleEngine,
+  turbo: b3VehicleTurbo,
+  transmission: b3VehicleTransmission,
+  drivetrain: b3VehicleDrivetrain,
+  antiRoll: b3VehicleAntiRoll,
+  steering: b3VehicleSteering,
+  assists: b3VehicleAssists,
+  internalValue: number
+};
+
+export type b3VehicleInput = {
+  forward: number,
+  brake: number,
+  steer: number,
+  handbrake: number
+};
+
+export type b3VehicleState = {
+  speed: number,
+  engineRpm: number,
+  boost: number,
+  gear: number,
+  isShifting: boolean,
+  throttle: number,
+  brake: number,
+  steerAngle: number,
+  wheelsInContact: number,
+  stuck: boolean,
+  isLaunching: boolean
+};
+
+export type b3VehicleWheelState = {
+  hasContact: boolean,
+  contactPoint: b3Vec3,
+  contactNormal: b3Vec3,
+  groundShapeId: b3ShapeId,
+  userMaterialId: bigint,
+  suspensionLength: number,
+  compression: number,
+  load: number,
+  longitudinalForce: number,
+  lateralForce: number,
+  slipRatio: number,
+  slipAngle: number,
+  angularVelocity: number,
+  rotationAngle: number,
+  steerAngle: number,
+  driveTorque: number,
+  brakeTorque: number,
+  isSticky: boolean
+};
+
 interface EmbindModule {
   b3BodyType: {b3_staticBody: b3BodyTypeValue<0>, b3_kinematicBody: b3BodyTypeValue<1>, b3_dynamicBody: b3BodyTypeValue<2>};
   b3ShapeType: {b3_capsuleShape: b3ShapeTypeValue<0>, b3_compoundShape: b3ShapeTypeValue<1>, b3_heightShape: b3ShapeTypeValue<2>, b3_hullShape: b3ShapeTypeValue<3>, b3_meshShape: b3ShapeTypeValue<4>, b3_sphereShape: b3ShapeTypeValue<5>};
   DebugShapeState: {static: DebugShapeStateValue<0>, kinematic: DebugShapeStateValue<1>, kinematicSleeping: DebugShapeStateValue<2>, awake: DebugShapeStateValue<3>, sleeping: DebugShapeStateValue<4>, sensor: DebugShapeStateValue<5>, disabled: DebugShapeStateValue<6>, fast: DebugShapeStateValue<7>, bullet: DebugShapeStateValue<8>, speedCapped: DebugShapeStateValue<9>, timeOfImpact: DebugShapeStateValue<10>, invalidMass: DebugShapeStateValue<11>, custom: DebugShapeStateValue<12>};
   DebugDrawRole: {bounds: DebugDrawRoleValue<0>, joints: DebugDrawRoleValue<1>, mass: DebugDrawRoleValue<2>, contactPoints: DebugDrawRoleValue<3>, contactNormals: DebugDrawRoleValue<4>, contactForces: DebugDrawRoleValue<5>, frictionForces: DebugDrawRoleValue<6>, contactFeatures: DebugDrawRoleValue<7>, islands: DebugDrawRoleValue<8>, graphColors: DebugDrawRoleValue<9>};
-  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>};
+  b3JointType: {b3_parallelJoint: b3JointTypeValue<0>, b3_distanceJoint: b3JointTypeValue<1>, b3_filterJoint: b3JointTypeValue<2>, b3_motorJoint: b3JointTypeValue<3>, b3_prismaticJoint: b3JointTypeValue<4>, b3_revoluteJoint: b3JointTypeValue<5>, b3_sphericalJoint: b3JointTypeValue<6>, b3_weldJoint: b3JointTypeValue<7>, b3_wheelJoint: b3JointTypeValue<8>, b3_moverJoint: b3JointTypeValue<9>, b3_pogoJoint: b3JointTypeValue<10>, b3_vehicleWheelJoint: b3JointTypeValue<11>, b3_cylindricalJoint: b3JointTypeValue<12>};
   b3HullData: {};
   b3MeshData: {};
   b3CompoundData: {};
@@ -656,6 +914,11 @@ interface EmbindModule {
   b3DynamicTree: {};
   DebugDrawBufferImpl: {
     new(): DebugDrawBufferImpl;
+  };
+  b3VehicleCastType: {b3_vehicleCastCylinder: b3VehicleCastTypeValue<0>, b3_vehicleCastSphere: b3VehicleCastTypeValue<1>, b3_vehicleCastRay: b3VehicleCastTypeValue<2>};
+  b3VehicleTransmissionMode: {b3_vehicleTransmissionAuto: b3VehicleTransmissionModeValue<0>, b3_vehicleTransmissionManual: b3VehicleTransmissionModeValue<1>};
+  VehicleStateBufferImpl: {
+    new(): VehicleStateBufferImpl;
   };
   b3DestroyHull(hull: b3HullData | null): void;
   b3DestroyMesh(mesh: b3MeshData | null): void;
@@ -682,9 +945,8 @@ interface EmbindModule {
   b3Body_IsValid(id: b3BodyId): boolean;
   b3Body_GetType(bodyId: b3BodyId): b3BodyType;
   b3Body_SetType(bodyId: b3BodyId, type: b3BodyType): void;
+  b3Body_ClearConstantForces(bodyId: b3BodyId): void;
   b3Body_ApplyMassFromShapes(bodyId: b3BodyId): void;
-  b3Body_AllowFastRotation(bodyId: b3BodyId, flag: boolean): void;
-  b3Body_IsFastRotationAllowed(bodyId: b3BodyId): boolean;
   b3Body_IsAwake(bodyId: b3BodyId): boolean;
   b3Body_SetAwake(bodyId: b3BodyId, awake: boolean): void;
   b3Body_EnableSleep(bodyId: b3BodyId, enableSleep: boolean): void;
@@ -699,6 +961,8 @@ interface EmbindModule {
   b3Body_EnableContactRecycling(bodyId: b3BodyId, flag: boolean): void;
   b3Body_IsContactRecyclingEnabled(bodyId: b3BodyId): boolean;
   b3Body_EnableHitEvents(bodyId: b3BodyId, enableHitEvents: boolean): void;
+  b3Body_AllowFastRotation(bodyId: b3BodyId, flag: boolean): void;
+  b3Body_IsFastRotationAllowed(bodyId: b3BodyId): boolean;
   b3Body_GetWorld(bodyId: b3BodyId): b3WorldId;
   b3Body_GetShapes(bodyId: b3BodyId): b3ShapeIdVector;
   b3Body_GetJoints(bodyId: b3BodyId): b3JointIdVector;
@@ -715,6 +979,10 @@ interface EmbindModule {
   b3Shape_ArePreSolveEventsEnabled(shapeId: b3ShapeId): boolean;
   b3Shape_EnableHitEvents(shapeId: b3ShapeId, flag: boolean): void;
   b3Shape_AreHitEventsEnabled(shapeId: b3ShapeId): boolean;
+  b3Shape_SetHull(shapeId: b3ShapeId, hull: b3HullData | null): void;
+  b3Shape_Enable(shapeId: b3ShapeId): void;
+  b3Shape_Disable(shapeId: b3ShapeId): void;
+  b3Shape_IsEnabled(shapeId: b3ShapeId): boolean;
   b3DestroyShape(shapeId: b3ShapeId, updateBodyMass: boolean): void;
   b3DestroyJoint(jointId: b3JointId, wakeAttached: boolean): void;
   b3Joint_IsValid(id: b3JointId): boolean;
@@ -738,6 +1006,18 @@ interface EmbindModule {
   b3PrismaticJoint_IsLimitEnabled(jointId: b3JointId): boolean;
   b3PrismaticJoint_EnableMotor(jointId: b3JointId, enableMotor: boolean): void;
   b3PrismaticJoint_IsMotorEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableSpring(jointId: b3JointId, enableSpring: boolean): void;
+  b3CylindricalJoint_IsSpringEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableLimit(jointId: b3JointId, enableLimit: boolean): void;
+  b3CylindricalJoint_IsLimitEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableMotor(jointId: b3JointId, enableMotor: boolean): void;
+  b3CylindricalJoint_IsMotorEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableAngularSpring(jointId: b3JointId, enableSpring: boolean): void;
+  b3CylindricalJoint_IsAngularSpringEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableAngularLimit(jointId: b3JointId, enableLimit: boolean): void;
+  b3CylindricalJoint_IsAngularLimitEnabled(jointId: b3JointId): boolean;
+  b3CylindricalJoint_EnableAngularMotor(jointId: b3JointId, enableMotor: boolean): void;
+  b3CylindricalJoint_IsAngularMotorEnabled(jointId: b3JointId): boolean;
   b3RevoluteJoint_EnableSpring(jointId: b3JointId, enableSpring: boolean): void;
   b3RevoluteJoint_IsSpringEnabled(jointId: b3JointId): boolean;
   b3RevoluteJoint_EnableLimit(jointId: b3JointId, enableLimit: boolean): void;
@@ -763,6 +1043,7 @@ interface EmbindModule {
   b3WheelJoint_EnableSteeringLimit(jointId: b3JointId, flag: boolean): void;
   b3WheelJoint_IsSteeringLimitEnabled(jointId: b3JointId): boolean;
   b3World_GetMaxCapacity(worldId: b3WorldId): b3Capacity;
+  b3World_SetMixingRules(worldId: b3WorldId, frictionRule: number, restitutionRule: number): void;
   b3GetWorldCount(): number;
   b3GetMaxWorldCount(): number;
   b3World_SetRestitutionIterations(worldId: b3WorldId, iterations: number): void;
@@ -777,7 +1058,14 @@ interface EmbindModule {
   b3DynamicTree_Rebuild(tree: b3DynamicTree | null, fullBuild: boolean): number;
   b3DynamicTree_GetHeight(tree: b3DynamicTree | null): number;
   b3DynamicTree_GetProxyCount(tree: b3DynamicTree | null): number;
-  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
+  b3DynamicTree_GetByteCount(tree: b3DynamicTree | null): number;
+  b3DestroyVehicle(vehicleId: b3VehicleId): void;
+  b3Vehicle_IsValid(vehicleId: b3VehicleId): boolean;
+  b3Vehicle_GetChassisBody(vehicleId: b3VehicleId): b3BodyId;
+  b3Vehicle_GetWheelCount(vehicleId: b3VehicleId): number;
+  b3Vehicle_SetGear(vehicleId: b3VehicleId, gear: number): void;
+  b3World_GetVehicleCount(worldId: b3WorldId): number;
+  b3World_GetGravity(out: b3Vec3, worldId: b3WorldId): b3Vec3;
   b3World_GetBounds(out: b3AABB, worldId: b3WorldId): b3AABB;
   b3Body_GetPosition(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetRotation(out: b3Quat, bodyId: b3BodyId): b3Quat;
@@ -786,12 +1074,16 @@ interface EmbindModule {
   b3Body_GetAngularVelocity(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetLocalCenter(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_GetWorldCenter(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
+  b3Body_GetMaxExtent(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
+  b3Body_GetMaxExtentOrigin(out: b3Vec3, bodyId: b3BodyId): b3Vec3;
   b3Body_ComputeAABB(out: b3AABB, bodyId: b3BodyId): b3AABB;
   b3Shape_GetAABB(out: b3AABB, shapeId: b3ShapeId): b3AABB;
   b3Joint_GetLocalFrameA(outPosition: b3Vec3, outRotation: b3Quat, jointId: b3JointId): [ b3Vec3, b3Quat ];
   b3Joint_GetLocalFrameB(outPosition: b3Vec3, outRotation: b3Quat, jointId: b3JointId): [ b3Vec3, b3Quat ];
   b3Joint_GetConstraintForce(out: b3Vec3, jointId: b3JointId): b3Vec3;
   b3Joint_GetConstraintTorque(out: b3Vec3, jointId: b3JointId): b3Vec3;
+  b3MoverJoint_GetLinearVelocity(out: b3Vec3, jointId: b3JointId): b3Vec3;
+  b3PogoJoint_GetNormal(out: b3Vec3, jointId: b3JointId): b3Vec3;
   b3CreateRecording(byteCapacity: number): number;
   b3DestroyRecording(recording: number): void;
   b3World_StartRecording(worldId: b3WorldId, recording: number): void;
@@ -799,6 +1091,8 @@ interface EmbindModule {
   b3RecPlayer_CreateFromRecording(recording: number, workerCount: number): number;
   b3DestroyPlayer(player: number): void;
   b3RecPlayer_StepFrame(player: number): boolean;
+  b3RecPlayer_SubStepFrame(player: number): void;
+  b3RecPlayer_IsAtPreStep(player: number): boolean;
   b3RecPlayer_Restart(player: number): void;
   b3RecPlayer_SeekFrame(player: number, frame: number): void;
   b3RecPlayer_GetWorldId(player: number): b3WorldId;
@@ -810,6 +1104,7 @@ interface EmbindModule {
   b3RecPlayer_HasDiverged(player: number): boolean;
   b3RecPlayer_GetDivergeFrame(player: number): number;
   b3RecPlayer_SetWorkerCount(player: number, count: number): void;
+  b3Vehicle_GetWheelTransform(outPosition: b3Vec3, outRotation: b3Quat, vehicleId: b3VehicleId, wheelIndex: number): [ b3Vec3, b3Quat ];
   b3GetByteCount(): bigint;
   b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3DefaultFilter(): b3Filter;
@@ -834,26 +1129,27 @@ interface EmbindModule {
   b3Body_ApplyLinearImpulse(bodyId: b3BodyId, impulse: b3Vec3, point: b3Vec3, wake: boolean): void;
   b3Body_ApplyLinearImpulseToCenter(bodyId: b3BodyId, impulse: b3Vec3, wake: boolean): void;
   b3Body_ApplyAngularImpulse(bodyId: b3BodyId, impulse: b3Vec3, wake: boolean): void;
+  b3Body_SetConstantTorque(bodyId: b3BodyId, torque: b3Vec3): void;
   b3Shape_GetClosestPoint(out: b3Vec3, shapeId: b3ShapeId, target: b3Vec3): b3Vec3;
   b3MotorJoint_SetLinearVelocity(jointId: b3JointId, velocity: b3Vec3): void;
   b3MotorJoint_GetLinearVelocity(jointId: b3JointId): b3Vec3;
   b3MotorJoint_SetAngularVelocity(jointId: b3JointId, velocity: b3Vec3): void;
   b3MotorJoint_GetAngularVelocity(jointId: b3JointId): b3Vec3;
-  b3MoverJoint_SetLinearVelocity(jointId: b3JointId, velocity: b3Vec3): void;
-  b3MoverJoint_GetLinearVelocity(jointId: b3JointId): b3Vec3;
-  b3PogoJoint_SetNormal(jointId: b3JointId, normal: b3Vec3): void;
-  b3PogoJoint_GetNormal(jointId: b3JointId): b3Vec3;
   b3SphericalJoint_SetMotorVelocity(jointId: b3JointId, velocity: b3Vec3): void;
   b3SphericalJoint_GetMotorVelocity(jointId: b3JointId): b3Vec3;
   b3SphericalJoint_GetMotorTorque(jointId: b3JointId): b3Vec3;
+  b3MoverJoint_SetLinearVelocity(jointId: b3JointId, velocity: b3Vec3): void;
+  b3PogoJoint_SetNormal(jointId: b3JointId, normal: b3Vec3): void;
   b3Body_GetLocalRotationalInertia(bodyId: b3BodyId): b3Matrix3;
   b3Body_GetWorldInverseRotationalInertia(bodyId: b3BodyId): b3Matrix3;
   b3CloneAndTransformHull(original: b3HullData | null, transform: b3Transform, scale: b3Vec3): b3HullData | null;
+  b3Shape_SetBakedHull(shapeId: b3ShapeId, hull: b3HullData | null, transform: b3Transform, scale: b3Vec3, updateBodyMass: boolean): boolean;
   b3Joint_SetLocalFrameA(jointId: b3JointId, localFrame: b3Transform): void;
   b3Joint_SetLocalFrameB(jointId: b3JointId, localFrame: b3Transform): void;
   b3Body_SetTransform(bodyId: b3BodyId, position: b3Vec3, rotation: b3Quat): void;
   b3SphericalJoint_SetTargetRotation(jointId: b3JointId, targetRotation: b3Quat): void;
   b3SphericalJoint_GetTargetRotation(jointId: b3JointId): b3Quat;
+  b3Vehicle_Reset(vehicleId: b3VehicleId, position: b3Vec3, rotation: b3Quat): void;
   b3ComputeHullAABB(hull: b3HullData | null, transform: b3Transform): b3AABB;
   b3DynamicTree_CreateProxy(tree: b3DynamicTree | null, aabb: b3AABB, categoryBits: number, userData: number): number;
   b3DynamicTree_MoveProxy(tree: b3DynamicTree | null, proxyId: number, aabb: b3AABB): void;
@@ -867,6 +1163,7 @@ interface EmbindModule {
   b3Shape_SetCapsule(shapeId: b3ShapeId, capsule: b3Capsule): void;
   b3DefaultSurfaceMaterial(): b3SurfaceMaterial;
   b3Shape_SetSurfaceMaterial(shapeId: b3ShapeId, surfaceMaterial: b3SurfaceMaterial): void;
+  b3Shape_SetMeshMaterial(shapeId: b3ShapeId, surfaceMaterial: b3SurfaceMaterial, index: number): void;
   b3Shape_GetSurfaceMaterial(shapeId: b3ShapeId): b3SurfaceMaterial;
   b3DefaultWorldDef(): b3WorldDef;
   b3CreateWorld(worldDef: b3WorldDef): b3WorldId;
@@ -886,12 +1183,12 @@ interface EmbindModule {
   b3World_SetHitEventThreshold(worldId: b3WorldId, value: number): void;
   b3World_GetHitEventThreshold(worldId: b3WorldId): number;
   b3World_SetContactTuning(worldId: b3WorldId, hertz: number, dampingRatio: number, contactSpeed: number): void;
-  b3World_SetIsotropicInertiaTolerance(worldId: b3WorldId, tolerance: number): void;
-  b3World_GetIsotropicInertiaTolerance(worldId: b3WorldId): number;
   b3World_SetContactRecycleDistance(worldId: b3WorldId, recycleDistance: number): void;
   b3World_GetContactRecycleDistance(worldId: b3WorldId): number;
   b3World_SetMaximumLinearSpeed(worldId: b3WorldId, maximumLinearSpeed: number): void;
   b3World_GetMaximumLinearSpeed(worldId: b3WorldId): number;
+  b3World_SetIsotropicInertiaTolerance(worldId: b3WorldId, tolerance: number): void;
+  b3World_GetIsotropicInertiaTolerance(worldId: b3WorldId): number;
   b3CreateBoxShape(bodyId: b3BodyId, shapeDef: b3ShapeDef, hx: number, hy: number, hz: number): b3ShapeId;
   b3CreateCylinder(height: number, radius: number, yOffset: number, sides: number): b3HullData | null;
   b3CreateCone(height: number, radius1: number, radius2: number, slices: number): b3HullData | null;
@@ -914,16 +1211,19 @@ interface EmbindModule {
   b3Body_GetAngularDamping(bodyId: b3BodyId): number;
   b3Body_SetGravityScale(bodyId: b3BodyId, gravityScale: number): void;
   b3Body_GetGravityScale(bodyId: b3BodyId): number;
-  b3Body_SetSafetyFactor(bodyId: b3BodyId, safetyFactor: number): void;
-  b3Body_GetSafetyFactor(bodyId: b3BodyId): number;
   b3Body_SetSleepThreshold(bodyId: b3BodyId, sleepThreshold: number): void;
   b3Body_GetSleepThreshold(bodyId: b3BodyId): number;
+  b3Body_SetSafetyFactor(bodyId: b3BodyId, safetyFactor: number): void;
+  b3Body_GetSafetyFactor(bodyId: b3BodyId): number;
+  b3Body_GetMinExtent(bodyId: b3BodyId): number;
   b3Shape_SetDensity(shapeId: b3ShapeId, density: number, updateBodyMass: boolean): void;
   b3Shape_GetDensity(shapeId: b3ShapeId): number;
   b3Shape_SetFriction(shapeId: b3ShapeId, friction: number): void;
   b3Shape_GetFriction(shapeId: b3ShapeId): number;
   b3Shape_SetRestitution(shapeId: b3ShapeId, restitution: number): void;
   b3Shape_GetRestitution(shapeId: b3ShapeId): number;
+  b3Shape_SetMeshRestOffset(shapeId: b3ShapeId, restOffset: number): void;
+  b3Shape_GetMeshRestOffset(shapeId: b3ShapeId): number;
   b3Shape_ApplyWind(shapeId: b3ShapeId, wind: b3Vec3, drag: number, lift: number, maxSpeed: number, wake: boolean): void;
   b3DefaultFilterJointDef(): b3FilterJointDef;
   b3CreateFilterJoint(worldId: b3WorldId, def: b3FilterJointDef): b3JointId;
@@ -933,6 +1233,12 @@ interface EmbindModule {
   b3CreateRevoluteJoint(worldId: b3WorldId, def: b3RevoluteJointDef): b3JointId;
   b3DefaultPrismaticJointDef(): b3PrismaticJointDef;
   b3CreatePrismaticJoint(worldId: b3WorldId, def: b3PrismaticJointDef): b3JointId;
+  b3DefaultCylindricalJointDef(): b3CylindricalJointDef;
+  b3CreateCylindricalJoint(worldId: b3WorldId, def: b3CylindricalJointDef): b3JointId;
+  b3DefaultMoverJointDef(): b3MoverJointDef;
+  b3CreateMoverJoint(worldId: b3WorldId, def: b3MoverJointDef): b3JointId;
+  b3DefaultPogoJointDef(): b3PogoJointDef;
+  b3CreatePogoJoint(worldId: b3WorldId, def: b3PogoJointDef): b3JointId;
   b3DefaultWheelJointDef(): b3WheelJointDef;
   b3CreateWheelJoint(worldId: b3WorldId, def: b3WheelJointDef): b3JointId;
   b3DefaultWeldJointDef(): b3WeldJointDef;
@@ -943,10 +1249,6 @@ interface EmbindModule {
   b3CreateMotorJoint(worldId: b3WorldId, def: b3MotorJointDef): b3JointId;
   b3DefaultParallelJointDef(): b3ParallelJointDef;
   b3CreateParallelJoint(worldId: b3WorldId, def: b3ParallelJointDef): b3JointId;
-  b3DefaultMoverJointDef(): b3MoverJointDef;
-  b3CreateMoverJoint(worldId: b3WorldId, def: b3MoverJointDef): b3JointId;
-  b3DefaultPogoJointDef(): b3PogoJointDef;
-  b3CreatePogoJoint(worldId: b3WorldId, def: b3PogoJointDef): b3JointId;
   b3Joint_GetLinearSeparation(jointId: b3JointId): number;
   b3Joint_GetAngularSeparation(jointId: b3JointId): number;
   b3Joint_SetConstraintTuning(jointId: b3JointId, hertz: number, dampingRatio: number): void;
@@ -967,6 +1269,9 @@ interface EmbindModule {
   b3DistanceJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
   b3DistanceJoint_GetSpringHertz(jointId: b3JointId): number;
   b3DistanceJoint_GetSpringDampingRatio(jointId: b3JointId): number;
+  b3DistanceJoint_SetSpringStiffness(jointId: b3JointId, stiffness: number, damping: number): void;
+  b3DistanceJoint_GetSpringStiffness(jointId: b3JointId): number;
+  b3DistanceJoint_GetSpringDamping(jointId: b3JointId): number;
   b3DistanceJoint_SetLengthRange(jointId: b3JointId, minLength: number, maxLength: number): void;
   b3DistanceJoint_GetMinLength(jointId: b3JointId): number;
   b3DistanceJoint_GetMaxLength(jointId: b3JointId): number;
@@ -992,21 +1297,6 @@ interface EmbindModule {
   b3MotorJoint_GetMaxSpringForce(jointId: b3JointId): number;
   b3MotorJoint_SetMaxSpringTorque(jointId: b3JointId, maxTorque: number): void;
   b3MotorJoint_GetMaxSpringTorque(jointId: b3JointId): number;
-  b3MoverJoint_SetMaxVelocityForce(jointId: b3JointId, maxForce: number): void;
-  b3MoverJoint_GetMaxVelocityForce(jointId: b3JointId): number;
-  b3PogoJoint_SetRestLength(jointId: b3JointId, length: number): void;
-  b3PogoJoint_GetRestLength(jointId: b3JointId): number;
-  b3PogoJoint_SetSpringHertz(jointId: b3JointId, hertz: number): void;
-  b3PogoJoint_GetSpringHertz(jointId: b3JointId): number;
-  b3PogoJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
-  b3PogoJoint_GetSpringDampingRatio(jointId: b3JointId): number;
-  b3PogoJoint_SetMaxTensionForce(jointId: b3JointId, force: number): void;
-  b3PogoJoint_GetMaxTensionForce(jointId: b3JointId): number;
-  b3PogoJoint_SetMaxCompressionForce(jointId: b3JointId, force: number): void;
-  b3PogoJoint_GetMaxCompressionForce(jointId: b3JointId): number;
-  b3PogoJoint_GetCurrentLength(jointId: b3JointId): number;
-  b3PogoJoint_GetCurrentSpeed(jointId: b3JointId): number;
-  b3PogoJoint_GetImpulse(jointId: b3JointId): number;
   b3PrismaticJoint_SetSpringHertz(jointId: b3JointId, hertz: number): void;
   b3PrismaticJoint_GetSpringHertz(jointId: b3JointId): number;
   b3PrismaticJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
@@ -1023,6 +1313,38 @@ interface EmbindModule {
   b3PrismaticJoint_GetMotorForce(jointId: b3JointId): number;
   b3PrismaticJoint_GetTranslation(jointId: b3JointId): number;
   b3PrismaticJoint_GetSpeed(jointId: b3JointId): number;
+  b3CylindricalJoint_SetSpringHertz(jointId: b3JointId, hertz: number): void;
+  b3CylindricalJoint_GetSpringHertz(jointId: b3JointId): number;
+  b3CylindricalJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
+  b3CylindricalJoint_GetSpringDampingRatio(jointId: b3JointId): number;
+  b3CylindricalJoint_SetTargetTranslation(jointId: b3JointId, targetTranslation: number): void;
+  b3CylindricalJoint_GetTargetTranslation(jointId: b3JointId): number;
+  b3CylindricalJoint_GetLowerLimit(jointId: b3JointId): number;
+  b3CylindricalJoint_GetUpperLimit(jointId: b3JointId): number;
+  b3CylindricalJoint_SetLimits(jointId: b3JointId, lower: number, upper: number): void;
+  b3CylindricalJoint_SetMotorSpeed(jointId: b3JointId, motorSpeed: number): void;
+  b3CylindricalJoint_GetMotorSpeed(jointId: b3JointId): number;
+  b3CylindricalJoint_SetMaxMotorForce(jointId: b3JointId, force: number): void;
+  b3CylindricalJoint_GetMaxMotorForce(jointId: b3JointId): number;
+  b3CylindricalJoint_GetMotorForce(jointId: b3JointId): number;
+  b3CylindricalJoint_SetAngularSpringHertz(jointId: b3JointId, hertz: number): void;
+  b3CylindricalJoint_GetAngularSpringHertz(jointId: b3JointId): number;
+  b3CylindricalJoint_SetAngularSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
+  b3CylindricalJoint_GetAngularSpringDampingRatio(jointId: b3JointId): number;
+  b3CylindricalJoint_SetTargetAngle(jointId: b3JointId, targetAngle: number): void;
+  b3CylindricalJoint_GetTargetAngle(jointId: b3JointId): number;
+  b3CylindricalJoint_GetLowerAngle(jointId: b3JointId): number;
+  b3CylindricalJoint_GetUpperAngle(jointId: b3JointId): number;
+  b3CylindricalJoint_SetAngularLimits(jointId: b3JointId, lower: number, upper: number): void;
+  b3CylindricalJoint_SetAngularMotorSpeed(jointId: b3JointId, motorSpeed: number): void;
+  b3CylindricalJoint_GetAngularMotorSpeed(jointId: b3JointId): number;
+  b3CylindricalJoint_SetMaxMotorTorque(jointId: b3JointId, torque: number): void;
+  b3CylindricalJoint_GetMaxMotorTorque(jointId: b3JointId): number;
+  b3CylindricalJoint_GetMotorTorque(jointId: b3JointId): number;
+  b3CylindricalJoint_GetTranslation(jointId: b3JointId): number;
+  b3CylindricalJoint_GetSpeed(jointId: b3JointId): number;
+  b3CylindricalJoint_GetAngle(jointId: b3JointId): number;
+  b3CylindricalJoint_GetAngularSpeed(jointId: b3JointId): number;
   b3RevoluteJoint_SetSpringHertz(jointId: b3JointId, hertz: number): void;
   b3RevoluteJoint_GetSpringHertz(jointId: b3JointId): number;
   b3RevoluteJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
@@ -1085,6 +1407,21 @@ interface EmbindModule {
   b3WheelJoint_GetTargetSteeringAngle(jointId: b3JointId): number;
   b3WheelJoint_GetSteeringAngle(jointId: b3JointId): number;
   b3WheelJoint_GetSteeringTorque(jointId: b3JointId): number;
+  b3MoverJoint_SetMaxVelocityForce(jointId: b3JointId, maxForce: number): void;
+  b3MoverJoint_GetMaxVelocityForce(jointId: b3JointId): number;
+  b3PogoJoint_SetRestLength(jointId: b3JointId, length: number): void;
+  b3PogoJoint_GetRestLength(jointId: b3JointId): number;
+  b3PogoJoint_SetSpringHertz(jointId: b3JointId, hertz: number): void;
+  b3PogoJoint_GetSpringHertz(jointId: b3JointId): number;
+  b3PogoJoint_SetSpringDampingRatio(jointId: b3JointId, dampingRatio: number): void;
+  b3PogoJoint_GetSpringDampingRatio(jointId: b3JointId): number;
+  b3PogoJoint_SetMaxTensionForce(jointId: b3JointId, force: number): void;
+  b3PogoJoint_GetMaxTensionForce(jointId: b3JointId): number;
+  b3PogoJoint_SetMaxCompressionForce(jointId: b3JointId, force: number): void;
+  b3PogoJoint_GetMaxCompressionForce(jointId: b3JointId): number;
+  b3PogoJoint_GetCurrentLength(jointId: b3JointId): number;
+  b3PogoJoint_GetCurrentSpeed(jointId: b3JointId): number;
+  b3PogoJoint_GetImpulse(jointId: b3JointId): number;
   b3ComputeSphereMass(sphere: b3Sphere, density: number): b3MassData;
   b3ComputeCapsuleMass(capsule: b3Capsule, density: number): b3MassData;
   b3ComputeHullMass(hull: b3HullData | null, density: number): b3MassData;
@@ -1094,8 +1431,36 @@ interface EmbindModule {
   b3World_CastRayClosest(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter): b3RayResult;
   b3Shape_RayCast(shapeId: b3ShapeId, origin: b3Vec3, translation: b3Vec3): b3WorldCastOutput;
   b3DynamicTree_GetAreaRatio(tree: b3DynamicTree | null): number;
+  b3DefaultVehicleWheelDef(): b3VehicleWheelDef;
+  b3Vehicle_SetWheel(vehicleId: b3VehicleId, wheelIndex: number, wheel: b3VehicleWheelDef): void;
+  b3Vehicle_GetWheel(vehicleId: b3VehicleId, wheelIndex: number): b3VehicleWheelDef;
+  b3Vehicle_SetChassis(vehicleId: b3VehicleId, chassis: b3VehicleChassis): void;
+  b3Vehicle_GetChassis(vehicleId: b3VehicleId): b3VehicleChassis;
+  b3Vehicle_SetEngine(vehicleId: b3VehicleId, engine: b3VehicleEngine): void;
+  b3Vehicle_GetEngine(vehicleId: b3VehicleId): b3VehicleEngine;
+  b3Vehicle_SetTurbo(vehicleId: b3VehicleId, turbo: b3VehicleTurbo): void;
+  b3Vehicle_GetTurbo(vehicleId: b3VehicleId): b3VehicleTurbo;
+  b3Vehicle_SetTransmission(vehicleId: b3VehicleId, transmission: b3VehicleTransmission): void;
+  b3Vehicle_GetTransmission(vehicleId: b3VehicleId): b3VehicleTransmission;
+  b3Vehicle_SetDrivetrain(vehicleId: b3VehicleId, drivetrain: b3VehicleDrivetrain): void;
+  b3Vehicle_GetDrivetrain(vehicleId: b3VehicleId): b3VehicleDrivetrain;
+  b3Vehicle_SetAntiRoll(vehicleId: b3VehicleId, antiRoll: b3VehicleAntiRoll): void;
+  b3Vehicle_GetAntiRoll(vehicleId: b3VehicleId): b3VehicleAntiRoll;
+  b3Vehicle_SetSteering(vehicleId: b3VehicleId, steering: b3VehicleSteering): void;
+  b3Vehicle_GetSteering(vehicleId: b3VehicleId): b3VehicleSteering;
+  b3DefaultVehicleDef(): b3VehicleDef;
+  b3CreateVehicle(worldId: b3WorldId, vehicleDef: b3VehicleDef): b3VehicleId;
+  b3Vehicle_SetAssists(vehicleId: b3VehicleId, assists: b3VehicleAssists): void;
+  b3Vehicle_GetAssists(vehicleId: b3VehicleId): b3VehicleAssists;
+  b3Vehicle_SetInput(vehicleId: b3VehicleId, input: b3VehicleInput): void;
+  b3Vehicle_GetInput(vehicleId: b3VehicleId): b3VehicleInput;
+  b3Vehicle_GetState(vehicleId: b3VehicleId): b3VehicleState;
+  b3Vehicle_GetWheelState(vehicleId: b3VehicleId, wheelIndex: number): b3VehicleWheelState;
+  b3Vehicle_GetSprungMass(vehicleId: b3VehicleId, wheelIndex: number): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
-  b3Body_GetName(bodyId: b3BodyId): string;  b3CreateHull(points: any): b3HullData | null;
+  b3Body_GetName(bodyId: b3BodyId): string;
+  b3Body_GetTransformsPacked(ids: Int32Array): Float64Array;
+  b3CreateHull(points: any): b3HullData | null;
   b3GetHullVertices(hull: b3HullData | null): Float32Array;
   b3CreateMesh(positions: any, indices: any): b3MeshData | null;
   b3GetMeshVertices(mesh: b3MeshData | null): Float32Array;
@@ -1108,6 +1473,10 @@ interface EmbindModule {
   b3CreateDecompositionCompound(packed: b3ConvexDecomposition, material?: b3SurfaceMaterial): b3DecompositionCompound;
   b3CreateHeightField(heights: any, countX: number, countZ: number, scale: b3Vec3): b3HeightFieldData | null;
   b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, callback: any): number;
+  b3World_CollideMoverPacked(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
+  b3World_CastMoverFiltered(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): number;
+  b3World_CastRayClosestFiltered(worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
+  b3World_CastShapeClosestFiltered(worldId: b3WorldId, origin: b3Vec3, points: Float32Array | number[], radius: number, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null): Float64Array;
   b3World_CollideMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, callback: any): void;
   b3SolvePlanes(targetDelta: b3Vec3, planes: any): b3PlaneSolverResult;
   b3ClipVector(vector: b3Vec3, planes: any): b3Vec3;
@@ -1131,6 +1500,7 @@ interface EmbindModule {
   b3Body_CastShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, translation: b3Vec3, filter: b3QueryFilter, maxFraction: number, canEncroach: boolean, bodyTransform: b3Transform): b3BodyCastResult;
   b3Body_OverlapShape(bodyId: b3BodyId, origin: b3Vec3, points: any, radius: number, filter: b3QueryFilter, bodyTransform: b3Transform): boolean;
   b3Body_CollideMover(bodyId: b3BodyId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, bodyTransform: b3Transform): BodyPlaneResultBuffer;
+  b3Body_SetConstantForce(bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null): void;
   b3Shape_GetHullVertices(shapeId: b3ShapeId): any;
   b3DistanceJoint_GetSpringForceRange(jointId: b3JointId): any;
   b3World_OverlapAABB(worldId: b3WorldId, aabb: b3AABB, filter: b3QueryFilter, callback: any): void;
@@ -1143,6 +1513,10 @@ interface EmbindModule {
 }
 
 export interface ShapeIdBuffer { count: number; data: Int32Array; }
+/** Native candidate filter for the *Filtered / *Packed world queries. A shape is skipped when it or
+ * its body is listed (Int32Array of index1, world0, generation triples), or when it is a sensor and
+ * excludeSensors is set. No JS callback runs per candidate. */
+export interface b3QueryOptions { ignoreBodies?: Int32Array; ignoreShapes?: Int32Array; excludeSensors?: boolean; }
 export interface ContactBuffer {
   count: number;
   contactsI32: Int32Array;
@@ -1291,6 +1665,55 @@ export interface b3ConvexDecompositionCacheStats { entries: number; hits: number
  * plus the number of pieces that could not become a box3d hull. */
 export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
 export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
+/** Reusable, wasm-backed vehicle readout. Fill with getVehicleStateData after each
+ * b3World_Step; free with destroyVehicleStateBuffer. */
+export interface VehicleStateBuffer { readonly _brand?: 'VehicleStateBuffer'; }
+export interface VehicleStateRecord {
+  /** Forward speed (m/s) */
+  speed: number;
+  engineRpm: number;
+  /** Summed turbo boost. The engine makes 1 + boost times its torque curve. */
+  boost: number;
+  /** -1 reverse, 0 neutral, 1 and up forward gears */
+  gear: number;
+  isShifting: boolean;
+  throttle: number;
+  brake: number;
+  /** Center steer angle, positive left (radians) */
+  steerAngle: number;
+  wheelsInContact: number;
+  stuck: boolean;
+  /** Launch control is managing the drive torque */
+  isLaunching: boolean;
+}
+export interface VehicleWheelRecord {
+  /** Wheel center, world space */
+  position: b3Vec3;
+  /** Wheel orientation including steering and spin */
+  rotation: b3Quat;
+  hasContact: boolean;
+  isSticky: boolean;
+  contactPoint: b3Vec3;
+  contactNormal: b3Vec3;
+  groundShapeId: b3ShapeId;
+  userMaterialId: bigint;
+  suspensionLength: number;
+  /** 0 fully extended, 1 at the bump stop */
+  compression: number;
+  /** Normal force (N) */
+  load: number;
+  longitudinalForce: number;
+  lateralForce: number;
+  slipRatio: number;
+  /** Radians */
+  slipAngle: number;
+  /** Spin (rad/s) */
+  angularVelocity: number;
+  rotationAngle: number;
+  steerAngle: number;
+  driveTorque: number;
+  brakeTorque: number;
+}
 export interface Box3DFacade {
   /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
    * blocking the calling thread, then attaches one hull shape per piece in a single call.
@@ -1340,6 +1763,21 @@ export interface Box3DFacade {
   getContactHitEventAt(out: ContactHitEvent, eb: EventsBuffer, i: number): ContactHitEvent;
   createBodyMoveEvent(): BodyMoveEvent;
   getBodyMoveEventAt(out: BodyMoveEvent, eb: EventsBuffer, i: number): BodyMoveEvent;
+  /** Every body move event of the last getEvents in one copied array, 11 numbers per event:
+   * index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep (0/1). */
+  getBodyMoveEventsPacked(eb: EventsBuffer): Float64Array;
+  /** Rule ids for b3World_SetMixingRules. 'weighted' mixes (a*wA + b*wB) / (wA + wB) with per-shape
+   * weights packed into each shape's userMaterialId, so while it is active that field holds the weights
+   * and can't double as a material tag: bits 0-31 friction weight * 1000, bits 32-62 restitution
+   * weight * 1000, bit 63 set = weights present. A shape without bit 63 uses box3d's default rule. */
+  readonly b3MixingRule: {
+    readonly geometric: 0;
+    readonly average: 1;
+    readonly min: 2;
+    readonly max: 3;
+    readonly multiply: 4;
+    readonly weighted: 5;
+  };
   createSensorTouchEvent(): SensorTouchEvent;
   getSensorBeginEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
   getSensorEndEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
@@ -1380,6 +1818,15 @@ export interface Box3DFacade {
   getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
   createDebugTransformPrimitive(): DebugTransformPrimitive;
   getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
+  createVehicleStateBuffer(): VehicleStateBuffer;
+  /** Packs the vehicle state and every wheel's state and transform in one call. */
+  getVehicleStateData(buf: VehicleStateBuffer, vehicleId: b3VehicleId): VehicleStateBuffer;
+  destroyVehicleStateBuffer(buf: VehicleStateBuffer): void;
+  getNumVehicleWheels(buf: VehicleStateBuffer): number;
+  createVehicleStateRecord(): VehicleStateRecord;
+  getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
+  createVehicleWheelRecord(): VehicleWheelRecord;
+  getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
 export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;

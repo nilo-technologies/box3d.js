@@ -90,7 +90,8 @@ function assertEmscriptenVersion()
 function validateESModule( file )
 {
 	const path = join( root, file );
-	let src = readFileSync( path, 'utf8' );
+	// Emscripten writes CRLF on Windows; keep the committed outputs LF on every host.
+	let src = readFileSync( path, 'utf8' ).replaceAll( '\r\n', '\n' );
 
 	// require() -> await import
 	src = src.replaceAll( /\brequire\(\s*["']([^"']+)["']\s*\)/g, '(await import("$1"))' );
@@ -206,6 +207,9 @@ mkdirSync( join( root, 'dist' ), { recursive: true } );
 // Hand-written Three.js helper. It does not go through emscripten.
 copyFileSync( join( root, 'src', 'three.js' ), join( root, 'dist', 'three.mjs' ) );
 copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts' ) );
+// Hand-written DynamicMover port (box3d's samples/dynamic_mover.cpp).
+copyFileSync( join( root, 'src', 'character.js' ), join( root, 'dist', 'character.mjs' ) );
+copyFileSync( join( root, 'src', 'character.d.ts' ), join( root, 'dist', 'character.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 
@@ -274,6 +278,10 @@ const retMeta = probe._retMeta();
 // Types for the packed query buffers and the src/facade.js reader helpers,
 // intersected into Box3DModule below so `b3.getContactAt(...)` etc. are typed.
 const facadeTypes = `export interface ShapeIdBuffer { count: number; data: Int32Array; }
+/** Native candidate filter for the *Filtered / *Packed world queries. A shape is skipped when it or
+ * its body is listed (Int32Array of index1, world0, generation triples), or when it is a sensor and
+ * excludeSensors is set. No JS callback runs per candidate. */
+export interface b3QueryOptions { ignoreBodies?: Int32Array; ignoreShapes?: Int32Array; excludeSensors?: boolean; }
 export interface ContactBuffer {
   count: number;
   contactsI32: Int32Array;
@@ -422,6 +430,55 @@ export interface b3ConvexDecompositionCacheStats { entries: number; hits: number
  * plus the number of pieces that could not become a box3d hull. */
 export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
 export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
+/** Reusable, wasm-backed vehicle readout. Fill with getVehicleStateData after each
+ * b3World_Step; free with destroyVehicleStateBuffer. */
+export interface VehicleStateBuffer { readonly _brand?: 'VehicleStateBuffer'; }
+export interface VehicleStateRecord {
+  /** Forward speed (m/s) */
+  speed: number;
+  engineRpm: number;
+  /** Summed turbo boost. The engine makes 1 + boost times its torque curve. */
+  boost: number;
+  /** -1 reverse, 0 neutral, 1 and up forward gears */
+  gear: number;
+  isShifting: boolean;
+  throttle: number;
+  brake: number;
+  /** Center steer angle, positive left (radians) */
+  steerAngle: number;
+  wheelsInContact: number;
+  stuck: boolean;
+  /** Launch control is managing the drive torque */
+  isLaunching: boolean;
+}
+export interface VehicleWheelRecord {
+  /** Wheel center, world space */
+  position: b3Vec3;
+  /** Wheel orientation including steering and spin */
+  rotation: b3Quat;
+  hasContact: boolean;
+  isSticky: boolean;
+  contactPoint: b3Vec3;
+  contactNormal: b3Vec3;
+  groundShapeId: b3ShapeId;
+  userMaterialId: bigint;
+  suspensionLength: number;
+  /** 0 fully extended, 1 at the bump stop */
+  compression: number;
+  /** Normal force (N) */
+  load: number;
+  longitudinalForce: number;
+  lateralForce: number;
+  slipRatio: number;
+  /** Radians */
+  slipAngle: number;
+  /** Spin (rad/s) */
+  angularVelocity: number;
+  rotationAngle: number;
+  steerAngle: number;
+  driveTorque: number;
+  brakeTorque: number;
+}
 export interface Box3DFacade {
   /** Recommended way to give a body a convex decomposition. Decomposes the mesh without
    * blocking the calling thread, then attaches one hull shape per piece in a single call.
@@ -471,6 +528,21 @@ export interface Box3DFacade {
   getContactHitEventAt(out: ContactHitEvent, eb: EventsBuffer, i: number): ContactHitEvent;
   createBodyMoveEvent(): BodyMoveEvent;
   getBodyMoveEventAt(out: BodyMoveEvent, eb: EventsBuffer, i: number): BodyMoveEvent;
+  /** Every body move event of the last getEvents in one copied array, 11 numbers per event:
+   * index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep (0/1). */
+  getBodyMoveEventsPacked(eb: EventsBuffer): Float64Array;
+  /** Rule ids for b3World_SetMixingRules. 'weighted' mixes (a*wA + b*wB) / (wA + wB) with per-shape
+   * weights packed into each shape's userMaterialId, so while it is active that field holds the weights
+   * and can't double as a material tag: bits 0-31 friction weight * 1000, bits 32-62 restitution
+   * weight * 1000, bit 63 set = weights present. A shape without bit 63 uses box3d's default rule. */
+  readonly b3MixingRule: {
+    readonly geometric: 0;
+    readonly average: 1;
+    readonly min: 2;
+    readonly max: 3;
+    readonly multiply: 4;
+    readonly weighted: 5;
+  };
   createSensorTouchEvent(): SensorTouchEvent;
   getSensorBeginEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
   getSensorEndEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
@@ -511,10 +583,20 @@ export interface Box3DFacade {
   getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
   createDebugTransformPrimitive(): DebugTransformPrimitive;
   getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
+  createVehicleStateBuffer(): VehicleStateBuffer;
+  /** Packs the vehicle state and every wheel's state and transform in one call. */
+  getVehicleStateData(buf: VehicleStateBuffer, vehicleId: b3VehicleId): VehicleStateBuffer;
+  destroyVehicleStateBuffer(buf: VehicleStateBuffer): void;
+  getNumVehicleWheels(buf: VehicleStateBuffer): number;
+  createVehicleStateRecord(): VehicleStateRecord;
+  getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
+  createVehicleWheelRecord(): VehicleWheelRecord;
+  getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
 }`;
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
 let tsd = readFileSync( tsdPath, 'utf8' )
+	.replaceAll( '\r\n', '\n' ) // emit-tsd writes CRLF on Windows
 	.replaceAll( 'MainModuleFactory', 'Box3DFactory' )
 	.replaceAll( 'MainModule', 'Box3DModule' )
 	.replace(
@@ -540,6 +622,12 @@ const valParamSigs = {
 	b3CreateConvexDecompositionShapes: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions',
 	b3CreateConvexDecompositionShapesFromPacked: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number',
 	b3CreateDecompositionCompound: 'packed: b3ConvexDecomposition, material?: b3SurfaceMaterial',
+	b3Body_SetConstantForce: 'bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null',
+	b3Body_GetTransformsPacked: 'ids: Int32Array',
+	b3World_CollideMoverPacked: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastMoverFiltered: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastRayClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastShapeClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, points: Float32Array | number[], radius: number, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
 };
 for ( const [ method, params ] of Object.entries( valParamSigs ) )
 {

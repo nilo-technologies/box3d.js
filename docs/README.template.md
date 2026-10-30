@@ -31,11 +31,9 @@ Initialize the WASM module once with `await Box3D()`, then call the physics API 
 
 <Snippet source="./quick-start.ts" />
 
-## How Does This Compare to Jolt / Rapier / Others?
+## What Is box3d?
 
 box3d is Erin Catto's 3D rigid body engine — the 3D sibling of Box2D, from the author of Box2D itself.
-
-For comparisons across engines (box3d.js, Jolt, Rapier, and others), see the **[JS physics benchmarks](https://isaac-mason.github.io/js-physics-benchmarks/)**.
 
 ## Physics World
 
@@ -124,6 +122,12 @@ Forces accumulate until the next `b3World_Step` call, then clear. Impulses apply
 
 <ExamplesTable ids="example-add-impulse-at-position,example-explosion" />
 
+### Constant Forces
+
+`b3Body_ApplyForce` lasts one step. A constant force or torque is kept by the bindings and re-applied by every `b3World_Step` (without waking the body) until it is changed, cleared, or the body is destroyed.
+
+<Snippet source="./bodies.ts" select="constant-forces" />
+
 ### Damping
 
 <Snippet source="./bodies.ts" select="damping" />
@@ -165,6 +169,10 @@ Use `b3Body_SetTargetTransform` to move kinematic bodies each frame. box3d compu
 Friction and restitution can be set per shape at creation, or updated at runtime via `b3Shape_SetSurfaceMaterial`.
 
 <Snippet source="./bodies.ts" select="material" />
+
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a weighted average with per-shape weights. The weighted rule reads the weights from `userMaterialId`, so while it is active that field can't double as a material tag.
+
+<Snippet source="./bodies.ts" select="mixing-rules" />
 
 <ExamplesTable ids="example-friction,example-restitution" />
 
@@ -242,6 +250,10 @@ In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stag
 
 <ExamplesTable ids="example-convex-decomposition" />
 
+### Resizing and Disabling Shapes
+
+<Snippet source="./shapes.ts" select="resize-disable" />
+
 ## Joints
 
 Joints constrain the relative motion between two bodies. All joint defs share a `bodyIdA` / `bodyIdB` pair. Joint frames (`frameA`, `frameB`) are local-space transforms that define where and how the joint attaches.
@@ -249,6 +261,7 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 **Axis conventions:**
 - Revolute: rotates about the joint frame's local **Z**-axis
 - Prismatic: slides along the joint frame's local **X**-axis
+- Cylindrical: rotates about frame A's local **X**-axis and slides along `localSlideAxisA` (also **X** by default)
 - Spherical: cone centered on frame **Z**
 
 <ExamplesTable ids="example-constraints,example-hinge-motor" />
@@ -269,6 +282,10 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="distance" />
 
+Springs can also be given in physical units (stiffness and damping), which keeps the force independent of the body masses:
+
+<Snippet source="./joints.ts" select="distance-stiffness" />
+
 ### Spherical (Ball and Socket)
 
 <Snippet source="./joints.ts" select="spherical" />
@@ -277,9 +294,43 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 
 <Snippet source="./joints.ts" select="prismatic" />
 
+### Cylindrical (Slide and Spin)
+
+<Snippet source="./joints.ts" select="cylindrical" />
+
 ### Wheel (Suspension)
 
 <Snippet source="./joints.ts" select="wheel" />
+
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+<Snippet source="./vehicle.ts" select="create" />
+
+### Driving
+
+<Snippet source="./vehicle.ts" select="drive" />
+
+### Reading the Vehicle State
+
+<Snippet source="./vehicle.ts" select="read" />
+
+### Live Tuning
+
+<Snippet source="./vehicle.ts" select="tune" />
+
+### Turbos and Superchargers
+
+`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+
+<Snippet source="./vehicle.ts" select="turbo" />
+
+The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
+
+<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad,example-vehicle-showcase" />
 
 ## Queries
 
@@ -315,6 +366,12 @@ Sweep a sphere proxy through the world and find the closest hit.
 
 <Snippet source="./queries.ts" select="query-filter" />
 
+### Filtered Queries
+
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively. `b3World_CollideMoverPacked` and the closest-hit variants return one copied `Float64Array`; `b3World_CastMoverFiltered` returns the sweep fraction, like `b3World_CastMover`.
+
+<Snippet source="./queries.ts" select="filtered-queries" />
+
 ## Events
 
 box3d surfaces physics events (contacts, sensors, body moves, joints) each `b3World_Step`. Events are opt-in per shape. Rather than allocating a JS object per event every step — which does not scale — box3d.js reads them through a **reusable, wasm-backed events buffer**: allocate the buffer (and small reader scratch objects) once, refill it each step with `getEvents`, and read it back with zero allocation. Free it with `destroyEventsBuffer` when done.
@@ -339,6 +396,12 @@ Events fire when contacts begin, end, or hit. To instead inspect **every current
 
 <ExamplesTable ids="example-sensor" />
 
+### Packed Reads
+
+Callers that can't read the wasm heap directly (a sandbox, a worker membrane) can take body move events and body poses as one copied typed array each.
+
+<Snippet source="./events.ts" select="packed-reads" />
+
 ### Pre-Solve Callback
 
 The pre-solve callback fires for each contact before the constraint solver runs. Return `false` to suppress the contact response entirely (useful for one-way platforms).
@@ -356,6 +419,16 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 <Snippet source="./debug-draw.ts" select="debug-draw" />
 
 <ExamplesTable ids="example-debug-draw" />
+
+## Character Controller
+
+`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it. As in upstream, only the platform's linear velocity is matched, so translating platforms carry the character and spinning ones don't.
+
+It is plain JavaScript on top of the bindings, not part of the wasm. Upstream intends this controller to be changed for each game, so every tuning value is a public field, and the class is small enough to subclass or copy.
+
+<Snippet source="./character.ts" select="dynamic-mover" />
+
+<ExamplesTable ids="example-dynamic-mover" />
 
 ## Multithreading
 

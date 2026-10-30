@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "examples",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@box3d/examples", "dev", "--port", "5173", "--strictPort"],
+      "env": { "BROWSER": "none" },
+      "port": 5173
+    }
+  ]
+}

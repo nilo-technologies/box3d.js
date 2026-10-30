@@ -22,19 +22,19 @@ npm install box3d.js
 <table>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-shapes">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-shapes">
         <img src="./examples/public/screenshots/example-shapes.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Shapes
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-cube-heap">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-cube-heap">
         <img src="./examples/public/screenshots/example-cube-heap.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Cube Heap
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-stacking">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-stacking">
         <img src="./examples/public/screenshots/example-stacking.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Stacking
       </a>
@@ -42,19 +42,19 @@ npm install box3d.js
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-robustness">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-robustness">
         <img src="./examples/public/screenshots/example-robustness.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Robustness
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-restitution">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-restitution">
         <img src="./examples/public/screenshots/example-restitution.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Restitution
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-friction">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-friction">
         <img src="./examples/public/screenshots/example-friction.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Friction
       </a>
@@ -62,19 +62,19 @@ npm install box3d.js
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-conveyor-belt">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-conveyor-belt">
         <img src="./examples/public/screenshots/example-conveyor-belt.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Conveyor Belt
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-ccd">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-ccd">
         <img src="./examples/public/screenshots/example-ccd.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Continuous Collision Detection
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-gravity-factor">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-gravity-factor">
         <img src="./examples/public/screenshots/example-gravity-factor.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Gravity Factor
       </a>
@@ -82,19 +82,19 @@ npm install box3d.js
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-linear-damping">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-linear-damping">
         <img src="./examples/public/screenshots/example-linear-damping.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Linear Damping
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-angular-damping">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-angular-damping">
         <img src="./examples/public/screenshots/example-angular-damping.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Angular Damping
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-add-impulse-at-position">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-add-impulse-at-position">
         <img src="./examples/public/screenshots/example-add-impulse-at-position.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Add Impulse at Position
       </a>
@@ -102,19 +102,19 @@ npm install box3d.js
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-collision-filtering">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-collision-filtering">
         <img src="./examples/public/screenshots/example-collision-filtering.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Collision Filtering
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-joints">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-joints">
         <img src="./examples/public/screenshots/example-joints.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Joints
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-ragdoll">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-ragdoll">
         <img src="./examples/public/screenshots/example-ragdoll.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Ragdoll
       </a>
@@ -122,129 +122,169 @@ npm install box3d.js
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-character">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-character">
         <img src="./examples/public/screenshots/example-character.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Character
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-static-compound">
-        <img src="./examples/public/screenshots/example-static-compound.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Static Compound
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-dynamic-mover">
+        <img src="./examples/public/screenshots/example-dynamic-mover.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Dynamic Mover
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-convex-decomposition">
-        <img src="./examples/public/screenshots/example-convex-decomposition.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Convex Decomposition
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-static-compound">
+        <img src="./examples/public/screenshots/example-static-compound.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Static Compound
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-triangle-mesh">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-convex-decomposition">
+        <img src="./examples/public/screenshots/example-convex-decomposition.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Convex Decomposition
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-triangle-mesh">
         <img src="./examples/public/screenshots/example-triangle-mesh.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Triangle Mesh
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-mesh">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-mesh">
         <img src="./examples/public/screenshots/example-mesh.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Mesh Generators
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-cast-ray">
-        <img src="./examples/public/screenshots/example-cast-ray.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Cast Ray
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-cast-shape">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-cast-ray">
+        <img src="./examples/public/screenshots/example-cast-ray.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Cast Ray
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-cast-shape">
         <img src="./examples/public/screenshots/example-cast-shape.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Cast Shape
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-hinge-motor">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-hinge-motor">
         <img src="./examples/public/screenshots/example-hinge-motor.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Hinge Motor
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-gjk">
-        <img src="./examples/public/screenshots/example-gjk.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        GJK Distance
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-manifold">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-gjk">
+        <img src="./examples/public/screenshots/example-gjk.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        GJK Distance
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-manifold">
         <img src="./examples/public/screenshots/example-manifold.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Manifold
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-tree">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-tree">
         <img src="./examples/public/screenshots/example-tree.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Dynamic Tree
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-explosion">
-        <img src="./examples/public/screenshots/example-explosion.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Explosion
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-geometry">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-explosion">
+        <img src="./examples/public/screenshots/example-explosion.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Explosion
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-geometry">
         <img src="./examples/public/screenshots/example-geometry.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Geometry
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-sensor">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-sensor">
         <img src="./examples/public/screenshots/example-sensor.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Sensor
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-events">
-        <img src="./examples/public/screenshots/example-events.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Events
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-contacts">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-events">
+        <img src="./examples/public/screenshots/example-events.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Events
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-contacts">
         <img src="./examples/public/screenshots/example-contacts.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Contacts
       </a>
     </td>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-multithreading">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-multithreading">
         <img src="./examples/public/screenshots/example-multithreading.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Multithreading
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
-        <img src="./examples/public/screenshots/example-debug-draw.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Debug Draw
       </a>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <a href="https://isaac-mason.github.io/box3d.js/#example-replay">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-debug-draw">
+        <img src="./examples/public/screenshots/example-debug-draw.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Debug Draw
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-replay">
         <img src="./examples/public/screenshots/example-replay.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Replay
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-fwd">
+        <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: FWD hatchback
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-rwd">
+        <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: RWD sports car
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-awd">
+        <img src="./examples/public/screenshots/example-vehicle-awd.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: AWD road car
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-offroad">
+        <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: AWD off-roader
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-showcase">
+        <img src="./examples/public/screenshots/example-vehicle-showcase.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: preset showcase
       </a>
     </td>
   </tr>
@@ -254,14 +294,16 @@ npm install box3d.js
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [How Does This Compare to Jolt / Rapier / Others?](#how-does-this-compare-to-jolt-rapier-others)
+- [What Is box3d?](#what-is-box3d)
 - [Physics World](#physics-world)
 - [Rigid Bodies](#rigid-bodies)
 - [Shapes](#shapes)
 - [Joints](#joints)
+- [Vehicles](#vehicles)
 - [Queries](#queries)
 - [Events](#events)
 - [Debug Draw](#debug-draw)
+- [Character Controller](#character-controller)
 - [Multithreading](#multithreading)
 - [Building from Source](#building-from-source)
 
@@ -307,11 +349,9 @@ console.log(`sphere landed at y = ${pos[1].toFixed(2)}`);
 b3.b3DestroyWorld(world);
 ```
 
-## How Does This Compare to Jolt / Rapier / Others?
+## What Is box3d?
 
 box3d is Erin Catto's 3D rigid body engine — the 3D sibling of Box2D, from the author of Box2D itself.
-
-For comparisons across engines (box3d.js, Jolt, Rapier, and others), see the **[JS physics benchmarks](https://isaac-mason.github.io/js-physics-benchmarks/)**.
 
 ## Physics World
 
@@ -468,13 +508,13 @@ b3.b3CreateBoxShape(kinematicBody, b3.b3DefaultShapeDef(), 2, 0.2, 2);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-shapes">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-shapes">
       <img src="./examples/public/screenshots/example-shapes.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Shapes</strong>
     </a>
   </td>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-cube-heap">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-cube-heap">
       <img src="./examples/public/screenshots/example-cube-heap.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Cube Heap</strong>
     </a>
@@ -543,19 +583,36 @@ b3.b3Body_ApplyLinearImpulse(dynamicBody, [0, mass * 5, 0], [0.3, 5, 0], true);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-add-impulse-at-position">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-add-impulse-at-position">
       <img src="./examples/public/screenshots/example-add-impulse-at-position.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Add Impulse at Position</strong>
     </a>
   </td>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-explosion">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-explosion">
       <img src="./examples/public/screenshots/example-explosion.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Explosion</strong>
     </a>
   </td>
   </tr>
 </table>
+
+### Constant Forces
+
+`b3Body_ApplyForce` lasts one step. A constant force or torque is kept by the bindings and re-applied by every `b3World_Step` (without waking the body) until it is changed, cleared, or the body is destroyed.
+
+```ts
+// Persistent forces: set once, re-applied by every b3World_Step until changed or cleared
+// (plain b3Body_ApplyForce is cleared after each step). Force and torque are world-space;
+// the point is body-local, null = centre of mass. A new force replaces the previous one.
+const hovering = b3.b3CreateBody(world, dynamicDef);
+b3.b3CreateBoxShape(hovering, b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5);
+const hoverMass = b3.b3Body_GetMass(hovering);
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], null);     // cancels gravity
+b3.b3Body_SetConstantForce(hovering, [0, 10 * hoverMass, 0], [0.5, 0, 0]); // ... off-centre
+b3.b3Body_SetConstantTorque(hovering, [0, 2, 0]);
+b3.b3Body_ClearConstantForces(hovering); // also dropped when the body is destroyed
+```
 
 ### Damping
 
@@ -570,13 +627,13 @@ b3.b3Body_SetAngularDamping(dynamicBody, 0.5);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-linear-damping">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-linear-damping">
       <img src="./examples/public/screenshots/example-linear-damping.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Linear Damping</strong>
     </a>
   </td>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-angular-damping">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-angular-damping">
       <img src="./examples/public/screenshots/example-angular-damping.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Angular Damping</strong>
     </a>
@@ -594,7 +651,7 @@ b3.b3Body_SetGravityScale(dynamicBody, 0.5);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-gravity-factor">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-gravity-factor">
       <img src="./examples/public/screenshots/example-gravity-factor.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Gravity Factor</strong>
     </a>
@@ -633,7 +690,7 @@ b3.b3Body_SetBullet(dynamicBody, true);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-ccd">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-ccd">
       <img src="./examples/public/screenshots/example-ccd.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Continuous Collision Detection</strong>
     </a>
@@ -680,16 +737,35 @@ mat.restitution = 0.9;
 b3.b3Shape_SetSurfaceMaterial(shape, mat);
 ```
 
+Mixing defaults to `sqrt(frictionA * frictionB)` and `max(restitutionA, restitutionB)`. `b3World_SetMixingRules` picks another rule per world, including a weighted average with per-shape weights. The weighted rule reads the weights from `userMaterialId`, so while it is active that field can't double as a material tag.
+
+```ts
+// Friction/restitution mixing for every contact in the world, as native callbacks.
+// Rules: geometric (default friction), average, min, max (default restitution), multiply,
+// and weighted, which mixes (a*wA + b*wB) / (wA + wB) with per-shape weights packed into each
+// shape's userMaterialId: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000,
+// bit 63 set = weights present. While this rule is active, userMaterialId holds the weights, so
+// it can't double as a material tag. A shape without bit 63 uses box3d's default rule.
+b3.b3World_SetMixingRules(world, b3.b3MixingRule.weighted, b3.b3MixingRule.weighted);
+const weightedDef = b3.b3DefaultShapeDef();
+weightedDef.baseMaterial.friction = 0.7;
+weightedDef.baseMaterial.restitution = 0.2;
+const frictionWeight = 3, restitutionWeight = 1;
+weightedDef.baseMaterial.userMaterialId = (1n << 63n) |
+    BigInt(Math.round(frictionWeight * 1000)) | (BigInt(Math.round(restitutionWeight * 1000)) << 32n);
+b3.b3CreateBoxShape(staticBody, weightedDef, 1, 1, 1);
+```
+
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-friction">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-friction">
       <img src="./examples/public/screenshots/example-friction.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Friction</strong>
     </a>
   </td>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-restitution">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-restitution">
       <img src="./examples/public/screenshots/example-restitution.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Restitution</strong>
     </a>
@@ -722,7 +798,7 @@ b3.b3Shape_SetFilter(aShape, { categoryBits: GROUP_B, maskBits: GROUND | GROUP_B
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-collision-filtering">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-collision-filtering">
       <img src="./examples/public/screenshots/example-collision-filtering.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Collision Filtering</strong>
     </a>
@@ -774,7 +850,7 @@ for (let i = 0, n = b3.getNumSensorEndEvents(eventsBuffer); i < n; i++) {
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-sensor">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-sensor">
       <img src="./examples/public/screenshots/example-sensor.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Sensor</strong>
     </a>
@@ -865,14 +941,18 @@ const meshData = b3.b3CreateMesh(meshPositions, meshIndices)!;
 const staticBodyDef = b3.b3DefaultBodyDef();
 const staticBody = b3.b3CreateBody(world, staticBodyDef);
 const scale: b3Vec3 = [1, 1, 1];
-b3.b3CreateMeshShape(staticBody, b3.b3DefaultShapeDef(), meshData, scale);
+const meshShape = b3.b3CreateMeshShape(staticBody, b3.b3DefaultShapeDef(), meshData, scale);
+// Mesh contacts hold other shapes meshRestOffset (default B3_MESH_REST_OFFSET, 5 mm)
+// off the surface. For a floor that shapes must rest flush on, set
+// b3ShapeDef.meshRestOffset = 0 before creating the shape, or call:
+b3.b3Shape_SetMeshRestOffset(meshShape, 0);
 meshData.delete();
 ```
 
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-triangle-mesh">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-triangle-mesh">
       <img src="./examples/public/screenshots/example-triangle-mesh.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Triangle Mesh</strong>
     </a>
@@ -919,7 +999,7 @@ b3.b3CreateBakedCompoundShape(compoundBody, b3.b3DefaultShapeDef(), compoundData
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-static-compound">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-static-compound">
       <img src="./examples/public/screenshots/example-static-compound.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Static Compound</strong>
     </a>
@@ -1001,13 +1081,35 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-convex-decomposition">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-convex-decomposition">
       <img src="./examples/public/screenshots/example-convex-decomposition.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Convex Decomposition</strong>
     </a>
   </td>
   </tr>
 </table>
+
+### Resizing and Disabling Shapes
+
+```ts
+// Resize or reshape a hull shape in place: the hull is baked with a transform and a
+// (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to
+// batch several changes and call b3Body_ApplyMassFromShapes once.
+const crate = b3.b3CreateBoxShape(body, sd, 0.5, 0.5, 0.5);
+const unitCube = b3.b3CreateHull([
+    -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, 0.5, -0.5,  -0.5, 0.5, -0.5,
+    -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, 0.5,  0.5,  -0.5, 0.5,  0.5,
+])!;
+const resized = b3.b3Shape_SetBakedHull(crate, unitCube, { position: [0, 0.5, 0], quaternion: [0, 0, 0, 1] }, [2, 1, 4], true);
+if (!resized) console.warn('degenerate hull; the shape is unchanged');
+b3.b3DestroyHull(unitCube);
+
+// Take a shape out of the simulation without destroying it: no contacts, sensor
+// overlaps or query hits while disabled (its mass still counts).
+b3.b3Shape_Disable(crate);
+b3.b3Shape_IsEnabled(crate); // false
+b3.b3Shape_Enable(crate);
+```
 
 ## Joints
 
@@ -1016,12 +1118,13 @@ Joints constrain the relative motion between two bodies. All joint defs share a 
 **Axis conventions:**
 - Revolute: rotates about the joint frame's local **Z**-axis
 - Prismatic: slides along the joint frame's local **X**-axis
+- Cylindrical: rotates about frame A's local **X**-axis and slides along `localSlideAxisA` (also **X** by default)
 - Spherical: cone centered on frame **Z**
 
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-hinge-motor">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-hinge-motor">
       <img src="./examples/public/screenshots/example-hinge-motor.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Hinge Motor</strong>
     </a>
@@ -1087,6 +1190,22 @@ distanceDef.length = 2.0; // desired distance in metres
 b3.b3CreateDistanceJoint(world, distanceDef);
 ```
 
+Springs can also be given in physical units (stiffness and damping), which keeps the force independent of the body masses:
+
+```ts
+// Distance-joint spring in physical units: force = -stiffness * stretch - damping * stretchSpeed,
+// independent of the attached masses. Overrides hertz / dampingRatio when either is positive.
+const springDef = b3.b3DefaultDistanceJointDef();
+springDef.base.bodyIdA = anchor;
+springDef.base.bodyIdB = pendulum;
+springDef.length = 2.0;
+springDef.enableSpring = true;
+springDef.springStiffness = 400; // N/m
+springDef.springDamping = 20;    // N*s/m
+const spring = b3.b3CreateDistanceJoint(world, springDef);
+b3.b3DistanceJoint_SetSpringStiffness(spring, 800, 20);
+```
+
 ### Spherical (Ball and Socket)
 
 ```ts
@@ -1115,6 +1234,38 @@ prismaticDef.upperTranslation =  2.0;
 b3.b3CreatePrismaticJoint(world, prismaticDef);
 ```
 
+### Cylindrical (Slide and Spin)
+
+```ts
+// Cylindrical joint: B rotates about frame A's X-axis and slides along localSlideAxisA
+// (frame A X by default, so it slides along the same axis it spins about).
+const cylindricalDef = b3.b3DefaultCylindricalJointDef();
+cylindricalDef.base.bodyIdA = anchor;
+cylindricalDef.base.bodyIdB = pendulum;
+cylindricalDef.base.localFrameA = { position: [0, -2, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.base.localFrameB = { position: [0,  0, 0], quaternion: IDENTITY_QUAT };
+cylindricalDef.enableLimit = true;          // translation limit, metres
+cylindricalDef.lowerTranslation = -0.5;
+cylindricalDef.upperTranslation =  0.5;
+cylindricalDef.enableAngularMotor = true;   // spin about the axis
+cylindricalDef.angularMotorSpeed = 2.0;     // rad/s
+cylindricalDef.maxMotorTorque = 100;
+const cylindrical = b3.b3CreateCylindricalJoint(world, cylindricalDef);
+
+// Linear and angular springs, limits and motors each have setters; read the state back
+b3.b3CylindricalJoint_EnableSpring(cylindrical, true);
+b3.b3CylindricalJoint_SetTargetTranslation(cylindrical, 0.25);
+b3.b3CylindricalJoint_EnableAngularLimit(cylindrical, true);
+b3.b3CylindricalJoint_SetAngularLimits(cylindrical, -Math.PI / 2, Math.PI / 2);
+b3.b3Joint_WakeBodies(cylindrical); // setters don't wake sleeping bodies
+const slide = b3.b3CylindricalJoint_GetTranslation(cylindrical);
+const spin = b3.b3CylindricalJoint_GetAngle(cylindrical);
+
+// Slide along a different direction in frame A (e.g. a tilted wheel suspension)
+cylindricalDef.localSlideAxisA = [0, 1, 0];
+b3.b3CreateCylindricalJoint(world, cylindricalDef);
+```
+
 ### Wheel (Suspension)
 
 ```ts
@@ -1129,6 +1280,143 @@ wheelDef.suspensionHertz = 4.0;         // spring frequency (Hz)
 wheelDef.suspensionDampingRatio = 0.7;  // 0 = undamped, 1 = critically damped
 b3.b3CreateWheelJoint(world, wheelDef);
 ```
+
+## Vehicles
+
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+
+```ts
+// The vehicle drives an existing dynamic body. Create the chassis shapes first.
+const chassisDef = b3.b3DefaultBodyDef();
+chassisDef.type = b3.b3BodyType.b3_dynamicBody;
+chassisDef.position = [0, 1, 0];
+const chassis = b3.b3CreateBody(world, chassisDef);
+b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), 0.9, 0.3, 2.1);
+
+// The default is a 1300 kg rear wheel drive sedan: +Z forward, +Y up, wheels in the order
+// front left, front right, rear left, rear right.
+const vehicleDef = b3.b3DefaultVehicleDef();
+vehicleDef.chassisId = chassis;
+vehicleDef.engine.maxTorque = 420;
+vehicleDef.assists.abs = true;
+
+// Make it all wheel drive: 40% of the torque to the front axle, 60% to the rear
+vehicleDef.drivetrain.differentials[0] = { leftWheel: 0, rightWheel: 1, torqueRatio: 0.4, leftRightSplit: 0.5, limitedSlipRatio: 1 };
+vehicleDef.drivetrain.differentials[1] = { leftWheel: 2, rightWheel: 3, torqueRatio: 0.6, leftRightSplit: 0.5, limitedSlipRatio: 1.3 };
+vehicleDef.drivetrain.differentialCount = 2;
+
+const vehicle = b3.b3CreateVehicle(world, vehicleDef);
+```
+
+### Driving
+
+```ts
+// forward: -1..1 (the automatic gearbox brakes first, then selects reverse), steer: -1 left
+// to 1 right, brake and handbrake: 0..1. Input wakes the chassis.
+b3.b3Vehicle_SetInput(vehicle, { forward: 1, brake: 0, steer: -0.3, handbrake: 0 });
+b3.b3World_Step(world, 1 / 60, 4);
+```
+
+### Reading the Vehicle State
+
+```ts
+// One call per frame packs the vehicle and wheel state into a reusable wasm buffer
+const stateBuffer = b3.createVehicleStateBuffer();
+const state = b3.createVehicleStateRecord();
+const wheel = b3.createVehicleWheelRecord();
+
+b3.getVehicleStateData(stateBuffer, vehicle);
+b3.getVehicleStateAt(state, stateBuffer);
+console.log(`${(state.speed * 3.6).toFixed(0)} km/h, gear ${state.gear}, ${state.engineRpm.toFixed(0)} rpm`);
+
+for (let i = 0; i < b3.getNumVehicleWheels(stateBuffer); i++) {
+    b3.getVehicleWheelAt(wheel, stateBuffer, i);
+    // wheel.position / wheel.rotation: world space wheel transform including steering and spin
+    // wheel.load, slipRatio, slipAngle, compression, hasContact, contactPoint, ...
+}
+
+b3.destroyVehicleStateBuffer(stateBuffer);
+```
+
+### Live Tuning
+
+```ts
+// Every part of the definition can be changed while driving. Changes apply on the next step.
+const suspension = b3.b3Vehicle_GetWheel(vehicle, 0);
+suspension.suspension.frequency = 2.2;
+b3.b3Vehicle_SetWheel(vehicle, 0, suspension);
+
+const assists = b3.b3Vehicle_GetAssists(vehicle);
+assists.tractionControl = false;
+assists.driftGripScale = 0.5; // the handbrake makes the rear loose
+b3.b3Vehicle_SetAssists(vehicle, assists);
+
+// Flip the car back onto its wheels
+b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
+```
+
+### Turbos and Superchargers
+
+`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+
+```ts
+// A turbo multiplies the torque curve by 1 + boost. Each stage's shaft spools toward a target set
+// by the pedal and the rpm (spoolTime is the lag at full throttle and fullBoostRpm) and spins down
+// with the bleed time. Boost dumps when you lift, but a spinning shaft brings it straight back.
+const turbo = b3.b3Vehicle_GetTurbo(vehicle);
+turbo.stages[0] = { gain: 0.5, spoolRpm: 2500, fullBoostRpm: 4000, spoolTime: 0.8, bleedTime: 1.2 };
+b3.b3Vehicle_SetTurbo(vehicle, turbo);
+
+// A sequential twin adds a second, slower stage higher up
+turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.2, bleedTime: 1.8 };
+// instantFraction 1 removes the lag (a supercharger), parasiticTorque is its belt drive loss,
+// and antiLag holds the boost off throttle and through shifts
+turbo.instantFraction = 0;
+turbo.antiLag = false;
+b3.b3Vehicle_SetTurbo(vehicle, turbo);
+
+b3.b3World_Step(world, 1 / 60, 4);
+console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
+```
+
+The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+
+The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-fwd">
+      <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: FWD hatchback</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-rwd">
+      <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: RWD sports car</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-awd">
+      <img src="./examples/public/screenshots/example-vehicle-awd.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: AWD road car</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-offroad">
+      <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: AWD off-roader</strong>
+    </a>
+  </td>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-showcase">
+      <img src="./examples/public/screenshots/example-vehicle-showcase.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Vehicle: preset showcase</strong>
+    </a>
+  </td>
+  </tr>
+</table>
 
 ## Queries
 
@@ -1158,7 +1446,7 @@ if (rayResult.hit) {
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-cast-ray">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-cast-ray">
       <img src="./examples/public/screenshots/example-cast-ray.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Cast Ray</strong>
     </a>
@@ -1170,12 +1458,20 @@ if (rayResult.hit) {
 
 ```ts
 // Collect every hit along a ray via callback (called once per shape, unordered).
-// Return false from the callback to stop traversal early.
+// The callback gets the hit point, normal, fraction and the shape's userMaterialId
+// (a bigint). Return 1 to keep going, the fraction to clip the ray there, -1 to
+// ignore this shape, or 0 to stop.
 const hits: b3ShapeId[] = [];
-b3.b3World_CastRay(world, origin, translation, filter, (shapeId: b3ShapeId, _fraction: number, _normal: unknown) => {
-    hits.push(shapeId);
-    return true;
-});
+b3.b3World_CastRay(
+    world,
+    origin,
+    translation,
+    filter,
+    (shapeId: b3ShapeId, _point: b3Vec3, _normal: b3Vec3, _fraction: number, _userMaterialId: bigint) => {
+        hits.push(shapeId);
+        return 1;
+    },
+);
 console.log(`ray hit ${hits.length} shapes`);
 ```
 
@@ -1186,8 +1482,9 @@ Sweep a sphere proxy through the world and find the closest hit.
 ```ts
 // Sweep a convex proxy through the world and find the closest hit (shapecast).
 // The proxy is a flat [x,y,z, ...] array of points; convexRadius rounds the edges.
-// The callback returns the current best fraction -- return a smaller value to narrow
-// the search, or Infinity to collect all hits.
+// The callback gets the same arguments as b3World_CastRay's (shape, point, normal,
+// fraction, userMaterialId) and returns the current best fraction -- return a smaller
+// value to narrow the search, or Infinity to collect all hits.
 const halfE = 0.3;
 const boxProxy = [
     -halfE, -halfE, -halfE,  halfE, -halfE, -halfE,
@@ -1220,7 +1517,7 @@ if (bestFraction < Infinity) {
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-cast-shape">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-cast-shape">
       <img src="./examples/public/screenshots/example-cast-shape.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Cast Shape</strong>
     </a>
@@ -1273,6 +1570,36 @@ const customFilter = b3.b3DefaultQueryFilter();
 customFilter.maskBits = 1n; // only hit shapes in category 0x0001
 ```
 
+### Filtered Queries
+
+The callback queries call into JS once per candidate shape. When the only reason for the callback is to skip some bodies, shapes or sensors, the `*Filtered` / `*Packed` variants take a `b3QueryOptions` and do the skipping natively. `b3World_CollideMoverPacked` and the closest-hit variants return one copied `Float64Array`; `b3World_CastMoverFiltered` returns the sweep fraction, like `b3World_CastMover`.
+
+```ts
+// Skip candidates natively instead of with a JS callback per shape: list bodies and shapes as
+// Int32Array (index1, world0, generation) triples, and/or drop sensors.
+const playerBody = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+const options: b3QueryOptions = {
+    ignoreBodies: new Int32Array([playerBody.index1, playerBody.world0, playerBody.generation]),
+    excludeSensors: true,
+};
+
+// Closest hit: empty array on a miss, else 14 numbers:
+// shape id (3), body id (3), point (3), normal (3), fraction, 0
+const hit = b3.b3World_CastRayClosestFiltered(world, origin, translation, filter, options);
+if (hit.length > 0) console.log('hit body', hit[3], 'at y', hit[7], 'fraction', hit[12]);
+const sweep = b3.b3World_CastShapeClosestFiltered(world, origin, [0, 0, 0], 0.25, translation, filter, options);
+
+// Character mover: the sweep fraction, and every plane in one array, 14 numbers each:
+// shape id (3), body id (3), body type, normal (3), offset, point (3, relative to origin)
+const capsule = { center1: [0, -0.5, 0] as b3Vec3, center2: [0, 0.5, 0] as b3Vec3, radius: 0.3 };
+const moveFraction = b3.b3World_CastMoverFiltered(world, origin, capsule, translation, filter, options);
+const planes = b3.b3World_CollideMoverPacked(world, origin, capsule, filter, null);
+for (let o = 0; o < planes.length; o += 14) {
+    const normal: b3Vec3 = [planes[o + 7], planes[o + 8], planes[o + 9]];
+    console.log('plane', normal, 'offset', planes[o + 10]);
+}
+```
+
 ## Events
 
 box3d surfaces physics events (contacts, sensors, body moves, joints) each `b3World_Step`. Events are opt-in per shape. Rather than allocating a JS object per event every step — which does not scale — box3d.js reads them through a **reusable, wasm-backed events buffer**: allocate the buffer (and small reader scratch objects) once, refill it each step with `getEvents`, and read it back with zero allocation. Free it with `destroyEventsBuffer` when done.
@@ -1319,7 +1646,7 @@ for (let i = 0, n = b3.getNumContactHitEvents(eventsBuffer); i < n; i++) {
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-events">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-events">
       <img src="./examples/public/screenshots/example-events.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Events</strong>
     </a>
@@ -1367,7 +1694,7 @@ b3.destroyContactsBuffer(contactsBuffer);
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-contacts">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-contacts">
       <img src="./examples/public/screenshots/example-contacts.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Contacts</strong>
     </a>
@@ -1414,13 +1741,35 @@ for (let i = 0, n = b3.getNumSensorEndEvents(eventsBuffer); i < n; i++) {
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-sensor">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-sensor">
       <img src="./examples/public/screenshots/example-sensor.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Sensor</strong>
     </a>
   </td>
   </tr>
 </table>
+
+### Packed Reads
+
+Callers that can't read the wasm heap directly (a sandbox, a worker membrane) can take body move events and body poses as one copied typed array each.
+
+```ts
+// One call, one copied array -- for callers that can't read the wasm heap (e.g. a sandbox).
+// Body move events: 11 numbers each (index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep).
+const moves = b3.createEventsBuffer();
+b3.b3World_Step(world, 1 / 60, 4);
+b3.getEvents(moves, world);
+const packedMoves = b3.getBodyMoveEventsPacked(moves);
+for (let o = 0; o < packedMoves.length; o += 11) {
+    console.log('body', packedMoves[o], 'y', packedMoves[o + 4], 'asleep', packedMoves[o + 10] === 1);
+}
+b3.destroyEventsBuffer(moves);
+
+// Poses of chosen bodies: Int32Array of id triples in, Float64Array of 7 per body out
+// (px, py, pz, qx, qy, qz, qw; NaN for an invalid id).
+const ids = new Int32Array([body.index1, body.world0, body.generation]);
+const poses = b3.b3Body_GetTransformsPacked(ids);
+```
 
 ### Pre-Solve Callback
 
@@ -1480,9 +1829,50 @@ debug.dispose();
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-debug-draw">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-debug-draw">
       <img src="./examples/public/screenshots/example-debug-draw.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Debug Draw</strong>
+    </a>
+  </td>
+  </tr>
+</table>
+
+## Character Controller
+
+`box3d.js/character` exports `DynamicMover`, a port of the dynamic character mover from box3d's samples (`samples/dynamic_mover.cpp`). The capsule is a dynamic body with locked rotation, so it pushes and is pushed by the rest of the world. A mover joint drives it toward the target velocity, and a pogo joint holds it above the ground, so it climbs steps without the capsule touching them. When the central pogo ray misses or hits a slope too steep to walk, a skirt of 8 rays around the capsule lets it stand on ledges and rails. A kinematic body whose shapes use `platformMaterialId` as their `userMaterialId` carries the mover with it. As in upstream, only the platform's linear velocity is matched, so translating platforms carry the character and spinning ones don't.
+
+It is plain JavaScript on top of the bindings, not part of the wasm. Upstream intends this controller to be changed for each game, so every tuning value is a public field, and the class is small enough to subclass or copy.
+
+```ts
+const PLATFORM = 1n; // shapes with this userMaterialId carry the mover when kinematic
+
+const mover = new DynamicMover(b3, world, {
+    position: [0, 1.5, 0],
+    platformMaterialId: PLATFORM,
+});
+
+// Every step, before b3World_Step. forward/right are horizontal (e.g. from the camera),
+// throttle is [forward, right] on [-1, 1], and the last argument scales maxSpeed.
+const forward: [number, number, number] = [0, 0, -1];
+const right: [number, number, number] = [1, 0, 0];
+if (mover.jump()) console.log('jumped'); // false while airborne
+mover.update(1 / 60, forward, right, [1, 0], 1.5);
+b3.b3World_Step(world, 1 / 60, 4);
+
+// Tuning values are public fields, read every update.
+mover.maxSpeed = 8;
+mover.setGravityScale(2); // also resizes the pogo forces
+console.log(mover.onGround, mover.walkable, mover.pogoLength, mover.probes[mover.selectedProbe]);
+
+mover.destroy();
+```
+
+<table>
+  <tr>
+  <td align="center">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-dynamic-mover">
+      <img src="./examples/public/screenshots/example-dynamic-mover.png" width="200" height="133" style="object-fit:cover;"/><br/>
+      <strong>Dynamic Mover</strong>
     </a>
   </td>
   </tr>
@@ -1542,7 +1932,7 @@ The simulation API is identical to the single-threaded build - only the import p
 <table>
   <tr>
   <td align="center">
-    <a href="https://isaac-mason.github.io/box3d.js/#example-multithreading">
+    <a href="https://nilo-technologies.github.io/box3d.js/#example-multithreading">
       <img src="./examples/public/screenshots/example-multithreading.png" width="200" height="133" style="object-fit:cover;"/><br/>
       <strong>Multithreading</strong>
     </a>

@@ -125,4 +125,22 @@ for (let i = 0, n = b3.getNumContacts(contactsBuffer); i < n; i++) {
 b3.destroyContactsBuffer(contactsBuffer);
 /* SNIPPET_END: contacts-buffer */
 
+/* SNIPPET_START: packed-reads */
+// One call, one copied array -- for callers that can't read the wasm heap (e.g. a sandbox).
+// Body move events: 11 numbers each (index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep).
+const moves = b3.createEventsBuffer();
+b3.b3World_Step(world, 1 / 60, 4);
+b3.getEvents(moves, world);
+const packedMoves = b3.getBodyMoveEventsPacked(moves);
+for (let o = 0; o < packedMoves.length; o += 11) {
+    console.log('body', packedMoves[o], 'y', packedMoves[o + 4], 'asleep', packedMoves[o + 10] === 1);
+}
+b3.destroyEventsBuffer(moves);
+
+// Poses of chosen bodies: Int32Array of id triples in, Float64Array of 7 per body out
+// (px, py, pz, qx, qy, qz, qw; NaN for an invalid id).
+const ids = new Int32Array([body.index1, body.world0, body.generation]);
+const poses = b3.b3Body_GetTransformsPacked(ids);
+/* SNIPPET_END: packed-reads */
+
 b3.b3DestroyWorld(world);
