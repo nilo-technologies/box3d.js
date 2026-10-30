@@ -5,11 +5,17 @@
 //   ?preset=rally-50-awd&vehicle.assists.abs=0&vehicle.suspension.front.frequency=1.9
 //
 // Booleans are 1 or 0, numbers and options as they are. Opening the page applies the keys on
-// top of the start values, in panel order, as if they were set by hand. Folders that are rebuilt
+// top of the start values, in panel order, as if they were set by hand; a value the panel could
+// not set (an unknown option, a number outside a slider's range) is ignored. Folders that are rebuilt
 // (the Vehicle folder, on every preset swap) call reset() to drop their keys and take the new
 // values as their start values.
 
-import type { Controller, default as GUI } from 'lil-gui';
+import {
+	type Controller,
+	type default as GUI,
+	NumberController,
+	OptionController,
+} from 'lil-gui';
 
 export type UrlSettings = {
 	/** Takes the panel's current values as the start values and drops the URL keys under `prefix` */
@@ -35,6 +41,19 @@ function parse(text: string, like: unknown): unknown {
 		return Number.isFinite(n) ? n : undefined;
 	}
 	return text;
+}
+
+/**
+ * Whether the panel itself could set this value: one of a dropdown's options, or within a
+ * slider's range. A hand-edited link can hold anything.
+ */
+function allowed(c: Controller, value: unknown): boolean {
+	if (c instanceof OptionController) return c._values.includes(value);
+	if (c instanceof NumberController && typeof value === 'number') {
+		if (c._min !== undefined && value < c._min) return false;
+		if (c._max !== undefined && value > c._max) return false;
+	}
+	return true;
 }
 
 /**
@@ -98,7 +117,7 @@ export function syncSettingsWithUrl(
 		const text = params.get(key);
 		if (text === null) continue;
 		const value = parse(text, c.getValue());
-		if (value !== undefined) c.setValue(value);
+		if (value !== undefined && allowed(c, value)) c.setValue(value);
 	}
 
 	// Rewrite the whole set on every change, since one setting can move others (the turbo type,
@@ -113,6 +132,12 @@ export function syncSettingsWithUrl(
 			for (const key of [...start.keys()])
 				if (key.startsWith(`${prefix}.`)) start.delete(key);
 			snapshot();
+			// Drop every key under the prefix, including ones for controls the new folder lacks,
+			// which write() would not visit
+			const url = new URL(location.href);
+			for (const key of [...url.searchParams.keys()])
+				if (key.startsWith(`${prefix}.`)) url.searchParams.delete(key);
+			history.replaceState(null, '', url);
 			write();
 		},
 	};
