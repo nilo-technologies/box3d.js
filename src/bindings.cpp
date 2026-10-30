@@ -327,6 +327,9 @@ constexpr int vehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contac
                                                           //     longitudinalForce lateralForce slipRatio slipAngle angularVelocity
                                                           //     rotationAngle steerAngle driveTorque brakeTorque
 constexpr int vehicleWheelF64 = 3 + 3;                    // 6: position contactPoint
+// chassis-space wheel readout (b3Vehicle_GetWheelLocalData), one record per wheel
+constexpr int vehicleWheelLocal = 3 + 4 + 1 + 1 + 1 + 1;  // 11: position rotation(x,y,z,w) rotationAngle angularVelocity
+                                                          //     steerAngle suspensionLength
 
 // Tripwires: pin each stride to its known total, so changing a field width is a
 // deliberate, compile-checked edit (and a nudge to reconcile the facade's field reads
@@ -349,6 +352,8 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
 static_assert( vehicleI32 == 6 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
+static_assert( vehicleWheelLocal == 11,
+	"vehicle wheel local stride changed — update the facade, the typings + _layoutMeta" );
 }
 
 // Fill flat typed-array tiers from b3ContactData[] (CSR: contacts -> manifolds
@@ -1917,6 +1922,45 @@ struct VehicleStateBuffer
 	unsigned f64Ptr() const { return (unsigned)(size_t)f64.data(); }
 };
 
+// A wheel's pose in chassis space: b3GetWheelTransform in vendor/box3d/src/vehicle.c before it
+// composes with the chassis transform. The center is the attachment point lowered along the
+// chassis up axis by the suspension length; the rotation is steer about up, then spin about the
+// axle (up x forward). The chassis body transform composed with it gives
+// b3Vehicle_GetWheelTransform. Built from the public chassis, wheel def and wheel state, so
+// box3d needs no new API.
+b3Transform getWheelLocalTransform( b3VehicleChassis chassis, b3Vec3 attachment, const b3VehicleWheelState& w )
+{
+	b3Vec3 up = chassis.up;
+	b3Vec3 axle = b3Cross( up, chassis.forward );
+	b3Transform t;
+	t.p = b3MulSub( attachment, w.suspensionLength, up );
+	t.q = b3MulQuat( b3MakeQuatFromAxisAngle( up, w.steerAngle ), b3MakeQuatFromAxisAngle( axle, w.rotationAngle ) );
+	return t;
+}
+
+// Static scratch for b3Vehicle_GetWheelLocalData: the raw writer fills it, the facade copies it
+// into the caller's Float32Array. Sized for the most wheels a vehicle can have.
+float g_vehicleWheelLocalScratch[B3_MAX_VEHICLE_WHEELS * layout::vehicleWheelLocal];
+
+// Packs every wheel's chassis-space pose and raw spin into the scratch, in layout::vehicleWheelLocal
+// order. Returns the wheel count, 0 for an invalid vehicle.
+int packVehicleWheelLocal( b3VehicleId vehicleId )
+{
+	if ( !b3Vehicle_IsValid( vehicleId ) ) return 0;
+	b3VehicleChassis chassis = b3Vehicle_GetChassis( vehicleId );
+	int wheelCount = b3Vehicle_GetWheelCount( vehicleId );
+	for ( int i = 0; i < wheelCount; ++i )
+	{
+		b3VehicleWheelState w = b3Vehicle_GetWheelState( vehicleId, i );
+		b3Transform t = getWheelLocalTransform( chassis, b3Vehicle_GetWheel( vehicleId, i ).position, w );
+		float* o = g_vehicleWheelLocalScratch + i * layout::vehicleWheelLocal;
+		o[0] = t.p.x; o[1] = t.p.y; o[2] = t.p.z;
+		o[3] = t.q.v.x; o[4] = t.q.v.y; o[5] = t.q.v.z; o[6] = t.q.s;
+		o[7] = w.rotationAngle; o[8] = w.angularVelocity; o[9] = w.steerAngle; o[10] = w.suspensionLength;
+	}
+	return wheelCount;
+}
+
 // Fixed C arrays bind as fixed length JS arrays (std::array value_arrays)
 template<typename T, std::size_t... I>
 void registerFixedArray( const char* name, std::index_sequence<I...> )
@@ -2106,6 +2150,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		o.set( "vehicleWheelI32", layout::vehicleWheelI32 );
 		o.set( "vehicleWheelF32", layout::vehicleWheelF32 );
 		o.set( "vehicleWheelF64", layout::vehicleWheelF64 );
+		o.set( "vehicleWheelLocal", layout::vehicleWheelLocal );
+		o.set( "maxVehicleWheels", B3_MAX_VEHICLE_WHEELS );
 		return o;
 	} );
 
@@ -4102,6 +4148,19 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3World_GetVehicleCount(worldId)", &b3World_GetVehicleCount );
 	out_function( "b3Vehicle_GetWheelTransform(outPosition, outRotation, vehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
 		+[]( uintptr_t outPos, uintptr_t outRot, b3VehicleId id, int wheelIndex ) { b3WorldTransform t = b3Vehicle_GetWheelTransform( id, wheelIndex ); writeVec3( outPos, t.p ); writeQuat( outRot, t.q ); } );
+	out_function( "b3Vehicle_GetWheelLocalTransform(outPosition, outRotation, vehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
+		+[]( uintptr_t outPos, uintptr_t outRot, b3VehicleId id, int wheelIndex )
+		{
+			b3Transform t = getWheelLocalTransform( b3Vehicle_GetChassis( id ), b3Vehicle_GetWheel( id, wheelIndex ).position, b3Vehicle_GetWheelState( id, wheelIndex ) );
+			writeVec3( outPos, t.p );
+			writeQuat( outRot, t.q );
+		} );
+
+	// Raw writer and scratch pointer behind the facade's b3Vehicle_GetWheelLocalData(out, vehicleId),
+	// which copies the packed records into the caller's Float32Array. Both are stripped from the
+	// public module and its typings.
+	function( "b3Vehicle_GetWheelLocalDataInto(vehicleId)", &packVehicleWheelLocal );
+	function( "b3_getVehicleWheelLocalScratch", +[]() -> uintptr_t { return reinterpret_cast<uintptr_t>( g_vehicleWheelLocalScratch ); } );
 
 	// Packed per-frame readout, wrapped by the facade as createVehicleStateBuffer /
 	// getVehicleStateData / getVehicleWheelAt / destroyVehicleStateBuffer.
