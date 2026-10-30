@@ -819,7 +819,7 @@ export async function runVehicleDemo(
 			position,
 			quatFromAxisAngle([0, 1, 0], yaw),
 		);
-		car.sway.fresh = true;
+		car.sway = createBodySway();
 		clearTrail();
 	}
 
