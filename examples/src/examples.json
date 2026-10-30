@@ -315,5 +315,18 @@
 			"presets",
 			"arcade"
 		]
+	},
+	"example-vehicle-sound": {
+		"title": "Vehicle: sound lab",
+		"description": "tune the cars' procedural engine, tire squeal and turbo sound by hand, with rev, pull and drift loops and a live scope",
+		"tags": [
+			"vehicle",
+			"car",
+			"audio",
+			"sound",
+			"engine",
+			"turbo",
+			"interactive"
+		]
 	}
 }
