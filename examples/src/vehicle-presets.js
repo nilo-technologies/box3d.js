@@ -608,16 +608,166 @@ function applyRealism(def, level) {
 	if (level.abs !== null) a.abs = level.abs;
 }
 
-/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism */
-export function applyVehiclePreset(def, car, realism, drive) {
-	applyCar(def, vehicleCars[car]);
-	drivetrainLayers[drive].apply(def, vehicleCars[car]);
-	applyRealism(def, realismLevels[realism]);
+/**
+ * Forced induction, an optional fourth layer. Rpm points are fractions of the engine's max rpm,
+ * so a type fits any car. applyTurbo lowers the engine torque so the fully boosted peak matches
+ * the car's rated torque: a turbo changes how the torque arrives, not how much there is.
+ * `parasitic` is a fraction of the rated torque. `spoolTime` is the lag at full load and the full
+ * boost rpm; `bleedTime` is how long the shaft takes to spin down, so a longer one keeps more
+ * boost through shifts and short lifts (bigger, heavier turbos keep spinning longer).
+ */
+export const turboTypes = {
+	none: {
+		title: 'Naturally aspirated',
+		blurb: 'No boost: the torque curve as it is.',
+		stages: [],
+	},
+	small: {
+		title: 'Small single turbo',
+		blurb: 'Spools early with little lag, but adds the least torque.',
+		stages: [
+			{ gain: 0.35, spool: 0.25, full: 0.42, spoolTime: 0.35, bleedTime: 0.8 },
+		],
+	},
+	big: {
+		title: 'Big single turbo',
+		blurb: 'Weak low down, a long lag, then a hard surge in the top half.',
+		stages: [
+			{ gain: 0.8, spool: 0.45, full: 0.68, spoolTime: 1.2, bleedTime: 1.8 },
+		],
+	},
+	twinScroll: {
+		title: 'Twin-scroll turbo',
+		blurb:
+			'Split exhaust pulses spool it sooner than a single turbo of the same size.',
+		stages: [
+			{ gain: 0.5, spool: 0.22, full: 0.4, spoolTime: 0.45, bleedTime: 1.0 },
+		],
+	},
+	parallel: {
+		title: 'Parallel twin turbo',
+		blurb:
+			'Two small turbos, one per bank: quick response and a strong top end.',
+		stages: [
+			{ gain: 0.55, spool: 0.28, full: 0.45, spoolTime: 0.4, bleedTime: 1.0 },
+		],
+	},
+	sequential: {
+		title: 'Sequential twin turbo',
+		blurb:
+			'A small turbo low down, then a big one takes over: two steps of boost.',
+		stages: [
+			{ gain: 0.3, spool: 0.18, full: 0.32, spoolTime: 0.3, bleedTime: 0.8 },
+			{ gain: 0.3, spool: 0.5, full: 0.62, spoolTime: 0.8, bleedTime: 1.5 },
+		],
+	},
+	vgt: {
+		title: 'Variable geometry turbo',
+		blurb: 'Vanes keep it quick down low and strong up top: one smooth climb.',
+		stages: [
+			{ gain: 0.3, spool: 0.15, full: 0.3, spoolTime: 0.3, bleedTime: 0.8 },
+			{ gain: 0.3, spool: 0.3, full: 0.5, spoolTime: 0.7, bleedTime: 1.0 },
+		],
+	},
+	electric: {
+		title: 'Electric-assisted turbo',
+		blurb: 'A big turbo with a motor that fills most of the lag.',
+		stages: [
+			{ gain: 0.6, spool: 0.3, full: 0.5, spoolTime: 1.0, bleedTime: 1.5 },
+		],
+		instantFraction: 0.6,
+	},
+	supercharger: {
+		title: 'Supercharger',
+		blurb:
+			'Belt driven: no lag, boost rises with the rpm, and it costs a little torque to drive.',
+		stages: [{ gain: 0.4, spool: 0.1, full: 0.6, spoolTime: 0, bleedTime: 0 }],
+		instantFraction: 1,
+		parasitic: 0.05,
+	},
+	antiLag: {
+		title: 'Rally turbo with anti-lag',
+		blurb: 'Keeps the boost up off throttle and through shifts.',
+		stages: [
+			{ gain: 0.6, spool: 0.35, full: 0.55, spoolTime: 0.8, bleedTime: 1.5 },
+		],
+		antiLag: true,
+	},
+};
+
+const turboStage = (stage, maxRpm) =>
+	stage
+		? {
+				gain: stage.gain,
+				spoolRpm: stage.spool * maxRpm,
+				fullBoostRpm: stage.full * maxRpm,
+				spoolTime: stage.spoolTime,
+				bleedTime: stage.bleedTime,
+			}
+		: { gain: 0, spoolRpm: 0, fullBoostRpm: 0, spoolTime: 0, bleedTime: 0 };
+
+/** Summed stage gain: the engine makes 1 + this times its torque curve at full boost */
+export const turboGain = (turbo) =>
+	turbo.stages.reduce((sum, stage) => sum + stage.gain, 0);
+
+/** A b3VehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
+export function makeVehicleTurbo(type, maxRpm, ratedTorque) {
+	const t = turboTypes[type];
+	return {
+		stages: [turboStage(t.stages[0], maxRpm), turboStage(t.stages[1], maxRpm)],
+		instantFraction: t.instantFraction ?? 0,
+		parasiticTorque: (t.parasitic ?? 0) * ratedTorque,
+		antiLag: t.antiLag ?? false,
+	};
+}
+
+const close = (a, b) => Math.abs(a - b) <= 1e-3 * Math.max(1, Math.abs(b));
+
+/**
+ * The type in turboTypes this turbo was fitted from, for an engine with this max rpm and base
+ * peak torque, or null for a custom turbo
+ */
+export function findTurboType(turbo, maxRpm, maxTorque) {
+	const rated = maxTorque * (1 + turboGain(turbo));
+	for (const type of Object.keys(turboTypes)) {
+		const t = makeVehicleTurbo(type, maxRpm, rated);
+		const same =
+			turbo.stages.every((stage, i) =>
+				Object.keys(stage).every((key) => close(stage[key], t.stages[i][key])),
+			) &&
+			close(turbo.instantFraction, t.instantFraction) &&
+			close(turbo.parasiticTorque, t.parasiticTorque) &&
+			turbo.antiLag === t.antiLag;
+		if (same) return type;
+	}
+	return null;
+}
+
+/** Swaps the forced induction, keeping the engine's rated peak torque */
+export function applyTurbo(def, type) {
+	const rated = def.engine.maxTorque * (1 + turboGain(def.turbo));
+	def.turbo = makeVehicleTurbo(type, def.engine.maxRpm, rated);
+	def.engine.maxTorque = rated / (1 + turboGain(def.turbo));
 	return def;
 }
 
-export function buildVehiclePreset(b3, car, realism, drive) {
-	return applyVehiclePreset(b3.b3DefaultVehicleDef(), car, realism, drive);
+/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism, then turbo */
+export function applyVehiclePreset(def, car, realism, drive, turbo = 'none') {
+	applyCar(def, vehicleCars[car]);
+	drivetrainLayers[drive].apply(def, vehicleCars[car]);
+	applyRealism(def, realismLevels[realism]);
+	if (turbo !== 'none') applyTurbo(def, turbo);
+	return def;
+}
+
+export function buildVehiclePreset(b3, car, realism, drive, turbo = 'none') {
+	return applyVehiclePreset(
+		b3.b3DefaultVehicleDef(),
+		car,
+		realism,
+		drive,
+		turbo,
+	);
 }
 
 export const vehiclePresetName = (car, realism, drive) =>

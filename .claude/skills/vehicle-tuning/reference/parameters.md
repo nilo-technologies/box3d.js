@@ -48,6 +48,24 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 | `inertia` | 0.3 | Engine and flywheel. Lower is quicker revving. With traction control on, spinning up this inertia in first gear eats into the torque the tire gets (see findings). |
 | `angularDamping` | 0.08 | Engine braking. |
 
+## turbo
+
+Forced induction, all zero (naturally aspirated) by default. The torque curve is multiplied by 1 + boost. Each stage has a shaft spool and a delivered pressure, both 0 to 1 of its `gain`, updated once per step before the engine solve. The pressure is the spool capped by what the pedal asks for: it fills at once and dumps through the blow-off valve with a 0.1 s time constant when the pedal closes, while the shaft spins down with `bleedTime`.
+
+The pedal is a torque request: `min(pedal × (1 + gains), 1 + boost)` times the curve, where `gains` is the sum of `stages[i].gain`. The first `1 / (1 + gains)` of the pedal needs no boost; past it the boost target rises to 1 at full pedal. Without a turbo this is the old `pedal × curve`. `examples/src/vehicle-presets.js` has nine ready types in `turboTypes`, plus `none`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `stages[i].gain` | 0 | Torque added at full boost as a fraction of the curve. 0 turns the stage off. |
+| `stages[i].spoolRpm`, `fullBoostRpm` | 0, 0 | The boost target eases in (smoothstep) between them, times the throttle. |
+| `stages[i].spoolTime` | 0 | Lag: shaft time constant at full load, `fullBoostRpm` and half spool. The real constant is `spoolTime / clamp(load × rpm / fullBoostRpm × (0.5 + spool), 0.2, 3)`, so lag is long near the threshold or at part load, short high in the revs, and the spool up gathers pace as it builds. |
+| `stages[i].bleedTime` | 0 | Shaft spin-down time constant off throttle. Shifts cut the throttle: the boost dumps, but with 0.8-1.8 s here most of the spool survives a 0.1 s shift and the boost returns as the clutch engages. Short values (under 0.3 s) make the car respool after every shift. |
+| `instantFraction` | 0 | Share of the spool that skips the lag: 1 is a supercharger, between 0 and 1 an electric-assisted turbo. |
+| `parasiticTorque` | 0 | Subtracted at full boost, scaled by boost ÷ total gain. For superchargers. |
+| `antiLag` | false | The shaft and the pressure ignore the pedal (still follow the rpm), so boost holds off throttle and through shifts, at full strength. |
+
+Traction control and the clutch launch floor both see the boosted torque. With the rated torque kept the same, a turbo never makes a car quicker: below the spool rpm it has less torque than the NA engine. A big laggy turbo (`big`) fails the sports and rally 100% realistic 0-100 targets for that reason (6.2 s and 5.2 s); every other type passes on `sports-100-rwd`, `rally-100-awd`, `super-100-rwd` and `sports-50-fwd`.
+
 ## transmission
 
 | Field | Default | Notes |

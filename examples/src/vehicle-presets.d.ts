@@ -1,4 +1,9 @@
-import type { Box3DModule, b3Vec3, b3VehicleDef } from 'box3d.js';
+import type {
+	Box3DModule,
+	b3Vec3,
+	b3VehicleDef,
+	b3VehicleTurbo,
+} from 'box3d.js';
 
 export type VehicleCarName = 'sports' | 'rally' | 'super';
 export type VehicleRealism = 100 | 75 | 50 | 25 | 0;
@@ -137,9 +142,44 @@ export interface VehicleRealismLevel {
 	abs: boolean | null;
 }
 
+export type VehicleTurboName =
+	| 'none'
+	| 'small'
+	| 'big'
+	| 'twinScroll'
+	| 'parallel'
+	| 'sequential'
+	| 'vgt'
+	| 'electric'
+	| 'supercharger'
+	| 'antiLag';
+
+/** One compressor stage. Rpm points are fractions of the engine's max rpm. */
+export interface VehicleTurboStageType {
+	gain: number;
+	spool: number;
+	full: number;
+	/** Seconds */
+	spoolTime: number;
+	/** Seconds */
+	bleedTime: number;
+}
+
+/** The optional fourth preset layer */
+export interface VehicleTurboType {
+	title: string;
+	blurb: string;
+	stages: VehicleTurboStageType[];
+	instantFraction?: number;
+	/** Fraction of the rated torque spent driving the compressor at full boost */
+	parasitic?: number;
+	antiLag?: boolean;
+}
+
 export const vehicleCars: Record<VehicleCarName, VehicleCar>;
 export const drivetrainLayers: Record<VehicleDrive, VehicleDrivetrainLayer>;
 export const realismLevels: Record<VehicleRealism, VehicleRealismLevel>;
+export const turboTypes: Record<VehicleTurboName, VehicleTurboType>;
 export const vehiclePresets: Record<VehiclePresetName, VehiclePreset>;
 
 export function vehiclePresetName(
@@ -148,12 +188,39 @@ export function vehiclePresetName(
 	drive: VehicleDrive,
 ): VehicleMatrixPresetName;
 
-/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism */
+/** Summed stage gain: the engine makes 1 + this times its torque curve at full boost */
+export function turboGain(turbo: b3VehicleTurbo): number;
+
+/** A b3VehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
+export function makeVehicleTurbo(
+	type: VehicleTurboName,
+	maxRpm: number,
+	ratedTorque: number,
+): b3VehicleTurbo;
+
+/**
+ * The type in turboTypes this turbo was fitted from, for an engine with this max rpm and base
+ * peak torque, or null for a custom turbo
+ */
+export function findTurboType(
+	turbo: b3VehicleTurbo,
+	maxRpm: number,
+	maxTorque: number,
+): VehicleTurboName | null;
+
+/** Swaps the forced induction, keeping the engine's rated peak torque */
+export function applyTurbo(
+	def: b3VehicleDef,
+	type: VehicleTurboName,
+): b3VehicleDef;
+
+/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism, then turbo */
 export function applyVehiclePreset(
 	def: b3VehicleDef,
 	car: VehicleCarName,
 	realism: VehicleRealism,
 	drive: VehicleDrive,
+	turbo?: VehicleTurboName,
 ): b3VehicleDef;
 
 export function buildVehiclePreset(
@@ -161,6 +228,7 @@ export function buildVehiclePreset(
 	car: VehicleCarName,
 	realism: VehicleRealism,
 	drive: VehicleDrive,
+	turbo?: VehicleTurboName,
 ): b3VehicleDef;
 
 export function createPresetVehicleDef(

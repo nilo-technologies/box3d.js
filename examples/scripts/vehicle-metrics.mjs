@@ -5,8 +5,9 @@
 //   node examples/scripts/vehicle-metrics.mjs --car super            all 15 supercar presets
 //   node examples/scripts/vehicle-metrics.mjs --all                  all 45 matrix presets
 //   node examples/scripts/vehicle-metrics.mjs --file my-car.mjs      a preset module (see below)
-//   add --json for machine readable output, --quick to skip the top speed run, and --perturb
-//   to rerun each car with the mass 3% and the tire grip 2% off each way
+//   add --json for machine readable output, --quick to skip the top speed run, --perturb
+//   to rerun each car with the mass 3% and the tire grip 2% off each way, and --turbo <type>
+//   to fit a turbo from turboTypes in vehicle-presets.js (the rated torque stays the same)
 //
 // A --file module exports `preset` ({ title, halfExtents, apply(def) }, the same shape as the
 // entries in examples/src/vehicle-presets.js) and `target`
@@ -24,7 +25,7 @@ const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const presetsModule = await import(
 	new URL('examples/src/vehicle-presets.js', root).href
 );
-const { vehiclePresets, realismLevels } = presetsModule;
+const { vehiclePresets, realismLevels, turboTypes, applyTurbo } = presetsModule;
 
 // ---------------------------------------------------------------------------
 // Targets
@@ -649,6 +650,10 @@ function parseArgs(argv) {
 		else if (a === '--json') args.json = true;
 		else if (a === '--quick') args.quick = true;
 		else if (a === '--perturb') args.perturb = true;
+		else if (a === '--turbo') {
+			args.turbo = argv[++i];
+			if (!args.turbo || args.turbo.startsWith('--')) throw new Error('--turbo needs a type');
+		}
 		else throw new Error(`unknown argument ${a}`);
 	}
 	return args;
@@ -680,8 +685,20 @@ if (isMain) {
 		jobs.push({ name: path.basename(args.file), preset: mod.preset, target });
 	}
 	if (jobs.length === 0) {
-		console.error('usage: vehicle-metrics.mjs --preset <name> | --car <sports|rally|super> | --all | --file <module> [--json] [--quick] [--perturb]');
+		console.error('usage: vehicle-metrics.mjs --preset <name> | --car <sports|rally|super> | --all | --file <module> [--json] [--quick] [--perturb] [--turbo <type>]');
 		process.exit(2);
+	}
+
+	// --turbo: the same cars with forced induction on top, as the fourth preset layer
+	if (args.turbo) {
+		if (!turboTypes[args.turbo]) {
+			throw new Error(`no turbo type ${args.turbo}, pick one of ${Object.keys(turboTypes).join(', ')}`);
+		}
+		for (const job of jobs) {
+			const apply = job.preset.apply;
+			job.name = `${job.name} ${args.turbo}`;
+			job.preset = { ...job.preset, apply: (d) => applyTurbo(apply(d), args.turbo) };
+		}
 	}
 
 	// --perturb: every job again with the mass 3% off and the tire grip 2% off each way, so a

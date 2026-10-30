@@ -1433,6 +1433,45 @@ async function vehicleScenarios( b3 )
 		b3.b3DestroyWorld( world );
 	}
 
+	// Turbo: naturally aspirated by default, live settings round-trip, boost builds with lag and
+	// shows in both readouts. Every turbo type keeps the car's rated torque.
+	{
+		const { turboTypes, turboGain, buildVehiclePreset } = await import( '../examples/src/vehicle-presets.js' );
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world );
+		const na = b3.b3Vehicle_GetTurbo( vehicle );
+		assert.equal( na.stages.length, 2, 'turbo stages are a fixed array' );
+		assert.ok( na.stages.every( ( s ) => s.gain === 0 ) && !na.antiLag, 'default car is naturally aspirated' );
+		b3.b3Vehicle_SetTurbo( vehicle, { ...na, stages: [ { gain: 0.5, spoolRpm: 2000, fullBoostRpm: 3500, spoolTime: 0.8, bleedTime: 0.15 }, na.stages[ 1 ] ] } );
+		assert.equal( b3.b3Vehicle_GetTurbo( vehicle ).stages[ 0 ].fullBoostRpm, 3500, 'turbo settings round-trip' );
+		step( world, 60 );
+		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		step( world, 15 );
+		const early = readState( vehicle ).boost;
+		step( world, 240 );
+		const late = readState( vehicle ).boost;
+		assert.ok( early < late && late > 0.3 && late <= 0.5 + 1e-4, `boost builds with lag (${early.toFixed( 2 )} then ${late.toFixed( 2 )})` );
+		assert.ok( Math.abs( b3.b3Vehicle_GetState( vehicle ).boost - late ) < 1e-6, 'packed and plain readouts agree on boost' );
+		assertFinite( vehicle, chassis, 'turbo car' );
+		b3.b3DestroyWorld( world );
+
+		const base = buildVehiclePreset( b3, 'sports', 100, 'rwd' );
+		for ( const type of Object.keys( turboTypes ) )
+		{
+			const def = buildVehiclePreset( b3, 'sports', 100, 'rwd', type );
+			const rated = def.engine.maxTorque * ( 1 + turboGain( def.turbo ) );
+			assert.ok( Math.abs( rated - base.engine.maxTorque ) < 1e-3, `${type}: keeps the rated torque` );
+			const w = createWorld();
+			const car = createCar( w, { def, halfExtents: vehiclePresets[ 'sports-100-rwd' ].halfExtents } );
+			step( w, 60 );
+			b3.b3Vehicle_SetInput( car.vehicle, input( 1 ) );
+			step( w, 300 );
+			assert.ok( readState( car.vehicle ).speed > 15, `${type}: drives` );
+			assertFinite( car.vehicle, car.chassis, `${type} turbo` );
+			b3.b3DestroyWorld( w );
+		}
+	}
+
 	// Turning at walking pace with full lock gives a tight circle
 	{
 		const world = createWorld();
