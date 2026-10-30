@@ -16,6 +16,7 @@ import type {
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
 import * as THREE from 'three';
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
@@ -30,10 +31,21 @@ import {
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
+import {
+	buildRaceTrack,
+	createRaceTrackBodies,
+	type RaceTrack,
+} from './vehicle-tracks';
+
+/**
+ * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. circuit and stage:
+ * the race tracks from vehicle-tracks.js, a paved circuit and an off-road stage.
+ */
+export type VehicleTerrain = 'track' | 'offroad' | 'circuit' | 'stage';
 
 export type VehicleDemoOptions = {
 	preset: VehiclePresetName;
-	terrain: 'track' | 'offroad';
+	terrain: VehicleTerrain;
 	/** Body paint */
 	color: number;
 	/** One line under the title */
@@ -140,6 +152,8 @@ export async function runVehicleDemo(
 	/** Height of a fresh car's chassis above the ground (m) */
 	const spawnClearance = 1.5;
 	let spawn: b3Vec3 = [0, spawnClearance, 0];
+	let spawnYaw = 0;
+	let raceTrack: RaceTrack | null = null;
 
 	function buildTrack(): void {
 		const size = 250;
@@ -384,8 +398,150 @@ export async function runVehicleDemo(
 		spawn = [0, heightAt(0, 0) + spawnClearance, 0];
 	}
 
+	function buildRaceTrackTerrain(name: 'circuit' | 'stage'): void {
+		const track = buildRaceTrack(name);
+		raceTrack = track;
+		const { ground, bumpBodies, walls } = createRaceTrackBodies(
+			b3,
+			world,
+			track,
+		);
+		for (const body of [ground, ...bumpBodies, ...walls])
+			hidden.add(body.index1);
+		const paved = track.surface === 'asphalt';
+
+		// Terrain mesh from the same heights, coloured by surface: road, kerbs or verge, start
+		// line, and grass shaded by height
+		const { heights, roadMask, roadS, countX, countZ, cell, origin } =
+			track.field;
+		const positions = new Float32Array(countX * countZ * 3);
+		const colors = new Float32Array(countX * countZ * 3);
+		let lo = Number.POSITIVE_INFINITY;
+		let hi = Number.NEGATIVE_INFINITY;
+		for (const h of heights) {
+			lo = Math.min(lo, h);
+			hi = Math.max(hi, h);
+		}
+		const grassLow = new THREE.Color(paved ? 0x3d6b2f : 0x4b5a30);
+		const grassHigh = new THREE.Color(paved ? 0x6f9a4a : 0x6f7a45);
+		const road = new THREE.Color(paved ? 0x34363a : 0xb39466);
+		const roadAlt = new THREE.Color(paved ? 0x3a3c40 : 0xa6895c);
+		const kerbRed = new THREE.Color(paved ? 0xc8302c : 0x6e5a3e);
+		const kerbWhite = new THREE.Color(paved ? 0xeeeeee : 0x75603f);
+		const white = new THREE.Color(0xf2f2f2);
+		const color = new THREE.Color();
+		for (let iz = 0, i = 0; iz < countZ; iz++) {
+			for (let ix = 0; ix < countX; ix++, i++) {
+				const h = heights[i];
+				positions[i * 3] = origin[0] + ix * cell;
+				positions[i * 3 + 1] = h;
+				positions[i * 3 + 2] = origin[1] + iz * cell;
+				const along = roadS[i];
+				const atStart =
+					along >= 0 &&
+					Math.abs(
+						((along - track.start.s + track.length * 1.5) % track.length) -
+							track.length / 2,
+					) < 1.5;
+				if (roadMask[i] >= 1) {
+					color.copy(atStart ? white : (ix + iz) % 2 ? road : roadAlt);
+				} else if (roadMask[i] > 0) {
+					color.copy(Math.floor(along / 3) % 2 ? kerbRed : kerbWhite);
+				} else {
+					color
+						.copy(grassLow)
+						.lerp(
+							grassHigh,
+							Math.min(Math.max((h - lo) / (hi - lo + 1e-6), 0), 1),
+						);
+				}
+				colors[i * 3] = color.r;
+				colors[i * 3 + 1] = color.g;
+				colors[i * 3 + 2] = color.b;
+			}
+		}
+		const indices: number[] = [];
+		for (let iz = 0; iz < countZ - 1; iz++) {
+			for (let ix = 0; ix < countX - 1; ix++) {
+				const a = iz * countX + ix;
+				const b = a + 1;
+				const c = a + countX;
+				const d = c + 1;
+				indices.push(a, c, b, b, c, d);
+			}
+		}
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+		geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+		geometry.setIndex(indices);
+		geometry.computeVertexNormals();
+		app.scene.add(
+			new THREE.Mesh(
+				geometry,
+				new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
+			),
+		);
+
+		// Bumps: yellow on the circuit, rock coloured on the stage
+		const bumpMaterial = new THREE.MeshStandardMaterial({
+			color: paved ? 0xe8c547 : 0x9a8466,
+			roughness: 0.8,
+		});
+		for (const bump of track.bumps) {
+			const points: THREE.Vector3[] = [];
+			for (let k = 0; k < bump.points.length; k += 3) {
+				points.push(
+					new THREE.Vector3(
+						bump.points[k],
+						bump.points[k + 1],
+						bump.points[k + 2],
+					),
+				);
+			}
+			const mesh = new THREE.Mesh(new ConvexGeometry(points), bumpMaterial);
+			mesh.position.set(...bump.position);
+			mesh.rotation.y = bump.yaw;
+			app.scene.add(mesh);
+		}
+
+		// Start gate over the start line
+		const gate = new THREE.Group();
+		const post = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+		const banner = new THREE.MeshStandardMaterial({ color: 0xd2342c });
+		const span = track.width / 2 + 1.5;
+		for (const side of [-1, 1]) {
+			const pole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 0.3), post);
+			pole.position.set(side * span, 2.5, 0);
+			gate.add(pole);
+		}
+		const top = new THREE.Mesh(
+			new THREE.BoxGeometry(span * 2, 0.9, 0.2),
+			banner,
+		);
+		top.position.set(0, 4.8, 0);
+		gate.add(top);
+		gate.position.set(...track.start.position);
+		gate.rotation.y = track.start.yaw;
+		app.scene.add(gate);
+
+		// Daylight for the open tracks
+		const sky = new THREE.Color(0x9ec4e4);
+		app.scene.background = sky;
+		app.scene.fog = new THREE.Fog(sky, 160, 650);
+		app.camera.far = 1000;
+		app.camera.updateProjectionMatrix();
+
+		spawn = [
+			track.start.position[0],
+			track.start.position[1] + spawnClearance,
+			track.start.position[2],
+		];
+		spawnYaw = track.start.yaw;
+	}
+
 	if (options.terrain === 'track') buildTrack();
-	else buildOffroad();
+	else if (options.terrain === 'offroad') buildOffroad();
+	else buildRaceTrackTerrain(options.terrain);
 
 	// ---------------------------------------------------------------------------
 	// Vehicle
@@ -700,7 +856,12 @@ export async function runVehicleDemo(
 		last.copy(point);
 	}
 
-	let car = spawnCar(options.preset, options.color, spawn);
+	let car = spawnCar(
+		options.preset,
+		options.color,
+		spawn,
+		quatFromAxisAngle([0, 1, 0], spawnYaw),
+	);
 
 	// ---- Sound. The cylinder count sets the engine's pitch for a given rpm.
 	const cylinderCounts: Record<string, number> = {
@@ -791,7 +952,8 @@ export async function runVehicleDemo(
 
 	function resetCar(toSpawn: boolean): void {
 		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
-		const yaw = toSpawn ? 0 : carYaw();
+		const yaw = toSpawn ? spawnYaw : carYaw();
+		if (toSpawn) resetLap();
 		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
 		b3.b3Vehicle_Reset(
 			car.vehicle,
@@ -898,12 +1060,62 @@ export async function runVehicleDemo(
 		'<div><span id="hud-speed" style="font-size:30px">0</span> km/h &nbsp; <span id="hud-gear" style="font-size:22px">N</span></div>' +
 		'<div style="height:6px;background:#333;border-radius:3px;margin:6px 0;overflow:hidden">' +
 		'<div id="hud-rpm" style="height:100%;width:0;background:#4d96ff"></div></div>' +
-		'<div id="hud-flags" style="font-size:11px;opacity:.8"></div>';
+		'<div id="hud-flags" style="font-size:11px;opacity:.8"></div>' +
+		'<div id="hud-lap" style="font-size:13px;margin-top:4px"></div>';
 	document.body.appendChild(hud);
 	const hudSpeed = hud.querySelector('#hud-speed') as HTMLElement;
 	const hudGear = hud.querySelector('#hud-gear') as HTMLElement;
 	const hudRpm = hud.querySelector('#hud-rpm') as HTMLElement;
 	const hudFlags = hud.querySelector('#hud-flags') as HTMLElement;
+	const hudLap = hud.querySelector('#hud-lap') as HTMLElement;
+
+	// ---- Lap timer on the race tracks: progress along the centreline, counted in simulated
+	// time so a slow frame rate does not change the lap time
+	const lap = { index: 0, progress: 0, start: 0, last: 0, best: 0, count: 0 };
+	let simTime = 0;
+	function resetLap(): void {
+		if (!raceTrack) return;
+		lap.index = Math.round(raceTrack.start.s) % raceTrack.centerline.length;
+		lap.progress = 0;
+		lap.start = simTime;
+	}
+	resetLap();
+	function updateLap(): void {
+		if (!raceTrack) return;
+		const line = raceTrack.centerline;
+		const n = line.length;
+		// The nearest centreline sample in a window around the last one
+		let best = lap.index;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (let k = -20; k <= 40; k++) {
+			const p = line[(lap.index + k + n) % n];
+			const d = (p.x - currPos.x) ** 2 + (p.z - currPos.z) ** 2;
+			if (d < bestD) {
+				bestD = d;
+				best = lap.index + k;
+			}
+		}
+		// Far off the track (after a reset elsewhere), look everywhere
+		if (bestD > 40 * 40) {
+			const r = raceTrack.roadAt(currPos.x, currPos.z);
+			if (r)
+				best =
+					lap.index +
+					((Math.round(r.sample.s) - lap.index + n * 1.5) % n) -
+					n / 2;
+		}
+		lap.progress += best - lap.index;
+		lap.index = ((Math.round(best) % n) + n) % n;
+		if (lap.progress >= n) {
+			lap.last = simTime - lap.start;
+			lap.best = lap.best ? Math.min(lap.best, lap.last) : lap.last;
+			lap.count++;
+			lap.progress -= n;
+			lap.start = simTime;
+		}
+	}
+	const clock = (t: number) =>
+		`${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
 	function updateHud(): void {
 		hudSpeed.textContent = Math.abs(state.speed * 3.6).toFixed(0);
@@ -920,6 +1132,12 @@ export async function runVehicleDemo(
 			state.stuck ? 'stuck: press R' : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
+		if (raceTrack) {
+			const parts = [`lap ${clock(simTime - lap.start)}`];
+			if (lap.last) parts.push(`last ${clock(lap.last)}`);
+			if (lap.best) parts.push(`best ${clock(lap.best)}`);
+			hudLap.textContent = parts.join(' · ');
+		}
 	}
 
 	if (options.showcase) {
@@ -967,7 +1185,11 @@ export async function runVehicleDemo(
 	const wheelPos = new THREE.Vector3();
 	const wheelQuat = new THREE.Quaternion();
 	const contact = new THREE.Vector3();
-	const camPos = new THREE.Vector3(spawn[0], spawn[1] + 3, spawn[2] - 9);
+	const camPos = new THREE.Vector3(
+		spawn[0] - 9 * Math.sin(spawnYaw),
+		spawn[1] + 3,
+		spawn[2] - 9 * Math.cos(spawnYaw),
+	);
 	const camTarget = new THREE.Vector3();
 	const forward = new THREE.Vector3();
 	const slipColor = new THREE.Color();
@@ -987,7 +1209,9 @@ export async function runVehicleDemo(
 				prevQuat.copy(currQuat);
 				b3.b3Vehicle_SetInput(car.vehicle, input);
 				b3.b3World_Step(world, STEP, SUBSTEPS);
+				simTime += STEP;
 				readPose();
+				updateLap();
 				accumulator -= STEP;
 				steps++;
 			}

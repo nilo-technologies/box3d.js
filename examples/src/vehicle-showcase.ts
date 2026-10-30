@@ -4,6 +4,7 @@
 
 import type { Box3DModule, b3VehicleId } from 'box3d.js';
 import type GUI from 'lil-gui';
+import type { VehicleTerrain } from './vehicle-demo';
 import {
 	drivetrainLayers,
 	realismLevels,
@@ -19,7 +20,7 @@ import {
 export type ShowcaseHost = {
 	gui: GUI;
 	b3: Box3DModule;
-	terrain: 'track' | 'offroad';
+	terrain: VehicleTerrain;
 	/** The car being driven */
 	current(): { name: VehiclePresetName; vehicle: b3VehicleId };
 	/** Replace the car with another preset where it stands */
@@ -31,16 +32,18 @@ export type ShowcaseHost = {
 
 const realismOrder: VehicleRealism[] = [100, 75, 50, 25, 0];
 
-/** Reads the start preset and terrain from the URL, e.g. ?preset=rally-50-awd&terrain=offroad */
+const terrains: VehicleTerrain[] = ['track', 'offroad', 'circuit', 'stage'];
+
+/** Reads the start preset and terrain from the URL, e.g. ?preset=rally-50-awd&terrain=stage */
 export function showcaseStart(): {
 	preset: VehiclePresetName;
-	terrain: 'track' | 'offroad';
+	terrain: VehicleTerrain;
 } {
 	const params = new URLSearchParams(location.search);
 	const preset = params.get('preset') as VehiclePresetName | null;
 	return {
 		preset: preset && vehiclePresets[preset]?.matrix ? preset : 'sports-50-rwd',
-		terrain: params.get('terrain') === 'offroad' ? 'offroad' : 'track',
+		terrain: terrains.find((t) => t === params.get('terrain')) ?? 'track',
 	};
 }
 
@@ -185,7 +188,12 @@ export function addShowcase(host: ShowcaseHost): void {
 		.name('drive (F/G/H)')
 		.onChange(apply);
 	folder
-		.add(params, 'terrain', { 'Paved track': 'track', 'Off-road': 'offroad' })
+		.add(params, 'terrain', {
+			'Test track': 'track',
+			'Off-road area': 'offroad',
+			'Race circuit': 'circuit',
+			'Off-road stage': 'stage',
+		})
 		.name('terrain (reloads)')
 		.onChange(() => {
 			updateUrl();

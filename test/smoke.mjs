@@ -1557,6 +1557,62 @@ async function vehicleScenarios( b3 )
 		}
 	}
 
+	// Race tracks: a closed loop with real climbs and descents, a bump section with bumps of
+	// different sizes, drivable ground beside the road, and a lap with no flip on each
+	{
+		const { buildRaceTrack } = await import( '../examples/src/vehicle-tracks.js' );
+		const { driveLap } = await import( '../examples/scripts/vehicle-laps.mjs' );
+		results.laps = {};
+		for ( const [ name, presetName ] of [ [ 'circuit', 'sports-50-rwd' ], [ 'stage', 'rally-50-awd' ] ] )
+		{
+			const track = buildRaceTrack( name );
+			const line = track.centerline;
+			const n = line.length;
+			assert.ok( Math.hypot( line[ 0 ].x - line[ n - 1 ].x, line[ 0 ].z - line[ n - 1 ].z ) < 2, `${name}: the track is a closed loop` );
+			const ys = line.map( ( c ) => c.y );
+			assert.ok( Math.max( ...ys ) - Math.min( ...ys ) >= 15, `${name}: at least 15 m of elevation change` );
+			const grades = line.map( ( c, i ) => ( line[ ( i + 10 ) % n ].y - c.y ) / 10 );
+			assert.ok( Math.max( ...grades ) >= 0.05 && Math.min( ...grades ) <= -0.05, `${name}: has uphill and downhill sections of 5% or more` );
+			const heights = track.bumps.map( ( b ) => b.height );
+			const lengths = track.bumps.map( ( b ) => b.length );
+			assert.ok( new Set( track.bumps.map( ( b ) => b.label ) ).size >= 5, `${name}: at least five kinds of bump` );
+			assert.ok( Math.max( ...heights ) >= 3 * Math.min( ...heights ) && Math.max( ...lengths ) >= 5 * Math.min( ...lengths ), `${name}: small and big, short and long bumps` );
+			for ( let i = 0; i < n; i += 4 )
+			{
+				for ( let k = i + 60; k < n - Math.max( 0, 60 - i ); k += 4 )
+				{
+					const d = Math.hypot( line[ i ].x - line[ k ].x, line[ i ].z - line[ k ].z );
+					assert.ok( d > 40, `${name}: separate parts of the track stay 40 m apart (s=${i} and s=${k} are ${d.toFixed( 0 )} m)` );
+				}
+			}
+			const { heights: field, countX, cell, origin } = track.field;
+			const h = ( x, z ) =>
+			{
+				const fx = ( x - origin[ 0 ] ) / cell, fz = ( z - origin[ 1 ] ) / cell;
+				const ix = Math.floor( fx ), iz = Math.floor( fz ), tx = fx - ix, tz = fz - iz;
+				const g = ( a, b ) => field[ ( iz + b ) * countX + ix + a ];
+				return ( g( 0, 0 ) * ( 1 - tx ) + g( 1, 0 ) * tx ) * ( 1 - tz ) + ( g( 0, 1 ) * ( 1 - tx ) + g( 1, 1 ) * tx ) * tz;
+			};
+			let steepest = 0;
+			for ( const c of line )
+			{
+				for ( const side of [ -1, 1 ] )
+				{
+					for ( let off = track.width / 2; off < track.width / 2 + 15; off += 2 )
+					{
+						const x = c.x + side * c.tz * off, z = c.z - side * c.tx * off;
+						steepest = Math.max( steepest, Math.abs( h( x + side * c.tz * 2, z - side * c.tx * 2 ) - h( x, z ) ) / 2 );
+					}
+				}
+			}
+			assert.ok( steepest < 0.4, `${name}: ground within 15 m of the road is drivable (steepest ${( steepest * 100 ).toFixed( 0 )}%)` );
+			const lap = driveLap( name, vehiclePresets[ presetName ], { b3 } );
+			assert.ok( lap.completed, `${name}: ${presetName} completes a lap` );
+			assert.ok( lap.minUp > 0.3, `${name}: ${presetName} does not flip (upright ${lap.minUp.toFixed( 2 )})` );
+			results.laps[ name ] = lap.lapTime;
+		}
+	}
+
 	// 50 cars driving in circles cost under 1 ms per step
 	{
 		const world = createWorld();
@@ -1760,7 +1816,8 @@ async function check( label, importPath, decompositionOptions )
 	const runs = Object.entries( vehicle.presets );
 	const matrix = runs.filter( ( [ name ] ) => name.includes( '-' ) ).map( ( [ , t ] ) => t );
 	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
-		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s`;
+		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s, ` +
+		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
