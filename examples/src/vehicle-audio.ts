@@ -139,6 +139,8 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 	}
 	window.addEventListener('keydown', unlock);
 	window.addEventListener('pointerdown', unlock);
+	// A touch only counts as a user gesture for audio once the finger lifts
+	window.addEventListener('pointerup', unlock);
 
 	function thump(strength: number) {
 		if (!context || !nodes) return;

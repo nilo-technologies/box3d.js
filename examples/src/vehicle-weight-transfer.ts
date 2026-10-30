@@ -82,9 +82,11 @@ export function createWeightTransferView(gui: GUI): WeightTransferView {
 		});
 
 	// ---- Load panel: one bar per wheel in a top down car layout, front at the top
+	// The touch controls move and shrink it through these variables, see example.css
 	const panel = document.createElement('div');
 	panel.style.cssText =
-		'position:fixed;left:18px;bottom:18px;padding:10px 12px;border-radius:8px;' +
+		'position:fixed;left:18px;bottom:var(--vehicle-loads-bottom,18px);padding:10px 12px;border-radius:8px;' +
+		'transform:scale(var(--vehicle-loads-scale,1));transform-origin:0 100%;' +
 		'background:rgba(0,0,0,.55);color:#eee;font:600 11px ui-monospace,monospace;' +
 		'pointer-events:none;user-select:none;text-align:center';
 	const cells: HTMLElement[] = [];
