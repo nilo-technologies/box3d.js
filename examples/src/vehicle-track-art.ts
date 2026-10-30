@@ -15,7 +15,6 @@ export const topo = {
 	contour: 0xc4b391,
 	contourSpacing: 2,
 	asphalt: 0x5a5a5a,
-	gravel: 0x8c7a5b,
 	line: 0xffffff,
 	accent: 0xe07a5f,
 };
@@ -125,6 +124,7 @@ function ribbon(
 	to: number,
 	lift: number,
 	only?: (s: number) => boolean,
+	ground?: (x: number, z: number) => number,
 ): THREE.BufferGeometry {
 	const line = track.centerline;
 	const positions: number[] = [];
@@ -139,14 +139,11 @@ function ribbon(
 		}
 		// Left of the direction of travel is +x when it is +z, so the normal is (tz, -tx)
 		const base = positions.length / 3;
-		positions.push(
-			c.x + c.tz * from,
-			c.y + lift,
-			c.z - c.tx * from,
-			c.x + c.tz * to,
-			c.y + lift,
-			c.z - c.tx * to,
-		);
+		for (const w of [from, to]) {
+			const x = c.x + c.tz * w;
+			const z = c.z - c.tx * w;
+			positions.push(x, (ground ? ground(x, z) : c.y) + lift, z);
+		}
 		if (open) indices.push(base - 2, base, base - 1, base - 1, base, base + 1);
 		open = true;
 	}
@@ -232,6 +229,24 @@ function bumpGeometry(points: number[], half: number): THREE.BufferGeometry {
 	return geometry;
 }
 
+/** The height field's surface at (x, z), on the same triangles the terrain mesh draws */
+function fieldHeight(track: RaceTrack, x: number, z: number): number {
+	const { heights, countX, countZ, cell, origin } = track.field;
+	const fx = Math.min(Math.max((x - origin[0]) / cell, 0), countX - 1.001);
+	const fz = Math.min(Math.max((z - origin[1]) / cell, 0), countZ - 1.001);
+	const ix = Math.floor(fx);
+	const iz = Math.floor(fz);
+	const u = fx - ix;
+	const v = fz - iz;
+	const h = (i: number, k: number) => heights[(iz + k) * countX + ix + i];
+	// Each cell is split along the diagonal from (1, 0) to (0, 1)
+	if (u + v <= 1)
+		return h(0, 0) + (h(1, 0) - h(0, 0)) * u + (h(0, 1) - h(0, 0)) * v;
+	return (
+		h(1, 1) + (h(0, 1) - h(1, 1)) * (1 - u) + (h(1, 0) - h(1, 1)) * (1 - v)
+	);
+}
+
 /** The race track's terrain, road, start line, bumps and start gate */
 export function addRaceTrackArt(
 	scene: THREE.Scene,
@@ -265,28 +280,45 @@ export function addRaceTrackArt(
 	terrain.computeVertexNormals();
 	group.add(new THREE.Mesh(terrain, topoMaterial({ vertexColors: true })));
 
-	// Road, edge lines and start line
+	// Road, edge lines and start line. Off-road there is no road strip: the edge lines follow the
+	// ground itself and mark the way.
 	const half = track.width / 2;
 	const paved = track.surface === 'asphalt';
-	group.add(
-		new THREE.Mesh(
-			ribbon(track, -half, half, 0.05),
-			overlayMaterial(paved ? topo.asphalt : topo.gravel),
-		),
-	);
+	const ground = paved
+		? undefined
+		: (x: number, z: number) => fieldHeight(track, x, z);
+	if (paved) {
+		group.add(
+			new THREE.Mesh(
+				ribbon(track, -half, half, 0.05),
+				overlayMaterial(topo.asphalt),
+			),
+		);
+	}
 	const line = overlayMaterial(topo.line);
+	const lineLift = paved ? 0.07 : 0.03;
 	for (const side of [-1, 1]) {
 		const a = side * (half - 0.35);
-		group.add(new THREE.Mesh(ribbon(track, a, a - side * 0.18, 0.07), line));
+		group.add(
+			new THREE.Mesh(
+				ribbon(track, a, a - side * 0.18, lineLift, undefined, ground),
+				line,
+			),
+		);
 	}
 	const startS = track.start.s;
 	const nearStart = (s: number) => {
 		const d = (((s - startS) % track.length) + track.length) % track.length;
 		return Math.min(d, track.length - d) <= 1;
 	};
-	group.add(new THREE.Mesh(ribbon(track, -half, half, 0.08, nearStart), line));
+	group.add(
+		new THREE.Mesh(
+			ribbon(track, -half, half, lineLift + 0.01, nearStart, ground),
+			line,
+		),
+	);
 
-	// Bumps in the accent colour, lifted with the road so even the small ones show, with smooth
+	// Bumps in the accent colour, lifted with the road strip (when there is one) so even the small ones show, with smooth
 	// normals so the low sun shades their shape
 	const bumpMaterial = new THREE.MeshStandardMaterial({
 		color: topo.accent,
@@ -317,7 +349,7 @@ export function addRaceTrackArt(
 		const mesh = new THREE.Mesh(bumpGeometry(bump.points, half), bumpMaterial);
 		mesh.position.set(
 			bump.position[0],
-			bump.position[1] + 0.05,
+			bump.position[1] + (paved ? 0.05 : 0.01),
 			bump.position[2],
 		);
 		mesh.rotation.y = bump.yaw;
