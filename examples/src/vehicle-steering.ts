@@ -70,7 +70,9 @@ export function createSteeringLimiter(b3: Box3DModule) {
 		if (maxAngle <= 0) return steer;
 		let angle = -steer * maxAngle;
 
-		// The direction the front axle travels, measured as the vehicle measures slip angle
+		// The direction the front axle travels, measured as the vehicle measures slip angle:
+		// atan2(lateral, |forward| + 1 m/s). The tire's peak angle is defined on that measure, so
+		// dropping the 1 m/s here would make the limit a different angle from the tire's peak.
 		const travel = Math.atan2(dot(velocity, left), vForward + 1);
 		if (angle > 0) angle = Math.min(angle, Math.max(travel + peakAngle, 0));
 		else angle = Math.max(angle, Math.min(travel - peakAngle, 0));
