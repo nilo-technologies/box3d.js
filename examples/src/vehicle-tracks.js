@@ -4,9 +4,11 @@
 // Each track is a closed Catmull-Rom spline through control points [x, z, elevation]. The
 // spline is resampled every metre, and the terrain is a height field: flat across the road at
 // the centreline's elevation, blending over the shoulder into a landscape that follows the
-// road's elevation plus some hills. Bumps are separate convex hull bodies laid across the road
-// along a straight bump section, so their shape is exact rather than limited by the height
-// field's grid.
+// road's elevation plus some hills. A paved track also has its road as a triangle mesh along
+// the spline, a little above the terrain, with edges that ease down onto it, so the car drives
+// on the road it sees and can leave and rejoin it smoothly. Bumps are separate convex hull
+// bodies laid across the road along a straight bump section, so their shape is exact rather
+// than limited by the height field's grid.
 
 const TAU = Math.PI * 2;
 
@@ -37,6 +39,7 @@ export const raceTracks = {
 		shoulder: 10,
 		hills: 3,
 		roughness: 0,
+		road: { sink: 0.15, ramp: 2.5 },
 		points: [
 			[0, -110, 0],
 			[0, 40, 0],
@@ -339,6 +342,11 @@ export function buildRaceTrack(name) {
 	const countX = Math.ceil((Math.max(...xs) + margin - x0) / cell) + 1;
 	const countZ = Math.ceil((Math.max(...zs) + margin - z0) / cell) + 1;
 	const half = def.width / 2;
+	// A paved road sits `sink` above the terrain under it, and its edges ease down to the terrain
+	// over `ramp` metres; the landscape blends in beyond that
+	const sink = def.road?.sink ?? 0;
+	const ramp = def.road?.ramp ?? 0;
+	const verge = half + ramp;
 	const seed = name.length;
 	// The landscape follows the road's elevation nearby: a Gaussian weighted average of the
 	// centreline heights, fading to ground level far from the road. Computed on a coarse grid
@@ -404,10 +412,14 @@ export function buildRaceTrack(name) {
 			const base = baseAt(x, z);
 			const road = roadAt(x, z);
 			const d = road ? road.distance : Number.POSITIVE_INFINITY;
-			const away = smoothstep(half + def.shoulder, half + def.shoulder + 30, d);
+			const away = smoothstep(
+				verge + def.shoulder,
+				verge + def.shoulder + 30,
+				d,
+			);
 			const land = base + def.hills * hills(x, z, seed) * away;
-			const onRoad = 1 - smoothstep(half, half + def.shoulder, d);
-			const roadY = road ? road.y : land;
+			const onRoad = 1 - smoothstep(verge, verge + def.shoulder, d);
+			const roadY = road ? road.y - sink : land;
 			let h = land + (roadY - land) * onRoad;
 			// Loose surface: small irregularities everywhere off the bump section, which stays flat
 			// under the bump hulls
@@ -424,6 +436,67 @@ export function buildRaceTrack(name) {
 			h += 12 * (1 - smoothstep(0, 30, edge));
 			heights[iz * countX + ix] = h;
 		}
+	}
+
+	/** The height field's surface at (x, z), on the same triangles the physics and the art use */
+	function groundAt(x, z) {
+		const fx = Math.min(Math.max((x - x0) / cell, 0), countX - 1.001);
+		const fz = Math.min(Math.max((z - z0) / cell, 0), countZ - 1.001);
+		const ix = Math.floor(fx);
+		const iz = Math.floor(fz);
+		const u = fx - ix;
+		const v = fz - iz;
+		const h = (i, k) => heights[(iz + k) * countX + ix + i];
+		// Each cell is split along the diagonal from (1, 0) to (0, 1)
+		if (u + v <= 1)
+			return h(0, 0) + (h(1, 0) - h(0, 0)) * u + (h(0, 1) - h(0, 0)) * v;
+		return (
+			h(1, 1) + (h(0, 1) - h(1, 1)) * (1 - u) + (h(1, 0) - h(1, 1)) * (1 - v)
+		);
+	}
+
+	// The paved road: flat across at the centreline's height, then easing down past each edge to
+	// 3 cm under the terrain, level where it leaves the road and where it meets the ground. Each
+	// sample has a row of points across it; `verge` is 0 on the road and rises to 1 at the outer
+	// edge of the ramp.
+	let roadMesh = null;
+	if (def.road) {
+		const steps = [0, 0.25, 0.5, 0.75, 1];
+		const across = [
+			...[...steps].reverse().map((t) => [-1, t]),
+			...steps.map((t) => [1, t]),
+		];
+		const positions = [];
+		const vergeAmount = [];
+		for (const c of centerline) {
+			// Left of the direction of travel is +x when it is +z, so the normal is (tz, -tx)
+			const ends = [-1, 1].map(
+				(side) =>
+					groundAt(c.x + c.tz * side * verge, c.z - c.tx * side * verge) - 0.03,
+			);
+			for (const [side, t] of across) {
+				const w = side * (half + ramp * t);
+				const end = ends[side < 0 ? 0 : 1];
+				positions.push(
+					c.x + c.tz * w,
+					c.y + (end - c.y) * smoothstep(0, 1, t),
+					c.z - c.tx * w,
+				);
+				vergeAmount.push(t);
+			}
+		}
+		const m = across.length;
+		const indices = [];
+		for (let i = 0; i < count; i++) {
+			const next = ((i + 1) % count) * m;
+			for (let j = 0; j < m - 1; j++) {
+				const a = i * m + j;
+				const b = next + j;
+				// Wound counter-clockwise seen from above, so the faces point up
+				indices.push(a, b, a + 1, a + 1, b, b + 1);
+			}
+		}
+		roadMesh = { positions, indices, verge: vergeAmount };
 	}
 
 	// Bumps: convex hulls across the road at the flat section's height
@@ -444,10 +517,12 @@ export function buildRaceTrack(name) {
 			const points = [];
 			for (const [u, h] of sampleProfile(b.kind, b.length, b.height)) {
 				// Local frame: z along the road, x across it, y up. The full profile spans the road
-				// and the base sits 5 cm under it so the bump is seated; past each edge the bump ramps
-				// down over 2.5 m, so a car rejoining from the verge meets a slope, not a wall.
+				// and the base sits 5 cm under the ground beside it so the bump is seated; past each
+				// edge the bump ramps down over 2.5 m, so a car rejoining from the verge meets a
+				// slope, not a wall.
 				for (const w of [-half, half]) points.push(w, h, u);
-				for (const w of [-half - 2.5, half + 2.5]) points.push(w, -0.05, u);
+				for (const w of [-half - 2.5, half + 2.5])
+					points.push(w, -0.05 - sink, u);
 			}
 			bumps.push({
 				kind: b.kind,
@@ -471,6 +546,7 @@ export function buildRaceTrack(name) {
 		centerline,
 		bumpSection: { from: bumpStart, to: bumpEnd },
 		field: { heights, countX, countZ, cell, origin: [x0, z0] },
+		road: roadMesh,
 		bumps,
 		start: {
 			position: [s0.x, s0.y, s0.z],
@@ -478,12 +554,14 @@ export function buildRaceTrack(name) {
 			s: s0.s,
 		},
 		roadAt,
+		groundAt,
 	};
 }
 
 /**
- * Creates the track's static bodies: the terrain height field and the bump hulls. The height
- * field data outlives the world: free it with `b3DestroyHeightField(field)` after destroying it.
+ * Creates the track's static bodies: the terrain height field, the road mesh (on a paved track)
+ * and the bump hulls. The height field and mesh data outlive the world: free them with
+ * `b3DestroyHeightField(field)` and `b3DestroyMesh(mesh)` after destroying it.
  */
 export function createRaceTrackBodies(b3, world, track) {
 	const { heights, countX, countZ, cell, origin } = track.field;
@@ -496,6 +574,19 @@ export function createRaceTrackBodies(b3, world, track) {
 	groundDef.position = [origin[0], 0, origin[1]];
 	const ground = b3.b3CreateBody(world, groundDef);
 	b3.b3CreateHeightFieldShape(ground, b3.b3DefaultShapeDef(), field);
+	let road = null;
+	let mesh = null;
+	if (track.road) {
+		mesh = b3.b3CreateMesh(
+			new Float32Array(track.road.positions),
+			new Uint32Array(track.road.indices),
+		);
+		road = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+		// Flush on the surface, so the wheels sit where the road is drawn
+		const shapeDef = b3.b3DefaultShapeDef();
+		shapeDef.meshRestOffset = 0;
+		b3.b3CreateMeshShape(road, shapeDef, mesh, [1, 1, 1]);
+	}
 	const bumpBodies = [];
 	for (const bump of track.bumps) {
 		const def = b3.b3DefaultBodyDef();
@@ -525,5 +616,5 @@ export function createRaceTrackBodies(b3, world, track) {
 		b3.b3CreateBoxShape(wall, b3.b3DefaultShapeDef(), hx, top, hz);
 		walls.push(wall);
 	}
-	return { ground, bumpBodies, walls, field };
+	return { ground, road, bumpBodies, walls, field, mesh };
 }

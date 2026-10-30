@@ -35,6 +35,7 @@ import {
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
 import { addEngineVoicePicker, carEngines } from './vehicle-engine-voice';
+import { syncSettingsWithUrl, type UrlSettings } from './vehicle-url-settings';
 import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
@@ -371,13 +372,14 @@ export async function runVehicleDemo(
 	function buildRaceTrackTerrain(name: 'circuit' | 'stage'): void {
 		const track = buildRaceTrack(name);
 		raceTrack = track;
-		const { ground, bumpBodies, walls } = createRaceTrackBodies(
+		const { ground, road, bumpBodies, walls } = createRaceTrackBodies(
 			b3,
 			world,
 			track,
 		);
 		for (const body of [ground, ...bumpBodies, ...walls])
 			hidden.add(body.index1);
+		if (road) hidden.add(road.index1);
 		addRaceTrackArt(app.scene, track);
 		app.camera.far = 1000;
 		app.camera.updateProjectionMatrix();
@@ -846,6 +848,9 @@ export async function runVehicleDemo(
 		clearTrail();
 	}
 
+	// Set once the whole panel is built, at the end of setup
+	let urlSettings: UrlSettings | undefined;
+
 	/** Replaces the car with another preset or turbo, upright and at rest where the old one was */
 	function swapCar(
 		name: VehiclePresetName,
@@ -875,6 +880,8 @@ export async function runVehicleDemo(
 		audio.setCylinders(cylindersFor(name));
 		audio.setCarVoice(engineFor(name).voice);
 		clearTrail();
+		// The Vehicle folder is new, with the new preset's values: they are the start values now
+		urlSettings?.reset('vehicle');
 	}
 
 	const pressHandlers = new Map<string, () => void>();
@@ -1080,6 +1087,9 @@ export async function runVehicleDemo(
 	const velocity = new THREE.Vector3();
 	const weightTransfer = createWeightTransferView(app.gui);
 	const wheelLoads = new Float32Array(8);
+	// Every panel setting changed from the start goes into the URL, so the link can be shared.
+	// The Preset folder writes its own keys (preset, terrain, turbo).
+	urlSettings = syncSettingsWithUrl(app.gui, ['Preset', 'Stats']);
 
 	function readPose(): void {
 		b3.b3Body_GetTransform(scratchPos, scratchQuat, car.chassis);
