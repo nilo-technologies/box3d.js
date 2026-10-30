@@ -32,7 +32,10 @@ function dyn(ox: number, oz: number, x: number, y: number, z: number) {
 	return b3.b3CreateBody(world, d);
 }
 
-type Scene = (ox: number, oz: number) => ((dt: number) => void) | void;
+// A scene builds its bodies and joints, and may return a per-frame update
+type Scene =
+	| ((ox: number, oz: number) => void)
+	| ((ox: number, oz: number) => (dt: number) => void);
 
 const scenes: Array<[string, Scene]> = [
 	[

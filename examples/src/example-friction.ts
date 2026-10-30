@@ -3,7 +3,7 @@
 // is a friction gradient 0→1. Everything is launched forward (+z) with the same
 // velocity, so friction alone decides how far each slides. Press R to reset.
 
-import type { Box3DModule, b3BodyId, b3Vec3, b3Quat } from 'box3d.js';
+import type { Box3DModule, b3BodyId, b3Quat, b3Vec3 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
 import * as THREE from 'three';
 import { createWorldRenderer } from './box3d-three';

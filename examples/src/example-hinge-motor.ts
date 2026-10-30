@@ -18,7 +18,12 @@ worldDef.gravity = [0, -10, 0];
 const world = b3.b3CreateWorld(worldDef);
 
 // vertical hinge axis: frame local z -> world +Y (+90° about X)
-const HINGE_Q: [number, number, number, number] = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+const HINGE_Q: [number, number, number, number] = [
+	Math.SQRT1_2,
+	0,
+	0,
+	Math.SQRT1_2,
+];
 const HUB_Y = 1;
 
 // fixed hub

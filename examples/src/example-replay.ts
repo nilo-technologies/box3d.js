@@ -4,8 +4,8 @@
 // then you scrub and play the recording. The player exposes a b3WorldId per
 // frame, so the same world renderer draws it. Ported from box3d's sample_replay.
 
-import Box3D from 'box3d.js/inline';
 import type { Box3DModule, b3WorldId } from 'box3d.js';
+import Box3D from 'box3d.js/inline';
 import { createWorldRenderer, type WorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 
@@ -69,11 +69,21 @@ function syncRenderer(): void {
 const params = {
 	playing: true,
 	frame: 0,
-	restart: () => { b3.b3RecPlayer_Restart(player); params.frame = 0; params.playing = true; },
+	restart: () => {
+		b3.b3RecPlayer_Restart(player);
+		params.frame = 0;
+		params.playing = true;
+	},
 };
 app.gui.add(params, 'playing').name('play / pause').listen();
-const frameCtrl = app.gui.add(params, 'frame', 0, Math.max(1, frameCount - 1), 1).name('frame').listen();
-frameCtrl.onChange((v: number) => { params.playing = false; b3.b3RecPlayer_SeekFrame(player, v | 0); });
+const frameCtrl = app.gui
+	.add(params, 'frame', 0, Math.max(1, frameCount - 1), 1)
+	.name('frame')
+	.listen();
+frameCtrl.onChange((v: number) => {
+	params.playing = false;
+	b3.b3RecPlayer_SeekFrame(player, v | 0);
+});
 app.gui.add(params, 'restart').name('restart');
 
 app.onFrame(() => {
