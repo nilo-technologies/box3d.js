@@ -1108,7 +1108,7 @@ function getDebugTransformAt( out, buf, i )
 //
 // The field read order below must match the VehicleStateBuffer packing order in src/bindings.cpp.
 
-const VEHICLE_I32 = LAYOUT.vehicleI32; //            gear isShifting wheelsInContact stuck wheelCount
+const VEHICLE_I32 = LAYOUT.vehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
 const VEHICLE_F32 = LAYOUT.vehicleF32; //            speed engineRpm throttle brake steerAngle boost
 const VEHICLE_WHEEL_I32 = LAYOUT.vehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
 const VEHICLE_WHEEL_F32 = LAYOUT.vehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
@@ -1144,7 +1144,7 @@ function getNumVehicleWheels( buf ) { return buf.wheelCount; }
 
 function createVehicleStateRecord()
 {
-	return { speed: 0, engineRpm: 0, boost: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false };
+	return { speed: 0, engineRpm: 0, boost: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false, isLaunching: false };
 }
 
 function getVehicleStateAt( out, buf )
@@ -1156,6 +1156,7 @@ function getVehicleStateAt( out, buf )
 	out.isShifting = a[ is + 1 ] !== 0;
 	out.wheelsInContact = a[ is + 2 ];
 	out.stuck = a[ is + 3 ] !== 0;
+	out.isLaunching = a[ is + 4 ] !== 0;
 	out.speed = f[ fs ];
 	out.engineRpm = f[ fs + 1 ];
 	out.throttle = f[ fs + 2 ];

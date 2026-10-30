@@ -320,7 +320,7 @@ constexpr int debugTransformF64 = 3 + 4;       // position rotation
 constexpr int debugTransformI32 = 1;           // role
 
 // vehicle state buffer: one vehicle record, then one record per wheel
-constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1;             // 5: gear isShifting wheelsInContact stuck wheelCount
+constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: gear isShifting wheelsInContact stuck isLaunching wheelCount
 constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle boost
 constexpr int vehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
 constexpr int vehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
@@ -347,7 +347,7 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
 	&& debugTransformF64 == 7 && debugTransformI32 == 1,
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
-static_assert( vehicleI32 == 5 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
+static_assert( vehicleI32 == 6 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
 }
 
@@ -1894,7 +1894,7 @@ struct VehicleStateBuffer
 
 		b3VehicleState s = b3Vehicle_GetState( vehicleId );
 		wheelCount = b3Vehicle_GetWheelCount( vehicleId );
-		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, wheelCount } );
+		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, s.isLaunching ? 1 : 0, wheelCount } );
 		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle, s.boost } );
 
 		for ( int i = 0; i < wheelCount; ++i )
@@ -3897,7 +3897,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "lateralPeakFriction", &b3VehicleTire::lateralPeakFriction )
 		.field( "lateralSlideAngle", &b3VehicleTire::lateralSlideAngle )
 		.field( "lateralSlideFriction", &b3VehicleTire::lateralSlideFriction )
-		.field( "rollingResistance", &b3VehicleTire::rollingResistance );
+		.field( "rollingResistance", &b3VehicleTire::rollingResistance )
+		.field( "longitudinalRelaxationLength", &b3VehicleTire::longitudinalRelaxationLength );
 
 	value_object<b3VehicleWheelDef>( "b3VehicleWheelDef" )
 		.field( "position", &b3VehicleWheelDef::position )
@@ -4008,7 +4009,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "stickyTire", &b3VehicleAssists::stickyTire )
 		.field( "stickySpeed", &b3VehicleAssists::stickySpeed )
 		.field( "stickyTime", &b3VehicleAssists::stickyTime )
-		.field( "brakeReverse", &b3VehicleAssists::brakeReverse );
+		.field( "brakeReverse", &b3VehicleAssists::brakeReverse )
+		.field( "launchControl", &b3VehicleAssists::launchControl );
 
 	registerFixedArray<std::array<b3VehicleWheelDef, B3_MAX_VEHICLE_WHEELS>>( "b3VehicleWheels", std::make_index_sequence<B3_MAX_VEHICLE_WHEELS>{} );
 
@@ -4042,7 +4044,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "brake", &b3VehicleState::brake )
 		.field( "steerAngle", &b3VehicleState::steerAngle )
 		.field( "wheelsInContact", &b3VehicleState::wheelsInContact )
-		.field( "stuck", &b3VehicleState::stuck );
+		.field( "stuck", &b3VehicleState::stuck )
+		.field( "isLaunching", &b3VehicleState::isLaunching );
 
 	value_object<b3VehicleWheelState>( "b3VehicleWheelState" )
 		.field( "hasContact", &b3VehicleWheelState::hasContact )

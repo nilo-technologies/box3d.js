@@ -60,7 +60,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 | Metric | Test | Realistic means |
 | --- | --- | --- |
-| `zeroTo100` | flat out from rest | archetype range; two wheel drive gets 0.6 s slack (no launch control) |
+| `zeroTo100` | flat out from rest, launch control on | archetype range |
 | `topSpeed` | flat out for up to 90 s | archetype range |
 | `braking` | lift 0.25 s, full brake from 100 km/h | archetype range ÷ realism grip |
 | `lateralG` | 70 km/h, steering ramped to half lock with the speed falloff off | archetype range × realism grip |
@@ -75,7 +75,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 | Symptom | First knob | Then |
 | --- | --- | --- |
-| 0-100 too slow, wheels spinning (rpm at the limiter, slip ≫ peak) | more weight on the driven axle (`centerOfMassOffset` z), limited slip on the driven diff | shorter first gear does not help: it is traction limited. TC on a two wheel drive car costs time too, see findings |
+| 0-100 too slow, wheels spinning (rpm at the limiter, slip ≫ peak) | more weight on the driven axle (`centerOfMassOffset` z), limited slip on the driven diff | shorter first gear does not help: it is traction limited. Check `launchControl` is on: it holds the tires at their peak from rest, TC alone does not (findings #8, #28) |
 | 0-100 too slow, no wheelspin | `engine.maxTorque`, `finalDrive`, lower `engine.inertia` | `peakTorqueRpm` closer to the launch rpm |
 | shift point off (the `shiftShare` check) | `shiftUpRpm` ≈ 0.9 × `maxRpm` minus the clutch slip (about 270 rpm, 490 on a 720 N·m car) | the gearbox reads road rpm, which trails the engine, so the engine shifts higher than the setting |
 | top speed low, and the output shows a gear below the top one at the limiter | `shiftUpRpm` lower | as above: road rpm never reaches a setting near the limiter |

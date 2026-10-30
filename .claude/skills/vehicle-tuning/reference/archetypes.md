@@ -1,13 +1,13 @@
 # Archetypes
 
-Starting ranges for the car layer at 100% realism, and the targets the metrics script checks (`archetypes` in `examples/scripts/vehicle-metrics.mjs`). Pick values inside the ranges that fit the brief, then measure. Any field not listed here stays at its `b3DefaultVehicleDef()` default. How the targets move with the realism level is in realism.md. Targets are from published figures for real cars of each class; 0-100 figures are launch control runs, so the script gives two wheel drive cars 0.6 s of slack.
+Starting ranges for the car layer at 100% realism, and the targets the metrics script checks (`archetypes` in `examples/scripts/vehicle-metrics.mjs`). Pick values inside the ranges that fit the brief, then measure. Any field not listed here stays at its `b3DefaultVehicleDef()` default. How the targets move with the realism level is in realism.md. Targets are from published figures for real cars of each class; 0-100 figures are launch control runs, and so is the test: `assists.launchControl` is on by default.
 
 ## Targets (100% realism)
 
 | | sports | rally | super | hatch |
 | --- | --- | --- | --- | --- |
 | real cars | Cayman GTS, M2 | Rally2 on gravel tires, on tarmac | 720S, Huracan | Golf GTI, Civic Type R |
-| 0-100 FWD (s) | 5.0-6.8 | 5.0-7.0 | 5.0-8.0 | 5.6-7.2 |
+| 0-100 FWD (s) | 5.0-6.8 | 5.0-7.0 | 4.7-8.0 | 5.6-7.2 |
 | 0-100 RWD (s) | 4.2-5.4 | 4.3-6.0 | 2.9-4.0 | 5.4-7.0 |
 | 0-100 AWD (s) | 3.8-5.0 | 3.8-5.2 | 2.7-3.5 | 4.8-6.2 |
 | top speed (km/h) | 245-290 | 180-215 | 300-350 | 235-275 |
@@ -49,7 +49,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 
 ## Character notes
 
-- **Sports**: balanced, progressive. Roll you can see (about 2°/g). Without TC at 100% it spins the rears on a flat out launch and can spin in a full lock step steer at 120 km/h: that is the realistic result.
+- **Sports**: balanced, progressive. Roll you can see (about 2°/g). Without TC at 100% it can spin in a full lock step steer at 120 km/h: that is the realistic result. Launch control keeps a flat out launch from spinning the rears (with it off, they spin to about 80 km/h).
 - **Rally**: soft and tall, long travel, gravel tires (late, broad peak, low slide drop), hydraulic handbrake, short gearing. On tarmac it brakes long (no ABS, gravel tires) and rolls the most. Its taller body needs more `selfRighting` at the arcade levels.
 - **Super**: stiff, low, sticky, mid engine (rear heavy), real downforce. Gear the top gear so drag, not the limiter, sets the top speed, and keep `shiftUpRpm` well under the limiter. Size the front brake near the front tires' peak torque (about 1.15x) or ABS braking can lock the fronts.
 - **Hatch**: front heavy (60/40 as FWD), softer than a sports car, torque low in the rev range (turbo), modest tires. FWD understeers: balance it with a stiff rear bar. Its power is close to what the top speed floor needs, so keep drag at the low end and torque at the high end, and mass and `maxRpm` mid range or better: the heavy, low revving corner of the ranges reaches only 234 km/h against a 232 floor and brakes within 0.3 m of the limit. These hatch values come from the first blind test of this skill, not from a committed preset.

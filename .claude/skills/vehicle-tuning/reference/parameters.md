@@ -34,6 +34,7 @@ Each field, its default from `b3DefaultVehicleDef()`, and what the engine actual
 | `tire.lateralPeakAngle`, `lateralPeakFriction` | 7°, 1.15 | Road 6-8°, gravel 10-12°. |
 | `tire.lateralSlideAngle`, `lateralSlideFriction` | 20°, 0.92 | |
 | `tire.rollingResistance` | 0.015 | Torque = coefficient × load × radius. Downforce raises the load, so it also raises rolling resistance. |
+| `tire.longitudinalRelaxationLength` | 0.3 m | Distance the tire rolls for its slip ratio to build up. Near rest a small wheelspin no longer reads as a huge slip at once; at speed it settles within a step. Below 1 m/s it settles as if at 1 m/s. 0 is the old instant slip. |
 
 Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRICTION`), so default shapes scale grip by 1. Longitudinal and lateral forces share a friction ellipse: a locked or spinning wheel has little side grip left.
 
@@ -104,6 +105,7 @@ Traction control and the clutch launch floor both see the boosted torque. With t
 | `counterSteer` | 0.2 | Adds this fraction of the rear slide angle to the steering target, clamped to `maxAngle` (not the speed reduced angle). Above about 0.6 it catches handbrake slides and the car rotates less. |
 | `driftGripScale` | 1 | Lateral grip multiplier on wheels with a handbrake, at full handbrake. |
 | `tractionControl` | true | Caps the engine so no driven wheel gets more than its peak torque. Behind the center of mass it also leaves room for the cornering force (never less than 30%). It is conservative on a launch: see findings. |
+| `launchControl` | true | From a standstill, a slip controller on the driven wheels: each wheel's torque cap follows its slip toward 0.9 of the peak slip (at most 1.1x the tire's peak torque at the wheel, 2x at the engine). Works with `tractionControl` off. Ends when the driver lifts or the engine has not been held back for 0.3 s; the gearbox's shift cut does not end it. `b3VehicleState.isLaunching` reads it. |
 | `abs` | false | Caps the service brake at the tire's peak torque. It cannot release a wheel that is already past its peak slip, because a locked wheel needs only the sliding torque to stay locked. |
 | `downforce` | 1.5 | Force = downforce × forward speed², applied at the center of mass (no aero balance). Real cars: 0.1-0.3 road, 0.5-1 supercar. |
 | `drag` | 0.6 | Force = drag × speed². Real cars: ½ρ·Cd·A ≈ 0.35-0.45. |

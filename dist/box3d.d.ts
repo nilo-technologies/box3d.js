@@ -701,7 +701,8 @@ export type b3VehicleTire = {
   lateralPeakFriction: number,
   lateralSlideAngle: number,
   lateralSlideFriction: number,
-  rollingResistance: number
+  rollingResistance: number,
+  longitudinalRelaxationLength: number
 };
 
 export type b3VehicleWheelDef = {
@@ -826,7 +827,8 @@ export type b3VehicleAssists = {
   stickyTire: boolean,
   stickySpeed: number,
   stickyTime: number,
-  brakeReverse: boolean
+  brakeReverse: boolean,
+  launchControl: boolean
 };
 
 export type b3VehicleDef = {
@@ -861,7 +863,8 @@ export type b3VehicleState = {
   brake: number,
   steerAngle: number,
   wheelsInContact: number,
-  stuck: boolean
+  stuck: boolean,
+  isLaunching: boolean
 };
 
 export type b3VehicleWheelState = {
@@ -1678,6 +1681,8 @@ export interface VehicleStateRecord {
   steerAngle: number;
   wheelsInContact: number;
   stuck: boolean;
+  /** Launch control is managing the drive torque */
+  isLaunching: boolean;
 }
 export interface VehicleWheelRecord {
   /** Wheel center, world space */
