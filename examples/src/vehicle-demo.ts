@@ -43,6 +43,11 @@ import {
 	createRaceTrackBodies,
 	type RaceTrack,
 } from './vehicle-tracks';
+import {
+	type BodySway,
+	createBodySway,
+	createWeightTransferView,
+} from './vehicle-weight-transfer';
 
 /**
  * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. circuit and stage:
@@ -446,6 +451,9 @@ export async function runVehicleDemo(
 		wheelCount: number;
 		settings: VehicleSettings;
 		group: THREE.Group;
+		/** The painted body, a child of group that sways over the wheels */
+		body: THREE.Group;
+		sway: BodySway;
 		wheelVisuals: WheelVisual[];
 		lastMark: (THREE.Vector3 | null)[];
 		/**
@@ -519,6 +527,8 @@ export async function runVehicleDemo(
 		// ---- Car visuals
 		const group = new THREE.Group();
 		app.scene.add(group);
+		const body = new THREE.Group();
+		group.add(body);
 		const paint = new THREE.MeshStandardMaterial({
 			color,
 			roughness: 0.35,
@@ -539,7 +549,7 @@ export async function runVehicleDemo(
 			geometries.push(geometry);
 			const mesh = new THREE.Mesh(geometry, m);
 			mesh.position.set(x, y, z);
-			group.add(mesh);
+			body.add(mesh);
 			return mesh;
 		};
 		addBox(hx * 2, hy * 2, hz * 2, 0, 0, 0, paint);
@@ -628,6 +638,8 @@ export async function runVehicleDemo(
 			wheelCount,
 			settings,
 			group,
+			body,
+			sway: createBodySway(),
 			wheelVisuals,
 			lastMark: new Array(wheelCount).fill(null),
 			live,
@@ -812,6 +824,7 @@ export async function runVehicleDemo(
 			position,
 			quatFromAxisAngle([0, 1, 0], yaw),
 		);
+		car.sway = createBodySway();
 		clearTrail();
 	}
 
@@ -1014,6 +1027,10 @@ export async function runVehicleDemo(
 	const currQuat = new THREE.Quaternion();
 	const scratchPos: b3Vec3 = [0, 0, 0];
 	const scratchQuat: b3Quat = [0, 0, 0, 1];
+	const scratchVel: b3Vec3 = [0, 0, 0];
+	const velocity = new THREE.Vector3();
+	const weightTransfer = createWeightTransferView(app.gui);
+	const wheelLoads = new Float32Array(8);
 
 	function readPose(): void {
 		b3.b3Body_GetTransform(scratchPos, scratchQuat, car.chassis);
@@ -1063,6 +1080,15 @@ export async function runVehicleDemo(
 				b3.b3World_Step(world, STEP, SUBSTEPS);
 				simTime += STEP;
 				readPose();
+				b3.b3Body_GetLinearVelocity(scratchVel, car.chassis);
+				velocity.set(scratchVel[0], scratchVel[1], scratchVel[2]);
+				weightTransfer.sample(
+					car.sway,
+					velocity,
+					currQuat,
+					state.wheelsInContact > 0,
+					STEP,
+				);
 				updateLap();
 				accumulator -= STEP;
 				steps++;
@@ -1084,6 +1110,7 @@ export async function runVehicleDemo(
 		const smoothing = 1 - Math.exp(-dt * 35);
 		let skid = 0;
 		let compression = 0;
+		let axleY = 0;
 		for (let i = 0; i < car.wheelCount; i++) {
 			b3.getVehicleWheelAt(wheelRecord, stateBuffer, i);
 			const visual = car.wheelVisuals[i];
@@ -1097,6 +1124,8 @@ export async function runVehicleDemo(
 			}
 			visual.localY += (wheelPos.y - visual.localY) * smoothing;
 			visual.group.position.set(wheelPos.x, visual.localY, wheelPos.z);
+			axleY += visual.localY / car.wheelCount;
+			wheelLoads[i] = wheelRecord.hasContact ? wheelRecord.load : 0;
 			visual.group.quaternion.copy(wheelQuat);
 
 			const wheelDef = car.live.wheels[i];
@@ -1130,6 +1159,9 @@ export async function runVehicleDemo(
 			}
 		}
 
+		weightTransfer.pose(car.sway, car.body, axleY, dt);
+		weightTransfer.showLoads(wheelLoads, car.wheelCount, dt);
+
 		// Chase camera behind the car, flattened to the horizon
 		const [, hy, hz] = car.halfExtents;
 		const camDistance = hz * 2 + 4.5;
@@ -1161,7 +1193,8 @@ export async function runVehicleDemo(
 		audio.update(sound, dt);
 
 		// Opt-in readout for scripted test drives: a page script that sets
-		// window.vehicleTelemetry = {} gets the car's sound inputs and pose every frame
+		// window.vehicleTelemetry = {} gets the car's sound inputs, pose, visual body sway
+		// (degrees) and wheel loads (N) every frame
 		const telemetry = (window as { vehicleTelemetry?: object })
 			.vehicleTelemetry;
 		if (telemetry) {
@@ -1170,6 +1203,9 @@ export async function runVehicleDemo(
 				cylinders: cylindersFor(car.name),
 				position: [currPos.x, currPos.y, currPos.z],
 				yaw: carYaw(),
+				bodyRoll: (car.sway.roll * 180) / Math.PI,
+				bodyPitch: (car.sway.pitch * 180) / Math.PI,
+				loads: Array.from(wheelLoads.subarray(0, car.wheelCount)),
 			});
 		}
 
