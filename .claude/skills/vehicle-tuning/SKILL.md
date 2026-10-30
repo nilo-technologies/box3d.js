@@ -56,7 +56,7 @@ Rules for `apply(def)`:
 
 ## What the metrics measure
 
-All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 19 checks at 50% realism and below and 15 or 16 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
+All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 25 checks at 50% realism and below and 16 or 17 at 75% and 100% (the spin, righting and drift rules differ); `--quick` drops the top speed check.
 
 | Metric | Test | Realistic means |
 | --- | --- | --- |
@@ -67,6 +67,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | `stepRoll`, `spun`, `flipped` | 120 km/h then full steer with the throttle held for 3 s | realistic cars roll and may spin; arcade cars barely roll and must not spin |
 | `shiftShare` | flat out through the gears | the engine upshifts at 87-93% of the limiter (median), as racing games do |
 | `handbrakeYaw`, `handbrakeRate` | 60 km/h, full steer and a 0.8 s handbrake pull | at least 45° and 60°/s; less realism rotates faster |
+| `driftHeld`, `driftAngle`, `driftSteer`, `driftNoSpin`, `driftSpeed` | 70 km/h, a 0.4 s handbrake flick at full steer, then full throttle for 3 s with the steering into, centered or half out | 50% and below only: stays sideways, the steering sets the angle, no spin, keeps its speed |
 | `sideRighted`, `roofRighted` | dropped on the side and on the roof, 6 s | 100% stays on its roof; 50% and below get back on their wheels |
 | `rough*` | 15 s flat out over bumps, weaving | finite state always; 50% and below stay upright |
 | `rideHeight`, `drivesStraight`, `brakesUpright` | settle, launch, braking | 0.3-1.2 m chassis height, under 2 m off line, no tipping |
@@ -93,6 +94,8 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | flips in corners | lower center of mass, `rollInfluence` up, `maxTiltAngle` | never on a realistic car on flat ground: fix the geometry first |
 | handbrake does nothing | `maxHandBrakeTorque` above the rear peak torque at 100% grip, `driftGripScale` < 1 | test with full steer, not a little. At the arcade levels the handbrake need not lock the rears: `driftGripScale` already cuts their side grip |
 | handbrake rotates less on the arcade level | `counterSteer` too high: it catches the slide | keep `counterSteer` ≤ 0.6 with `driftGripScale` ≤ 0.4 |
+| drift dies after the handbrake (`driftHeld`) | `driftAssist` from the realism row | `driftGripScale` lower, so the rear stays loose while drifting |
+| drift angle off target (`driftAngle`, `driftSteer`) | `driftAngle`, `driftAngleRange` (the engine defaults, 25° and 25°, fit every matrix car) | a car that holds well over the target at 50% has a loose rear of its own: stiffer rear bar |
 | stays on its roof at an arcade level | `selfRighting` up (taller bodies need more: 4 at 50%) | |
 | rights itself from the roof at 100% | `selfRighting` must be 0 | |
 | bounces or floats | `compressionDamping`/`reboundDamping` toward 0.5/0.8, spring `frequency` up | |

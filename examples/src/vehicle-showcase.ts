@@ -60,6 +60,7 @@ function describeRealism(realism: VehicleRealism): string {
 	if (level.rollInfluence > 0)
 		parts.push(`roll influence ${level.rollInfluence}`);
 	if (level.counterSteer > 0) parts.push(`counter steer ${level.counterSteer}`);
+	if (level.driftAssist > 0) parts.push(`drift assist ${level.driftAssist}`);
 	if (level.selfRighting > 0) parts.push(`self righting ${level.selfRighting}`);
 	if (level.maxTiltAngle > 0) parts.push(`tilt limit ${level.maxTiltAngle}°`);
 	return parts.join(', ');
