@@ -2,7 +2,8 @@
 // an engine whose pitch follows the rpm, tire squeal from filtered noise that follows how far
 // the tires slide, wind noise with speed, a thump when the suspension hits its bump stop, and a
 // turbo with a compressor whine, intake whoosh and a blow-off valve or compressor flutter on
-// lift. Browsers only start audio after a user gesture, so the context resumes on the first key
+// lift. The lift sounds only play when a real car would make them (see "Lift sounds" below).
+// Browsers only start audio after a user gesture, so the context resumes on the first key
 // press or click.
 //
 // The engine has several voices. Classic is a pair of soft oscillators. The others are built
@@ -27,6 +28,11 @@ export type VehicleSound = {
 	compression: number;
 	/** Turbo boost as a fraction of full boost, 0 to 1. Always 0 without a turbo. */
 	boost: number;
+	/**
+	 * The boost comes from a belt driven supercharger. Its bypass valve recirculates the charge
+	 * quietly on a lift, so there is no blow-off or flutter.
+	 */
+	supercharged?: boolean;
 };
 
 export type SoundWave = 'sine' | 'triangle' | 'square' | 'sawtooth';
@@ -56,7 +62,7 @@ export type EngineVoiceConfig = {
 	mufflerOpen: number;
 	/** Saturation */
 	drive: number;
-	/** Chance that a firing pops off throttle above 2500 rpm */
+	/** Chance that a firing pops during an overrun crackle burst, at full strength */
 	crackle: number;
 	/** Output level, set so every voice is about as loud as classic at 4000 rpm, part throttle */
 	level: number;
@@ -322,6 +328,12 @@ export type VehicleSoundParams = {
 		drive: number;
 		/** Overrun pops */
 		crackle: number;
+		/** Rpm a lift has to come from for the exhaust to pop, and below which pops stop */
+		crackleMinRpm: number;
+		/** Chance that a lift after a hard pull pops at all, 0 to 1 */
+		crackleChance: number;
+		/** Length (s) of a crackle burst after a lift from a fully hot exhaust */
+		crackleLength: number;
 
 		// The classic voice
 		/** Pitch relative to the firing frequency (rpm / 60 x cylinders / 2). 2/3 is a fifth lower. */
@@ -375,8 +387,8 @@ export type VehicleSoundParams = {
 		/** What happens on a lift: a blow-off valve hiss, compressor flutter, both or nothing */
 		valve: TurboValve;
 		/**
-		 * Also play the lift sound on a car without a turbo, as if every lift after a second of
-		 * full throttle were a lift on full boost
+		 * Also play the lift sound on a car without a turbo or with a supercharger, as if a second
+		 * of full throttle built full boost. The hold, snap and cooldown rules still apply.
 		 */
 		liftWithoutTurbo: boolean;
 		blowOffVolume: number;
@@ -387,6 +399,10 @@ export type VehicleSoundParams = {
 		blowOffLength: number;
 		/** Boost (0 to 1) needed for a lift to blow off or flutter */
 		blowOffMinBoost: number;
+		/** Seconds the boost has to stay above blowOffMinBoost before the lift, so a tap is quiet */
+		blowOffHold: number;
+		/** Seconds after a blow-off or flutter before the next can play */
+		blowOffCooldown: number;
 		flutterVolume: number;
 		/** Flutter chatter rate (Hz) at the start. It slows as the pressure drops. */
 		flutterRate: number;
@@ -429,6 +445,9 @@ export const defaultSoundParams: VehicleSoundParams = {
 		grit: 1,
 		drive: 1,
 		crackle: 1,
+		crackleMinRpm: 3500,
+		crackleChance: 0.6,
+		crackleLength: 1.2,
 		pitch: 2 / 3,
 		minPitch: 40,
 		wave: 'triangle',
@@ -463,7 +482,9 @@ export const defaultSoundParams: VehicleSoundParams = {
 		blowOffPitch: 3200,
 		blowOffResonance: 1.2,
 		blowOffLength: 0.45,
-		blowOffMinBoost: 0.3,
+		blowOffMinBoost: 0.4,
+		blowOffHold: 0.4,
+		blowOffCooldown: 1,
 		flutterVolume: 1.2,
 		flutterRate: 20,
 		flutterPitch: 800,
@@ -808,19 +829,21 @@ export function createVehicleAudio(
 	}
 
 	// Blow-off valve: the valve pops open with a short low chuff, then the trapped charge air
-	// hisses out, falling in pitch as the pressure drops
+	// hisses out, falling in pitch as the pressure drops. Less pressure is quieter, lower and
+	// shorter, so strength (the boost there was) scales all three.
 	function blowOff(strength = 1) {
 		const p = params.turbo;
 		const peak = p.blowOffVolume * strength;
+		const pitch = p.blowOffPitch * (0.6 + 0.4 * strength);
 		oneShot('lowpass', 260, 1, peak * 0.6, 0.07);
 		oneShot(
 			'bandpass',
-			p.blowOffPitch,
+			pitch,
 			p.blowOffResonance,
 			peak,
-			p.blowOffLength,
+			p.blowOffLength * (0.5 + 0.5 * strength),
 			0.015,
-			p.blowOffPitch * 0.35,
+			pitch * 0.35,
 		);
 	}
 
@@ -831,6 +854,8 @@ export function createVehicleAudio(
 		const p = params.turbo;
 		const peak = p.flutterVolume * strength;
 		if (peak <= 0) return;
+		// Less pressure chatters slower and runs out sooner
+		const rate = Math.max(p.flutterRate * (0.6 + 0.4 * strength), 2);
 		const source = context.createBufferSource();
 		source.buffer = nodes.oneShotBuffer;
 		const filter = context.createBiquadFilter();
@@ -839,12 +864,15 @@ export function createVehicleAudio(
 		filter.Q.value = 1.4;
 		const gain = context.createGain();
 		const t0 = context.currentTime;
-		const length = Math.min(Math.max(p.flutterLength, 0.05), 1.4);
+		const length = Math.min(
+			Math.max(p.flutterLength * (0.5 + 0.5 * strength), 0.05),
+			1.4,
+		);
 		gain.gain.setValueAtTime(0, t0);
 		let t = t0;
 		while (t < t0 + length) {
 			const progress = (t - t0) / length;
-			const period = 1 / (Math.max(p.flutterRate, 2) * (1 - 0.45 * progress));
+			const period = 1 / (rate * (1 - 0.45 * progress));
 			const amp = peak * (1 - progress) ** 1.5;
 			gain.gain.linearRampToValueAtTime(amp, t + period * 0.25);
 			gain.gain.linearRampToValueAtTime(0, t + period * 0.8);
@@ -858,16 +886,130 @@ export function createVehicleAudio(
 
 	let lastCompression = 0;
 	let thumpCooldown = 0;
-	let lastThrottle = 0;
+
+	// ---- Lift sounds
+	//
+	// A lift is the throttle snapping shut: from above half to below 10% within LIFT_SNAP
+	// seconds. Rolling off slowly lets the manifold pressure fall gently, so it makes no noise.
+	//
+	// Blow-off and flutter happen when a closing throttle traps real boost in the charge pipes.
+	// So a lift only vents when the boost had stayed above blowOffMinBoost for blowOffHold
+	// seconds (a tap or a part throttle squirt builds no pressure worth venting), not on a
+	// supercharger (its bypass valve recirculates quietly), and only once the boost is seen
+	// to fall (anti-lag holds the pressure up off throttle, so nothing vents). The boost there
+	// was sets the loudness, pitch and length, and a cooldown stops quick taps stacking.
+	//
+	// Overrun crackle is unburnt fuel lighting in a hot exhaust. The exhaust heats up over
+	// CRACKLE_HEAT_UP seconds of near full throttle above crackleMinRpm and cools when the load
+	// goes. A lift from above crackleMinRpm with a hot exhaust pops with crackleChance, in a
+	// burst that fades over crackleLength (shorter from a cooler exhaust), and stops when the
+	// throttle opens or the revs drop below crackleMinRpm. A burst uses up the heat, so the next
+	// needs another pull. Never at idle, after cruising or on blips.
+	const LIFT_SNAP = 0.3;
+	const CRACKLE_HEAT_UP = 1.5;
+	const CRACKLE_COOL = 3;
+	const CRACKLE_MIN_HEAT = 0.4;
+	/** A lift vents once the boost has fallen this far below what it was on throttle */
+	const VENT_DROP = 0.8;
+	/** Seconds after a lift to see the boost fall before giving up (anti-lag) */
+	const VENT_WAIT = 0.25;
+
 	let liftCooldown = 0;
+	// Throttle held above half since the last lift, and seconds since it last was
+	let onThrottle = false;
+	let sinceOnThrottle = 0;
 	// Seconds of throttle since the last lift, which stands in for boost with liftWithoutTurbo
 	let throttleHeld = 0;
+	// Seconds the charge has stayed above blowOffMinBoost, the charge on the last frame on
+	// throttle, and whether it was boost (rather than liftWithoutTurbo pretending)
+	let chargeHeld = 0;
+	let liftCharge = 0;
+	let liftReal = true;
+	// A lift waiting to see the boost fall: the charge to vent and the seconds left
+	let vent: { charge: number; wait: number; real: boolean } | null = null;
+	// Exhaust heat 0 to 1, and the crackle burst playing: its strength, length and age
+	let exhaustHeat = 0;
+	let crackle: { strength: number; length: number; age: number } | null = null;
 
 	function lift(strength = 1) {
 		const { valve } = params.turbo;
 		if (valve === 'blowOff' || valve === 'both') blowOff(strength);
 		if (valve === 'flutter' || valve === 'both') flutter(strength);
 	}
+
+	/** Follows the throttle and boost, plays the lift sounds and returns the crackle level */
+	function updateLift(sound: VehicleSound, dt: number): number {
+		const { engine, turbo } = params;
+		liftCooldown = Math.max(liftCooldown - dt, 0);
+
+		const hard = sound.throttle > 0.8 && sound.engineRpm > engine.crackleMinRpm;
+		exhaustHeat = hard
+			? Math.min(exhaustHeat + dt / CRACKLE_HEAT_UP, 1)
+			: Math.max(exhaustHeat - dt / CRACKLE_COOL, 0);
+
+		if (sound.throttle > 0.5) {
+			onThrottle = true;
+			sinceOnThrottle = 0;
+			throttleHeld += dt;
+			// Boost a valve can vent. liftWithoutTurbo pretends a car with none has some.
+			const pressure = sound.supercharged ? 0 : sound.boost;
+			liftReal = pressure > 0 || !turbo.liftWithoutTurbo;
+			liftCharge = liftReal ? pressure : Math.min(throttleHeld, 1);
+			chargeHeld = liftCharge > turbo.blowOffMinBoost ? chargeHeld + dt : 0;
+			// The throttle opened again before the boost fell: nothing vents
+			vent = null;
+		} else sinceOnThrottle += dt;
+
+		if (onThrottle && sound.throttle < 0.1) {
+			onThrottle = false;
+			const snapped = sinceOnThrottle <= LIFT_SNAP;
+			if (
+				snapped &&
+				chargeHeld >= turbo.blowOffHold &&
+				liftCooldown === 0 &&
+				turbo.valve !== 'none'
+			)
+				vent = { charge: liftCharge, wait: VENT_WAIT, real: liftReal };
+			if (
+				snapped &&
+				sound.engineRpm > engine.crackleMinRpm &&
+				exhaustHeat > CRACKLE_MIN_HEAT &&
+				Math.random() < engine.crackleChance
+			) {
+				crackle = {
+					strength: exhaustHeat,
+					length: engine.crackleLength * exhaustHeat,
+					age: 0,
+				};
+				// The burst uses up the heat, so blips after it stay quiet until another pull
+				exhaustHeat = 0;
+			}
+			chargeHeld = 0;
+			throttleHeld = 0;
+		}
+
+		if (vent) {
+			vent.wait -= dt;
+			if (!vent.real || sound.boost <= vent.charge * VENT_DROP) {
+				lift(vent.charge);
+				liftCooldown = turbo.blowOffCooldown;
+				vent = null;
+			} else if (vent.wait <= 0) vent = null;
+		}
+
+		if (!crackle) return 0;
+		crackle.age += dt;
+		if (
+			crackle.age >= crackle.length ||
+			sound.throttle > 0.1 ||
+			sound.engineRpm < engine.crackleMinRpm
+		) {
+			crackle = null;
+			return 0;
+		}
+		return crackle.strength * (1 - crackle.age / crackle.length) ** 2;
+	}
+
 	// Turbo shaft speed, 0 to 1: follows the boost up quickly and coasts down slowly
 	let shaftSpeed = 0;
 
@@ -982,23 +1124,9 @@ export function createVehicleAudio(
 				glide,
 			);
 
-			liftCooldown = Math.max(liftCooldown - dt, 0);
-			if (sound.throttle > 0.5) throttleHeld += dt;
-			const charge =
-				sound.boost > 0 || !turbo.liftWithoutTurbo
-					? sound.boost
-					: Math.min(throttleHeld, 1);
-			if (
-				lastThrottle > 0.5 &&
-				sound.throttle < 0.1 &&
-				charge > turbo.blowOffMinBoost &&
-				liftCooldown === 0
-			) {
-				lift(charge);
-				liftCooldown = 0.3;
-			}
-			if (sound.throttle < 0.1) throttleHeld = 0;
-			lastThrottle = sound.throttle;
+			// ---- Lift sounds
+			const overrun = updateLift(sound, dt);
+			pulses?.parameters.get('overrun')?.setValueAtTime(overrun, t);
 		},
 		setCylinders(count) {
 			cylinders = count;
