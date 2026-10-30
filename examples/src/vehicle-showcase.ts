@@ -183,6 +183,14 @@ export function addShowcase(host: ShowcaseHost): void {
 			toast(ok ? `Copied ${name} settings` : 'Copy failed, see the console');
 			if (!ok) console.log(vehicleSettingsJson(b3, vehicle, name));
 		},
+		// The URL holds the preset and every panel setting changed from it
+		link: async () => {
+			const ok = await copyText(location.href);
+			toast(
+				ok ? 'Copied a link to this setup' : 'Copy failed, see the console',
+			);
+			if (!ok) console.log(location.href);
+		},
 	};
 
 	const folder = gui.addFolder('Preset');
@@ -238,6 +246,7 @@ export function addShowcase(host: ShowcaseHost): void {
 			location.reload();
 		});
 	folder.add(params, 'copy').name('copy settings JSON');
+	folder.add(params, 'link').name('copy share link');
 
 	function presetName(): VehiclePresetName {
 		return vehiclePresetName(params.car, params.realism, params.drive);
