@@ -68,7 +68,7 @@ const folderTips: Record<string, string> = {
 	Engine:
 		'Torque curve and inertia. Torque rises linearly from idle to the peak rpm, then falls to the max rpm.',
 	Turbo:
-		'Forced induction. Boost multiplies the torque curve by 1 + the summed stage gains, building with lag as the rpm and throttle rise.',
+		'Forced induction. Boost multiplies the torque curve by 1 + the summed stage gains, building with lag as the rpm and throttle rise. The pedal asks for a share of the fully boosted torque, so boost only builds near full pedal.',
 	Transmission: 'Gearbox and clutch',
 	Drivetrain:
 		'Differentials: how engine torque is split between the driven wheels',
@@ -157,15 +157,15 @@ const controllerTips: Record<string, Record<string, string>> = {
 		spoolRpm: 'Rpm where this stage starts to build boost',
 		fullBoostRpm: 'Rpm where this stage reaches full boost',
 		spoolTime:
-			'Time constant of the boost rising toward its target: the turbo lag (s)',
+			'Turbo lag: time constant of the shaft spooling up at full throttle and the full boost rpm (s). It is longer below that rpm or at part throttle, shorter above it.',
 		bleedTime:
-			'Time constant of the boost falling, for example when you lift off the throttle (s)',
+			'Time constant of the shaft spinning down off throttle (s). The boost dumps at once, but a shaft still spinning brings it back when you open the throttle, so a longer time keeps more boost through shifts and short lifts.',
 		instantFraction:
-			'Share of the boost that arrives with no lag. 0 is an exhaust turbo, 1 a supercharger, in between an electric-assisted turbo.',
+			'Share of the spool that arrives with no lag. 0 is an exhaust turbo, 1 a supercharger, in between an electric-assisted turbo.',
 		parasiticTorque:
 			'Torque the engine spends driving the compressor at full boost, as a belt driven supercharger does',
 		antiLag:
-			'Keeps the boost up off throttle and through shifts, as rally cars do. It still follows the rpm.',
+			'Keeps the turbo spinning and the boost up off throttle and through shifts, as rally cars do. It still follows the rpm.',
 	},
 	Transmission: {
 		automatic:

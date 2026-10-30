@@ -612,7 +612,9 @@ function applyRealism(def, level) {
  * Forced induction, an optional fourth layer. Rpm points are fractions of the engine's max rpm,
  * so a type fits any car. applyTurbo lowers the engine torque so the fully boosted peak matches
  * the car's rated torque: a turbo changes how the torque arrives, not how much there is.
- * `parasitic` is a fraction of the rated torque.
+ * `parasitic` is a fraction of the rated torque. `spoolTime` is the lag at full load and the full
+ * boost rpm; `bleedTime` is how long the shaft takes to spin down, so a longer one keeps more
+ * boost through shifts and short lifts (bigger, heavier turbos keep spinning longer).
  */
 export const turboTypes = {
 	none: {
@@ -622,16 +624,16 @@ export const turboTypes = {
 	},
 	small: {
 		title: 'Small single turbo',
-		blurb: 'Spools early with little lag, runs out of breath near the limiter.',
+		blurb: 'Spools early with little lag, but adds the least torque.',
 		stages: [
-			{ gain: 0.35, spool: 0.25, full: 0.42, spoolTime: 0.35, bleedTime: 0.12 },
+			{ gain: 0.35, spool: 0.25, full: 0.42, spoolTime: 0.35, bleedTime: 0.8 },
 		],
 	},
 	big: {
 		title: 'Big single turbo',
 		blurb: 'Weak low down, a long lag, then a hard surge in the top half.',
 		stages: [
-			{ gain: 0.8, spool: 0.45, full: 0.68, spoolTime: 1.2, bleedTime: 0.2 },
+			{ gain: 0.8, spool: 0.45, full: 0.68, spoolTime: 1.2, bleedTime: 1.8 },
 		],
 	},
 	twinScroll: {
@@ -639,7 +641,7 @@ export const turboTypes = {
 		blurb:
 			'Split exhaust pulses spool it sooner than a single turbo of the same size.',
 		stages: [
-			{ gain: 0.5, spool: 0.22, full: 0.4, spoolTime: 0.45, bleedTime: 0.15 },
+			{ gain: 0.5, spool: 0.22, full: 0.4, spoolTime: 0.45, bleedTime: 1.0 },
 		],
 	},
 	parallel: {
@@ -647,7 +649,7 @@ export const turboTypes = {
 		blurb:
 			'Two small turbos, one per bank: quick response and a strong top end.',
 		stages: [
-			{ gain: 0.55, spool: 0.28, full: 0.45, spoolTime: 0.4, bleedTime: 0.12 },
+			{ gain: 0.55, spool: 0.28, full: 0.45, spoolTime: 0.4, bleedTime: 1.0 },
 		],
 	},
 	sequential: {
@@ -655,23 +657,23 @@ export const turboTypes = {
 		blurb:
 			'A small turbo low down, then a big one takes over: two steps of boost.',
 		stages: [
-			{ gain: 0.3, spool: 0.18, full: 0.32, spoolTime: 0.3, bleedTime: 0.12 },
-			{ gain: 0.3, spool: 0.5, full: 0.62, spoolTime: 0.8, bleedTime: 0.2 },
+			{ gain: 0.3, spool: 0.18, full: 0.32, spoolTime: 0.3, bleedTime: 0.8 },
+			{ gain: 0.3, spool: 0.5, full: 0.62, spoolTime: 0.8, bleedTime: 1.5 },
 		],
 	},
 	vgt: {
 		title: 'Variable geometry turbo',
 		blurb: 'Vanes keep it quick down low and strong up top: one smooth climb.',
 		stages: [
-			{ gain: 0.3, spool: 0.15, full: 0.3, spoolTime: 0.3, bleedTime: 0.12 },
-			{ gain: 0.3, spool: 0.3, full: 0.5, spoolTime: 0.7, bleedTime: 0.18 },
+			{ gain: 0.3, spool: 0.15, full: 0.3, spoolTime: 0.3, bleedTime: 0.8 },
+			{ gain: 0.3, spool: 0.3, full: 0.5, spoolTime: 0.7, bleedTime: 1.0 },
 		],
 	},
 	electric: {
 		title: 'Electric-assisted turbo',
 		blurb: 'A big turbo with a motor that fills most of the lag.',
 		stages: [
-			{ gain: 0.6, spool: 0.3, full: 0.5, spoolTime: 1.0, bleedTime: 0.2 },
+			{ gain: 0.6, spool: 0.3, full: 0.5, spoolTime: 1.0, bleedTime: 1.5 },
 		],
 		instantFraction: 0.6,
 	},
@@ -687,7 +689,7 @@ export const turboTypes = {
 		title: 'Rally turbo with anti-lag',
 		blurb: 'Keeps the boost up off throttle and through shifts.',
 		stages: [
-			{ gain: 0.6, spool: 0.35, full: 0.55, spoolTime: 0.8, bleedTime: 0.25 },
+			{ gain: 0.6, spool: 0.35, full: 0.55, spoolTime: 0.8, bleedTime: 1.5 },
 		],
 		antiLag: true,
 	},

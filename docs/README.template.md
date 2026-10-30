@@ -322,7 +322,7 @@ Springs can also be given in physical units (stiffness and damping), which keeps
 
 ### Turbos and Superchargers
 
-`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, and a lag. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
 
 <Snippet source="./vehicle.ts" select="turbo" />
 

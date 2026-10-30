@@ -287,6 +287,12 @@ npm install box3d.js
         Vehicle: preset showcase
       </a>
     </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-sound">
+        <img src="./examples/public/screenshots/example-vehicle-sound.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: sound lab
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1357,17 +1363,18 @@ b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
 
 ### Turbos and Superchargers
 
-`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, and a lag. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
 
 ```ts
-// A turbo multiplies the torque curve by 1 + boost. Each stage's boost chases a target set by
-// the throttle and the rpm, rising with the spool time (the lag) and falling with the bleed time.
+// A turbo multiplies the torque curve by 1 + boost. Each stage's shaft spools toward a target set
+// by the pedal and the rpm (spoolTime is the lag at full throttle and fullBoostRpm) and spins down
+// with the bleed time. Boost dumps when you lift, but a spinning shaft brings it straight back.
 const turbo = b3.b3Vehicle_GetTurbo(vehicle);
-turbo.stages[0] = { gain: 0.5, spoolRpm: 2500, fullBoostRpm: 4000, spoolTime: 0.8, bleedTime: 0.15 };
+turbo.stages[0] = { gain: 0.5, spoolRpm: 2500, fullBoostRpm: 4000, spoolTime: 0.8, bleedTime: 1.2 };
 b3.b3Vehicle_SetTurbo(vehicle, turbo);
 
 // A sequential twin adds a second, slower stage higher up
-turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.2, bleedTime: 0.2 };
+turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.2, bleedTime: 1.8 };
 // instantFraction 1 removes the lag (a supercharger), parasiticTorque is its belt drive loss,
 // and antiLag holds the boost off throttle and through shifts
 turbo.instantFraction = 0;
