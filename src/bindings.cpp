@@ -295,6 +295,7 @@ constexpr int joint = idW;                                        //  3: jointId
 
 // single-record query buffers
 constexpr int plane = 3 + 1 + 3; // 7: plane.normal plane.offset point
+constexpr int planeIndex = 3;    // 3: triangleIndex childIndex materialIndex (int32, parallel to plane)
 constexpr int shapeId = idW;     // 3: index1 world0 generation
 
 // debug draw. Positions are f64 because b3Pos is double when BOX3D_DOUBLE_PRECISION is on.
@@ -337,7 +338,7 @@ static_assert( contact == 12 && manifoldF32 == 10 && manifoldI32 == 2 && pointF3
 static_assert( contactTouch == 10 && contactHitI32 == 14 && contactHitF64 == 7 && bodyMoveI32 == 4
 	&& bodyMoveF64 == 7 && sensorTouch == 6 && joint == 3,
 	"events buffer stride changed — update the facade field reads + _layoutMeta" );
-static_assert( plane == 7 && shapeId == 3,
+static_assert( plane == 7 && planeIndex == 3 && shapeId == 3,
 	"plane/shapeId stride changed — update the facade field reads + _layoutMeta" );
 static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 && debugSegmentI32 == 2
 	&& debugPointF64 == 3 && debugPointF32 == 1 && debugPointI32 == 2
@@ -2080,6 +2081,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		o.set( "sensorTouch", layout::sensorTouch );
 		o.set( "joint", layout::joint );
 		o.set( "plane", layout::plane );
+		o.set( "planeIndex", layout::planeIndex );
 		o.set( "shapeId", layout::shapeId );
 		o.set( "debugShapeI32", layout::debugShapeI32 );
 		o.set( "debugShapeF64", layout::debugShapeF64 );
@@ -2574,22 +2576,28 @@ EMSCRIPTEN_BINDINGS( box3d )
 			[]( b3ShapeId shapeId, const b3PlaneResult* planes, int planeCount, void* ctx ) -> bool
 			{
 				// Pack the planes into one flat Float32Array (layout::plane floats each:
-				// plane.normal(3), plane.offset, point(3)) rather than a JS array of
-				// objects — one copy, no per-plane boundary crossing. Read on the JS
-				// side with createPlaneResult / getPlaneResultAt.
+				// plane.normal(3), plane.offset, point(3)) plus a parallel Int32Array
+				// (layout::planeIndex each: triangleIndex, childIndex, materialIndex)
+				// rather than a JS array of objects — one copy, no per-plane boundary
+				// crossing. Read on the JS side with createPlaneResult / getPlaneResultAt.
 				static thread_local std::vector<float> packed;
+				static thread_local std::vector<int32_t> indices;
 				packed.clear();
+				indices.clear();
 				packed.reserve( (size_t)planeCount * layout::plane );
+				indices.reserve( (size_t)planeCount * layout::planeIndex );
 				for ( int i = 0; i < planeCount; ++i )
 				{
 					const b3PlaneResult& pr = planes[i];
 					packed.insert( packed.end(), {
 						pr.plane.normal.x, pr.plane.normal.y, pr.plane.normal.z, pr.plane.offset,
 						pr.point.x, pr.point.y, pr.point.z } );
+					indices.insert( indices.end(), { pr.triangleIndex, pr.childIndex, pr.materialIndex } );
 				}
 				val buf = val::object();
 				buf.set( "count", planeCount );
 				buf.set( "data", toF32( packed ) );
+				buf.set( "indices", toI32( indices ) );
 				val r = ( *static_cast<val*>( ctx ) )( shapeId, buf );
 				return r.isUndefined() ? true : r.as<bool>();
 			},
@@ -2934,16 +2942,19 @@ EMSCRIPTEN_BINDINGS( box3d )
 	} );
 	// Character mover vs one body at a given transform (e.g. a dynamic body's
 	// predicted pose). box3d reports at most one plane per shape, so the shape count
-	// is the capacity. Returns { count, data, shapeIds }: data is the PlaneResultBuffer
-	// layout, shapeIds the ShapeIdBuffer layout; read with getBodyPlaneResultAt.
+	// is the capacity. Returns { count, data, indices, shapeIds }: data and indices are
+	// the PlaneResultBuffer layout, shapeIds the ShapeIdBuffer layout; read with
+	// getBodyPlaneResultAt.
 	ret_function( "b3Body_CollideMover(bodyId, origin, mover, filter, bodyTransform): BodyPlaneResultBuffer",
 		+[]( b3BodyId bodyId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, b3Transform bodyTransform ) -> val
 	{
 		std::vector<b3BodyPlaneResult> results( (size_t)b3Body_GetShapeCount( bodyId ) );
 		int n = results.empty() ? 0 : b3Body_CollideMover( bodyId, results.data(), (int)results.size(), origin, &mover, filter, bodyTransform );
 		std::vector<float> planes;
+		std::vector<int32_t> indices;
 		std::vector<int32_t> ids;
 		planes.reserve( (size_t)n * layout::plane );
+		indices.reserve( (size_t)n * layout::planeIndex );
 		ids.reserve( (size_t)n * layout::shapeId );
 		for ( int i = 0; i < n; ++i )
 		{
@@ -2951,12 +2962,14 @@ EMSCRIPTEN_BINDINGS( box3d )
 			planes.insert( planes.end(), {
 				pr.plane.normal.x, pr.plane.normal.y, pr.plane.normal.z, pr.plane.offset,
 				pr.point.x, pr.point.y, pr.point.z } );
+			indices.insert( indices.end(), { pr.triangleIndex, pr.childIndex, pr.materialIndex } );
 			const b3ShapeId& id = results[i].shapeId;
 			ids.insert( ids.end(), { id.index1, id.world0, id.generation } );
 		}
 		val out = val::object();
 		out.set( "count", n );
 		out.set( "data", toF32( planes ) );
+		out.set( "indices", toI32( indices ) );
 		out.set( "shapeIds", toI32( ids ) );
 		return out;
 	} );
