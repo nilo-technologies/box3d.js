@@ -21,6 +21,7 @@ import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
 import { createVehicleAudio } from './vehicle-audio';
+import { addEngineVoicePicker, carEngines } from './vehicle-engine-voice';
 import {
 	applyTurbo,
 	createPresetVehicleDef,
@@ -34,7 +35,6 @@ import {
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
-import { addSoundPanel, carEngines } from './vehicle-sound-panel';
 import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
@@ -769,7 +769,7 @@ export async function runVehicleDemo(
 		.add(soundSettings, 'volume', 0, 1, 0.05)
 		.name('sound volume (N mutes)')
 		.onChange((value: number) => audio.setVolume(value));
-	addSoundPanel(app.gui, audio, { labLink: true });
+	addEngineVoicePicker(app.gui, audio);
 	function toggleMute(): void {
 		if (soundSettings.volume > 0) unmutedVolume = soundSettings.volume;
 		soundSettings.volume = soundSettings.volume > 0 ? 0 : unmutedVolume;
@@ -890,6 +890,8 @@ export async function runVehicleDemo(
 		else if (code === 'KeyR') resetCar(false);
 		else if (code === 'KeyT') resetCar(true);
 		else if (code === 'KeyN') toggleMute();
+		else if (code === 'KeyV') audio.blowOff(1);
+		else if (code === 'KeyC') audio.flutter(1);
 		else pressHandlers.get(code)?.();
 	}
 

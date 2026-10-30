@@ -13,8 +13,8 @@
 // crackle) scale a voice around its own design, so any setting still sounds like an engine.
 //
 // Every number that shapes the sound lives in VehicleSoundParams. audio.params is read every
-// frame, so changing a field changes the sound right away. vehicle-sound-panel.ts tunes it from
-// a lil-gui folder, and the sound lab example (example-vehicle-sound.ts) plays it without a car.
+// frame, so changing a field changes the sound right away. The examples only let the driver
+// pick the engine voice (vehicle-engine-voice.ts); everything else stays at defaultSoundParams.
 
 export type VehicleSound = {
 	engineRpm: number;
@@ -500,55 +500,6 @@ export function cloneSoundParams(
 	params: VehicleSoundParams = defaultSoundParams,
 ): VehicleSoundParams {
 	return structuredClone(params);
-}
-
-/**
- * Copies every known field of a partial params object (for example parsed JSON) onto target,
- * ignoring unknown keys and values of the wrong type
- */
-export function assignSoundParams(
-	target: VehicleSoundParams,
-	source: unknown,
-): void {
-	if (!source || typeof source !== 'object') return;
-	const from = source as Record<string, unknown>;
-	const to = target as unknown as Record<string, unknown>;
-	for (const key of Object.keys(to)) {
-		const value = from[key];
-		const current = to[key];
-		if (current && typeof current === 'object') {
-			if (!value || typeof value !== 'object') continue;
-			const group = current as Record<string, unknown>;
-			for (const field of Object.keys(group)) {
-				const v = (value as Record<string, unknown>)[field];
-				if (typeof v === typeof group[field]) group[field] = v;
-			}
-		} else if (typeof value === typeof current) to[key] = value;
-	}
-}
-
-/**
- * The fields of params that differ from base, for saving a tuning as what was changed so a later
- * change of a default still reaches it
- */
-export function diffSoundParams(
-	params: VehicleSoundParams,
-	base: VehicleSoundParams = defaultSoundParams,
-): Record<string, unknown> {
-	const diff: Record<string, unknown> = {};
-	const from = params as unknown as Record<string, unknown>;
-	const against = base as unknown as Record<string, unknown>;
-	for (const key of Object.keys(from)) {
-		const value = from[key];
-		if (value && typeof value === 'object') {
-			const group: Record<string, unknown> = {};
-			const baseGroup = against[key] as Record<string, unknown>;
-			for (const [field, v] of Object.entries(value))
-				if (v !== baseGroup[field]) group[field] = v;
-			if (Object.keys(group).length > 0) diff[key] = group;
-		} else if (value !== against[key]) diff[key] = value;
-	}
-	return diff;
 }
 
 /** A voice with the character knobs applied */
