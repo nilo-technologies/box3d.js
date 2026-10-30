@@ -52,8 +52,9 @@ export const archetypes = {
 	super: {
 		title: 'mid engine supercar (720S, Huracan class)',
 		// No mid engine car is front wheel drive. Its FWD range comes from the front axle carrying
-		// about 40% of the weight: roughly half the RWD car's traction.
-		zeroTo100: { fwd: [5.0, 8.0], rwd: [2.9, 4.0], awd: [2.7, 3.5] },
+		// about 40% of the weight: roughly half the RWD car's traction. With launch control the
+		// tires work at their peak, so the floor is 4.7 s (the 100% preset runs 6.2 s).
+		zeroTo100: { fwd: [4.7, 8.0], rwd: [2.9, 4.0], awd: [2.7, 3.5] },
 		topSpeed: [300, 350],
 		braking: [28, 35],
 		lateralG: [1.1, 1.4],
@@ -82,20 +83,15 @@ export const realismTargets = {
 	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false },
 };
 
-// The archetype 0-100 figures are launch control runs. The test is a flat out launch, so a two
-// wheel drive car loses time either to wheelspin (no traction control) or to traction control,
-// which caps the engine at the tire's peak before the engine's own inertia and friction take
-// their share, so the tire runs well under its peak. AWD cars are not traction limited.
-const TWO_WHEEL_LAUNCH_SLACK = 0.6;
-
 export function targetRanges({ archetype, realism, drive }) {
 	const a = archetypes[archetype];
 	const r = realismTargets[realism];
 	const arcade = 1 - realism / 100;
 	const [z0, z1] = a.zeroTo100[drive];
 	return {
-		// More grip and traction control can only help the launch
-		zeroTo100: [z0 * (1 - 0.2 * arcade), z1 + (drive === 'awd' ? 0 : TWO_WHEEL_LAUNCH_SLACK)],
+		// The archetype figures are launch control runs, as the test is: b3VehicleAssists
+		// launchControl is on by default. More grip can only help the launch.
+		zeroTo100: [z0 * (1 - 0.2 * arcade), z1],
 		// Downforce loads the tires and adds rolling resistance
 		topSpeed: [a.topSpeed[0] * (1 - 0.05 * arcade), a.topSpeed[1]],
 		braking: [a.braking[0] / r.grip / 1.05, a.braking[1] / r.grip],

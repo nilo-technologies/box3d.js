@@ -11,6 +11,7 @@ import type {
 	b3Vec3,
 	b3VehicleDef,
 	b3VehicleId,
+	b3VehicleSteering,
 	b3VehicleWheelDef,
 	VehicleWheelRecord,
 } from 'box3d.js';
@@ -30,6 +31,7 @@ import {
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
+import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
 	addRaceTrackArt,
@@ -467,6 +469,7 @@ export async function runVehicleDemo(
 			manual: boolean;
 			tractionControl: boolean;
 			abs: boolean;
+			steering: b3VehicleSteering;
 			wheels: b3VehicleWheelDef[];
 		};
 		refreshLive(): void;
@@ -502,6 +505,7 @@ export async function runVehicleDemo(
 			manual: false,
 			tractionControl: false,
 			abs: false,
+			steering: defaults.steering,
 			wheels: defaults.wheels.slice(0, wheelCount),
 		};
 		function refreshLive(): void {
@@ -512,6 +516,7 @@ export async function runVehicleDemo(
 			const assists = b3.b3Vehicle_GetAssists(vehicle);
 			live.tractionControl = assists.tractionControl;
 			live.abs = assists.abs;
+			live.steering = b3.b3Vehicle_GetSteering(vehicle);
 			for (let i = 0; i < wheelCount; i++)
 				live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
 		}
@@ -1016,6 +1021,7 @@ export async function runVehicleDemo(
 			`${state.engineRpm.toFixed(0)} rpm`,
 			car.live.tractionControl ? 'TC' : '',
 			car.live.abs ? 'ABS' : '',
+			state.isLaunching ? 'LAUNCH' : '',
 			state.stuck ? (touchShown ? 'stuck: tap ↻' : 'stuck: press R') : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
@@ -1089,6 +1095,7 @@ export async function runVehicleDemo(
 
 	let accumulator = 0;
 	let telemetryTimer = 0;
+	const limitSteer = createSteeringLimiter(b3);
 
 	app.onFrame((dt) => {
 		accumulator += dt;
@@ -1098,7 +1105,15 @@ export async function runVehicleDemo(
 			while (accumulator >= STEP && steps < 4) {
 				prevPos.copy(currPos);
 				prevQuat.copy(currQuat);
-				b3.b3Vehicle_SetInput(car.vehicle, input);
+				const steer = car.settings.aids.steeringLimit
+					? limitSteer(
+							car.chassis,
+							car.live.steering,
+							car.live.wheels,
+							input.steer,
+						)
+					: input.steer;
+				b3.b3Vehicle_SetInput(car.vehicle, { ...input, steer });
 				b3.b3World_Step(world, STEP, SUBSTEPS);
 				simTime += STEP;
 				readPose();

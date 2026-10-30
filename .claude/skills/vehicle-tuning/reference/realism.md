@@ -34,7 +34,7 @@ The metrics script turns an archetype range [lo, hi] (from archetypes.md) into t
 
 | Metric | Range |
 | --- | --- |
-| 0-100 | lo × (1 - 0.2 × arcade) to hi, plus 0.6 s on hi for FWD and RWD (no launch control) |
+| 0-100 | lo × (1 - 0.2 × arcade) to hi |
 | top speed | lo × (1 - 0.05 × arcade) to hi (downforce adds rolling resistance) |
 | braking | lo ÷ grip ÷ 1.05 to hi ÷ grip |
 | lateral g | lo × grip to hi × grip × 1.08 |
@@ -43,7 +43,7 @@ The metrics script turns an archetype range [lo, hi] (from archetypes.md) into t
 | ride height | chassis 0.3-1.2 m above the ground after settling |
 | launch line | under 2 m off the line by 100 km/h |
 
-Example, hatch at 75% FWD: 0-100 5.32-7.80 s, top speed 232-275 km/h, braking 28.6-36.4 m, lateral g 0.99-1.28, roll 0.84-4.25°.
+Example, hatch at 75% FWD: 0-100 5.32-7.20 s, top speed 232-275 km/h, braking 28.6-36.4 m, lateral g 0.99-1.28, roll 0.84-4.25°.
 
 Across a car's levels, lateral g must not fall, braking must not get longer, roll must not grow and handbrake rotation must not slow as realism drops.
 

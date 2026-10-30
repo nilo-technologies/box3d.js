@@ -29,6 +29,11 @@ export type VehicleSettings = {
 	sync(): void;
 	/** Remove the panel, for example before destroying the vehicle */
 	destroy(): void;
+	/**
+	 * Driver aids that act on the input rather than the vehicle, so the caller applies them.
+	 * steeringLimit caps the steer angle at the front tires' peak grip (see vehicle-steering.ts).
+	 */
+	aids: { steeringLimit: boolean };
 };
 
 const toDeg = 180 / Math.PI;
@@ -126,6 +131,8 @@ const controllerTips: Record<string, Record<string, string>> = {
 			'Cornering friction coefficient once fully sliding. Lower makes slides harder to catch.',
 		rollingResistance:
 			'Rolling resistance coefficient: a torque of coefficient x load x radius that slows the wheel',
+		longitudinalRelaxationLength:
+			'Distance the tire rolls for its slip to build up. Near rest a small wheelspin then takes a moment to break the tire loose, so pulling away is smoother. 0 measures slip instantly.',
 	},
 	'Anti-roll': {
 		stiffness:
@@ -179,11 +186,15 @@ const controllerTips: Record<string, Record<string, string>> = {
 		returnSpeed: 'How fast the wheels turn back to center (rad/s)',
 		ackermann:
 			'0 turns both front wheels by the same angle. 1 is full Ackermann geometry, where the inside wheel turns more to follow a tighter circle.',
+		steeringLimit:
+			'Driver aid: caps the steer angle where the front tires grip best, so full lock at speed corners at the limit instead of sliding the tires',
 	},
 	Assists: {
 		tractionControl:
 			'Limits the throttle so no driven wheel gets more torque than its tire can transmit. On rear wheels it also leaves grip for cornering, so full throttle mid corner does not spin the car.',
 		abs: 'Caps the brake torque at what the tire can transmit, so the wheels do not lock and the car still steers while braking',
+		launchControl:
+			'Pulling away from a stop, holds the driven tires at their peak slip, so full throttle neither spins them nor wastes grip. Ends when you lift or the tires grip at full throttle. Works with traction control off.',
 		stickyTire:
 			'Holds the car still at low speed with no throttle, for example when parked on a slope',
 		counterSteer:
@@ -425,6 +436,7 @@ export function createVehicleSettings(
 			lateralSlideAngle: tireField('lateralSlideAngle', toDeg),
 			lateralSlideFriction: tireField('lateralSlideFriction'),
 			rollingResistance: tireField('rollingResistance'),
+			longitudinalRelaxationLength: tireField('longitudinalRelaxationLength'),
 		});
 		t.add(q, 'longitudinalPeakSlip', 0.02, 0.5, 0.01).name('long. peak slip');
 		t.add(q, 'longitudinalPeakFriction', 0.1, 3, 0.01).name('long. peak μ');
@@ -435,6 +447,9 @@ export function createVehicleSettings(
 		t.add(q, 'lateralSlideAngle', 2, 60, 0.5).name('lat. slide angle (°)');
 		t.add(q, 'lateralSlideFriction', 0.1, 3, 0.01).name('lat. slide μ');
 		t.add(q, 'rollingResistance', 0, 0.1, 0.001).name('rolling resistance');
+		t.add(q, 'longitudinalRelaxationLength', 0, 2, 0.01).name(
+			'slip build-up (m, 0 off)',
+		);
 	}
 
 	// ---- Anti-roll bars
@@ -640,6 +655,8 @@ export function createVehicleSettings(
 		.name('return speed')
 		.onChange(applySteering);
 	steeringFolder.add(steering, 'ackermann', 0, 1, 0.01).onChange(applySteering);
+	const aids = { steeringLimit: true };
+	steeringFolder.add(aids, 'steeringLimit').name('grip limit');
 
 	// ---- Assists
 	const assistsFolder = root.addFolder('Assists').close();
@@ -648,6 +665,10 @@ export function createVehicleSettings(
 		.name('traction control')
 		.onChange(applyAssists);
 	assistsFolder.add(assists, 'abs').name('ABS').onChange(applyAssists);
+	assistsFolder
+		.add(assists, 'launchControl')
+		.name('launch control')
+		.onChange(applyAssists);
 	assistsFolder
 		.add(assists, 'stickyTire')
 		.name('sticky tire')
@@ -818,6 +839,7 @@ export function createVehicleSettings(
 
 	function reset(): void {
 		copyAll(defaults);
+		aids.steeringLimit = true;
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,
@@ -837,5 +859,5 @@ export function createVehicleSettings(
 
 	applyTips(root);
 
-	return { update, reset, sync, destroy: () => root.destroy() };
+	return { update, reset, sync, destroy: () => root.destroy(), aids };
 }

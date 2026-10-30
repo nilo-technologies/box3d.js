@@ -444,6 +444,8 @@ export interface VehicleStateRecord {
   steerAngle: number;
   wheelsInContact: number;
   stuck: boolean;
+  /** Launch control is managing the drive torque */
+  isLaunching: boolean;
 }
 export interface VehicleWheelRecord {
   /** Wheel center, world space */
