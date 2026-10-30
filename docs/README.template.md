@@ -316,6 +316,10 @@ Springs can also be given in physical units (stiffness and damping), which keeps
 
 <Snippet source="./vehicle.ts" select="read" />
 
+To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3Vehicle_GetWheelLocalData(out, vehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. The chassis transform times this pose is `b3Vehicle_GetWheelTransform`, for any chassis axes. `b3Vehicle_GetWheelLocalTransform(outPosition, outRotation, vehicleId, wheelIndex)` reads one wheel.
+
+<Snippet source="./vehicle.ts" select="wheels-local" />
+
 ### Live Tuning
 
 <Snippet source="./vehicle.ts" select="tune" />

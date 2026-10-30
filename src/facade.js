@@ -1114,6 +1114,11 @@ const VEHICLE_WHEEL_I32 = LAYOUT.vehicleWheelI32; // hasContact isSticky groundS
 const VEHICLE_WHEEL_F32 = LAYOUT.vehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
 const VEHICLE_WHEEL_F64 = LAYOUT.vehicleWheelF64; // position(3) contactPoint(3)
 
+// Chassis-space wheel readout, b3Vehicle_GetWheelLocalData(out, vehicleId) below: per wheel
+// position(3) rotation(4) rotationAngle angularVelocity steerAngle suspensionLength.
+const VEHICLE_WHEEL_LOCAL = LAYOUT.vehicleWheelLocal;
+const MAX_VEHICLE_WHEELS = LAYOUT.maxVehicleWheels;
+
 function createVehicleStateBuffer()
 {
 	return { _impl: new Module.VehicleStateBufferImpl(), wheelCount: 0, i32: null, f32: null, f64: null, i32Base: 0, f32Base: 0, f64Base: 0 };
@@ -1299,6 +1304,23 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
 	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
 
+	// Every wheel's chassis-space pose and raw spin in one call. The raw writer packs the records
+	// into a static wasm scratch (stable address, so resolved once); copy them into the caller's
+	// array with a plain loop, which allocates nothing. Returns the wheel count.
+	const WHEEL_LOCAL_F32 = Module.b3_getVehicleWheelLocalScratch() >>> 2;
+	delete Module.b3_getVehicleWheelLocalScratch;
+	const rawWheelLocal = Module.b3Vehicle_GetWheelLocalDataInto;
+	delete Module.b3Vehicle_GetWheelLocalDataInto;
+	Module.b3Vehicle_GetWheelLocalData = ( out, vehicleId ) =>
+	{
+		const count = rawWheelLocal( vehicleId );
+		const n = count * VEHICLE_WHEEL_LOCAL;
+		if ( !( out.length >= n ) ) throw new RangeError( `b3Vehicle_GetWheelLocalData: out holds ${out.length} floats, ${count} wheels need ${n}` );
+		const h = HEAPF32;
+		for ( let k = 0; k < n; k++ ) out[ k ] = h[ WHEEL_LOCAL_F32 + k ];
+		return count;
+	};
+
 	// Attach onto the Emscripten module object (in scope here as `Module`).
 	Object.assign( Module, {
 		getNumShapeIds, createShapeId, getShapeIdAt,
@@ -1329,6 +1351,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createDebugTransformPrimitive, getDebugTransformAt,
 		createVehicleStateBuffer, getVehicleStateData, destroyVehicleStateBuffer, getNumVehicleWheels,
 		createVehicleStateRecord, getVehicleStateAt, createVehicleWheelRecord, getVehicleWheelAt,
+		B3_MAX_VEHICLE_WHEELS: MAX_VEHICLE_WHEELS, B3_VEHICLE_WHEEL_LOCAL_STRIDE: VEHICLE_WHEEL_LOCAL,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,

@@ -1105,6 +1105,7 @@ interface EmbindModule {
   b3RecPlayer_GetDivergeFrame(player: number): number;
   b3RecPlayer_SetWorkerCount(player: number, count: number): void;
   b3Vehicle_GetWheelTransform(outPosition: b3Vec3, outRotation: b3Quat, vehicleId: b3VehicleId, wheelIndex: number): [ b3Vec3, b3Quat ];
+  b3Vehicle_GetWheelLocalTransform(outPosition: b3Vec3, outRotation: b3Quat, vehicleId: b3VehicleId, wheelIndex: number): [ b3Vec3, b3Quat ];
   b3GetByteCount(): bigint;
   b3World_GetCounters(worldId: b3WorldId): b3Counters;
   b3DefaultFilter(): b3Filter;
@@ -1825,6 +1826,28 @@ export interface Box3DFacade {
   getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
   createVehicleWheelRecord(): VehicleWheelRecord;
   getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
+  /** Most wheels a vehicle can have. */
+  readonly B3_MAX_VEHICLE_WHEELS: number;
+  /** Floats per wheel written by b3Vehicle_GetWheelLocalData (11). */
+  readonly B3_VEHICLE_WHEEL_LOCAL_STRIDE: number;
+  /** Every wheel's chassis-space pose and raw spin in one call, for placing wheel meshes under
+   * the chassis and interpolating them between physics steps. Writes
+   * B3_VEHICLE_WHEEL_LOCAL_STRIDE (11) floats per wheel, wheels in definition order, at
+   * out[i * 11]:
+   *
+   * - [0..2] position: wheel center in chassis space, the attachment point lowered along the
+   *   chassis up axis by suspensionLength
+   * - [3..6] rotation as x, y, z, w: steer about chassis up, then spin about the axle
+   *   (up x forward), so b3Vehicle_GetWheelTransform is the chassis transform times this pose
+   * - [7] rotationAngle: spin angle (radians), wrapped to [-pi, pi]
+   * - [8] angularVelocity: spin rate (rad/s). A fast wheel turns more than pi per step, so unwrap
+   *   the spin with it before interpolating; the quaternion alone cannot be unwrapped.
+   * - [9] steerAngle (radians)
+   * - [10] suspensionLength: attachment point to wheel center (m)
+   *
+   * Returns the wheel count, 0 for an invalid vehicle. Throws a RangeError when out is shorter
+   * than count * 11; a B3_MAX_VEHICLE_WHEELS * B3_VEHICLE_WHEEL_LOCAL_STRIDE array fits any vehicle. */
+  b3Vehicle_GetWheelLocalData(out: Float32Array | number[], vehicleId: b3VehicleId): number;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
 export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;

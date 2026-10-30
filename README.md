@@ -1310,6 +1310,38 @@ for (let i = 0; i < b3.getNumVehicleWheels(stateBuffer); i++) {
 b3.destroyVehicleStateBuffer(stateBuffer);
 ```
 
+To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3Vehicle_GetWheelLocalData(out, vehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. The chassis transform times this pose is `b3Vehicle_GetWheelTransform`, for any chassis axes. `b3Vehicle_GetWheelLocalTransform(outPosition, outRotation, vehicleId, wheelIndex)` reads one wheel.
+
+```ts
+// Wheel meshes parented to the chassis mesh need only each wheel's pose in chassis space. One call
+// fills a Float32Array for every wheel: position (3), rotation x, y, z, w (4), then the raw
+// rotationAngle, angularVelocity, steerAngle and suspensionLength.
+const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
+const wheelData = new Float32Array(b3.B3_MAX_VEHICLE_WHEELS * stride);
+const wheelCount = b3.b3Vehicle_GetWheelLocalData(wheelData, vehicle);
+
+const dt = 1 / 60;
+const alpha = 0.5; // how far the render frame is between the last two physics steps
+const previousAngles = new Float32Array(b3.B3_MAX_VEHICLE_WHEELS);
+for (let i = 0; i < wheelCount; i++) {
+    const o = i * stride;
+    const localPosition = wheelData.subarray(o, o + 3);
+    const localRotation = wheelData.subarray(o + 3, o + 7);
+    // rotationAngle wraps to [-pi, pi] and a fast wheel turns more than pi in a step, so neither the
+    // angles nor the quaternions tell how far it turned. Unwrap the change to the turn nearest
+    // angularVelocity * dt, then rebuild the rotation from the interpolated spin and steerAngle.
+    const rotationAngle = wheelData[o + 7];
+    const angularVelocity = wheelData[o + 8];
+    const turn = rotationAngle - previousAngles[i];
+    const delta = turn + 2 * Math.PI * Math.round((angularVelocity * dt - turn) / (2 * Math.PI));
+    const spin = previousAngles[i] + delta * alpha;
+    previousAngles[i] = rotationAngle;
+}
+
+// One wheel, as b3Vehicle_GetWheelTransform does in world space
+const [wheelPosition, wheelRotation] = b3.b3Vehicle_GetWheelLocalTransform([0, 0, 0], [0, 0, 0, 1], vehicle, 0);
+```
+
 ### Live Tuning
 
 ```ts
