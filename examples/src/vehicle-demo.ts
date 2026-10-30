@@ -645,6 +645,9 @@ export async function runVehicleDemo(
 	}
 
 	// ---- Skid marks: instanced quads dropped under sliding tires
+	// Just above the circuit's road strip (drawn 5 cm up) or the bare ground elsewhere; the
+	// polygon offset keeps them in front of what they lie on
+	const markLift = options.terrain === 'circuit' ? 0.07 : 0.02;
 	const maxMarks = 3000;
 	const marks = new THREE.InstancedMesh(
 		new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
@@ -653,7 +656,6 @@ export async function runVehicleDemo(
 			transparent: true,
 			opacity: 0.7,
 			depthWrite: false,
-			// Drawn over the race tracks' road strip, which sits a few centimetres up
 			polygonOffset: true,
 			polygonOffsetFactor: -4,
 			polygonOffsetUnits: -4,
@@ -689,7 +691,10 @@ export async function runVehicleDemo(
 		const length = last.distanceTo(point);
 		if (length < 0.25) return;
 		dir.subVectors(point, last).normalize();
-		markPos.addVectors(point, last).multiplyScalar(0.5).addScaledVector(n, 0.1);
+		markPos
+			.addVectors(point, last)
+			.multiplyScalar(0.5)
+			.addScaledVector(n, markLift);
 		markQuat.setFromUnitVectors(up, n);
 		const localDir = dir.clone().applyQuaternion(markQuat.clone().invert());
 		tangentQuat.setFromAxisAngle(up, Math.atan2(localDir.x, localDir.z));

@@ -531,6 +531,7 @@ function testRough(preset) {
 		if (Math.abs(p.position[0]) > half - 20 || Math.abs(p.position[2]) > half - 20) break;
 	}
 	b3.b3DestroyWorld(world);
+	b3.b3DestroyHeightField(field);
 	return { roughFinite: finite, roughUpright: minUp, roughSpeed: maxSpeed };
 }
 

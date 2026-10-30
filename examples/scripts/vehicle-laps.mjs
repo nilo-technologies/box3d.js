@@ -45,7 +45,7 @@ export function driveLap(trackName, preset, options = {}) {
 	const worldDef = api.b3DefaultWorldDef();
 	worldDef.gravity = [0, -9.81, 0];
 	const world = api.b3CreateWorld(worldDef);
-	createRaceTrackBodies(api, world, track);
+	const { field } = createRaceTrackBodies(api, world, track);
 	const bodyDef = api.b3DefaultBodyDef();
 	bodyDef.type = api.b3BodyType.b3_dynamicBody;
 	const start = track.start;
@@ -182,6 +182,7 @@ export function driveLap(trackName, preset, options = {}) {
 		if (stopped > 5) break;
 	}
 	api.b3DestroyWorld(world);
+	api.b3DestroyHeightField(field);
 	return {
 		completed: progress >= n,
 		lapTime: t,
@@ -211,6 +212,7 @@ if (isMain) {
 		else if (a === '--car') args.cars.push(argv[++i]);
 		else if (a === '--all') args.all = true;
 		else if (a === '--json') args.json = true;
+		else if (a === '--pace') args.pace = Number(argv[++i]);
 		else throw new Error(`unknown argument ${a}`);
 	}
 	const trackNames = args.tracks.length ? args.tracks : ['circuit', 'stage'];
@@ -223,14 +225,18 @@ if (isMain) {
 	});
 	if (names.length === 0) {
 		console.error(
-			'usage: vehicle-laps.mjs [--track circuit|stage] --preset <name> | --car <sports|rally|super> | --all [--json]',
+			'usage: vehicle-laps.mjs [--track circuit|stage] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--json]',
 		);
 		process.exit(2);
 	}
 	const rows = [];
 	for (const trackName of trackNames) {
 		for (const name of names) {
-			const r = driveLap(trackName, vehiclePresets[name]);
+			const r = driveLap(
+				trackName,
+				vehiclePresets[name],
+				args.pace ? { pace: args.pace } : {},
+			);
 			const pass = r.completed && r.minUp > 0.3;
 			rows.push({ track: trackName, preset: name, pass, ...r });
 			if (!args.json) {

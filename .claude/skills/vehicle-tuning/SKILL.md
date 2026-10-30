@@ -17,7 +17,7 @@ Every field and what the engine really does with it is in [reference/parameters.
 
 1. **Pin the brief.** Archetype (sports, rally, super, hatch, or the closest), realism level (100, 75, 50, 25, 0) and drivetrain (fwd, rwd, awd). If the brief is between levels, pick the nearer one and say so.
 2. **Write the car layer** from the archetype ranges: mass, center of mass, wheel layout, tires, engine, gears, brakes, bars, steering, aero. Any field the archetype does not list stays at its `b3DefaultVehicleDef()` default; that is intended. Check the derived numbers before you run anything (see "Sanity math" below).
-3. **Apply the drivetrain layer**, then **the realism row**, exactly as the reference tables say, in that order. The realism row comes last because it multiplies or offsets values the earlier layers set (tire friction, downforce, center of mass height). Brake and handbrake torques are not scaled by the realism row, so size them in the car layer for the grip of the level you are building (see "Sanity math").
+3. **Apply the drivetrain layer**, then **the realism row**, exactly as the reference tables say, in that order. The realism row comes last because it multiplies or offsets values the earlier layers set (tire friction, downforce, center of mass height). Brake and handbrake torques are not scaled by the realism row. For a single preset, size them in the car layer for the grip of the level you are building (see "Sanity math"). In the matrix one car layer serves all five levels, so size them once and check every level with `--car`.
 4. **Measure.** Save the car as a preset module (template below) and run
    `node examples/scripts/vehicle-metrics.mjs --file path/to/car.mjs`
    from the repo root. It needs the built `dist/` (already committed). One car takes about a second.
@@ -56,7 +56,7 @@ Rules for `apply(def)`:
 
 ## What the metrics measure
 
-All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 19 checks at 50% realism and below and 15 or 16 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
+All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 20 checks at 50% realism and below and 16 or 17 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
 
 | Metric | Test | Realistic means |
 | --- | --- | --- |
@@ -82,7 +82,8 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | tops out a gear below the top one, below the limiter | fine if it passes: the road rpm in that gear sits just under `shiftUpRpm`. To use the top gear, lower `shiftUpRpm` a little | |
 | top speed low, top gear, below the limiter (drag limited) | `assists.drag`, more power (`maxTorque`, a higher `peakTorqueRpm`) | a top gear that puts the engine nearer its power peak at top speed |
 | top speed low, top gear, at the limiter (gearing limited) | taller top gear or `finalDrive`, or a higher `maxRpm` | |
-| top speed high | `assists.drag` up, or a taller limiter: `maxRpm` with the top gear | |
+| top speed high, below the limiter (drag limited) | `assists.drag` up | less power |
+| top speed high, at the limiter in the top gear (gearing limited) | shorter top gear or `finalDrive`, or a lower `maxRpm` | |
 | braking long with ABS on | front `maxBrakeTorque` down toward 1.15-1.25x the front peak torque at this level's grip (see "Sanity math"); far above it the fronts lock and ABS cannot recover them | tire friction |
 | braking long without ABS | tire `longitudinalSlideFriction` (locked wheels slide), brake balance: rear brake lower so the rears lock last | `abs: true` if the level allows it |
 | lateral g low | `lateralPeakFriction` and `lateralSlideFriction` | lower `rollInfluence` does not add grip; downforce only helps at speed |

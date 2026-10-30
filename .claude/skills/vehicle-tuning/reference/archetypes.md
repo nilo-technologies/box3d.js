@@ -45,7 +45,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
 | own TC / ABS | off / on | off / off | on / on | on / on |
-| LSDs F/R/center, AWD front share | 1.0 (open) / 1.5 / 1.3, 0.4 | 1.3 / 1.6 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
+| LSDs F/R/center, AWD front share (car fields that the drivetrain layer applies, see drivetrains.md) | 1.0 (open) / 1.5 / 1.3, 0.4 | 1.3 / 1.6 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
 
 ## Character notes
 

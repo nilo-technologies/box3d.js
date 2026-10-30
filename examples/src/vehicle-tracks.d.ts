@@ -1,4 +1,10 @@
-import type { Box3DModule, b3BodyId, b3Vec3, b3WorldId } from 'box3d.js';
+import type {
+	Box3DModule,
+	b3BodyId,
+	b3HeightFieldData,
+	b3Vec3,
+	b3WorldId,
+} from 'box3d.js';
 
 export type RaceTrackName = 'circuit' | 'stage';
 
@@ -90,4 +96,9 @@ export function createRaceTrackBodies(
 	b3: Box3DModule,
 	world: b3WorldId,
 	track: RaceTrack,
-): { ground: b3BodyId; bumpBodies: b3BodyId[]; walls: b3BodyId[] };
+): {
+	ground: b3BodyId;
+	bumpBodies: b3BodyId[];
+	walls: b3BodyId[];
+	field: b3HeightFieldData | null;
+};

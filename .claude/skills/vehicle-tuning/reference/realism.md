@@ -1,6 +1,6 @@
 # Realism levels
 
-One table, shared by every car. Apply the row for the brief's level after the car and drivetrain layers. Do not tune these per car: when a car fails a realism check, fix the car layer.
+One table, shared by every car. Apply the row for the brief's level after the car and drivetrain layers. Do not tune these per car: when a car fails a realism check, fix the car layer. The exception is a failure the findings trace to the engine, such as the ABS lockup in [findings.md](findings.md) #7 and #20: no car or realism setting fixes it, so leave the preset alone and report it.
 
 | Field | 100 | 75 | 50 | 25 | 0 (arcade) | How to apply |
 | --- | --- | --- | --- | --- | --- | --- |

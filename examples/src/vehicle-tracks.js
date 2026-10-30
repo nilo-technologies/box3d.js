@@ -387,6 +387,15 @@ export function buildRaceTrack(name) {
 			(g(0, 1) * (1 - tx) + g(1, 1) * tx) * tz
 		);
 	};
+	// 1 along the bump section, easing to 0 over 5 m beyond each end
+	const sectionFrom = centerline[bumpStart % centerline.length].s;
+	const sectionLength = bumpEnd - bumpStart;
+	const inBumpSection = (s) => {
+		const d = (((s - sectionFrom) % length) + length) % length;
+		const outside =
+			d <= sectionLength ? 0 : Math.min(d - sectionLength, length - d);
+		return 1 - smoothstep(0, 5, outside);
+	};
 	const heights = new Array(countX * countZ);
 	for (let iz = 0; iz < countZ; iz++) {
 		for (let ix = 0; ix < countX; ix++) {
@@ -400,9 +409,12 @@ export function buildRaceTrack(name) {
 			const onRoad = 1 - smoothstep(half, half + def.shoulder, d);
 			const roadY = road ? road.y : land;
 			let h = land + (roadY - land) * onRoad;
-			// Loose surface: small irregularities everywhere off the bump section
+			// Loose surface: small irregularities everywhere off the bump section, which stays flat
+			// under the bump hulls
 			if (def.roughness > 0) {
+				const flat = road ? onRoad * inBumpSection(road.sample.s) : 0;
 				h +=
+					(1 - flat) *
 					def.roughness *
 					Math.sin(x * 1.7 + z * 0.9) *
 					Math.sin(z * 1.3 - x * 0.6);
@@ -469,7 +481,10 @@ export function buildRaceTrack(name) {
 	};
 }
 
-/** Creates the track's static bodies: the terrain height field and the bump hulls */
+/**
+ * Creates the track's static bodies: the terrain height field and the bump hulls. The height
+ * field data outlives the world: free it with `b3DestroyHeightField(field)` after destroying it.
+ */
 export function createRaceTrackBodies(b3, world, track) {
 	const { heights, countX, countZ, cell, origin } = track.field;
 	const field = b3.b3CreateHeightField(heights, countX, countZ, [
@@ -510,5 +525,5 @@ export function createRaceTrackBodies(b3, world, track) {
 		b3.b3CreateBoxShape(wall, b3.b3DefaultShapeDef(), hx, top, hz);
 		walls.push(wall);
 	}
-	return { ground, bumpBodies, walls };
+	return { ground, bumpBodies, walls, field };
 }
