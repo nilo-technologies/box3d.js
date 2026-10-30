@@ -123,8 +123,6 @@ export interface VehicleRealismLevel {
 	rollInfluence: number;
 	counterSteer: number;
 	driftGripScale: number;
-	/** Strength of the arcade drift assist, 0 off */
-	driftAssist: number;
 	/** Multiplies the car's downforce */
 	downforceScale: number;
 	/** Lowers the center of mass (m) */

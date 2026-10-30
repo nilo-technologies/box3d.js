@@ -1129,9 +1129,6 @@ export async function runVehicleDemo(
 			`${state.engineRpm.toFixed(0)} rpm`,
 			car.live.tractionControl ? 'TC' : '',
 			car.live.abs ? 'ABS' : '',
-			state.isDrifting
-				? `DRIFT ${Math.abs(state.slideAngle * (180 / Math.PI)).toFixed(0)}°`
-				: '',
 			state.stuck ? 'stuck: press R' : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');

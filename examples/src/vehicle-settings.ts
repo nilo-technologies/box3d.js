@@ -189,15 +189,7 @@ const controllerTips: Record<string, Record<string, string>> = {
 		counterSteer:
 			'Steers into a rear slide automatically, as a fraction of the slide angle',
 		driftGripScale:
-			'Sideways grip of handbraked wheels at full handbrake, and while the drift assist holds a drift. Below 1 makes handbrake drifts easy.',
-		driftAssist:
-			'Arcade drift assist. After a handbrake pull or a brake, a rear slide becomes a drift that lasts until the car straightens or slows down: the steering sets the drift angle and this fraction of a yaw assist holds it. 0 turns it off.',
-		driftAngle: 'Drift angle the assist holds with the steering centered',
-		driftAngleRange:
-			'Drift angle added by full steer into the drift, and removed by full steer out of it',
-		driftMaxAngle: 'Largest drift angle the assist allows',
-		driftSpeedKeep:
-			'Fraction of the speed the tires scrub off sideways that a drift gives back at full throttle',
+			'Sideways grip of handbraked wheels at full handbrake. Below 1 makes handbrake drifts easy.',
 		rollInfluence:
 			'Moves where cornering forces act toward the center of mass height. 0 is physical, 1 removes all body roll from cornering.',
 		downforce:
@@ -669,31 +661,6 @@ export function createVehicleSettings(
 		.name('handbrake grip')
 		.onChange(applyAssists);
 	assistsFolder
-		.add(assists, 'driftAssist', 0, 1, 0.01)
-		.name('drift assist')
-		.onChange(applyAssists);
-	const driftDeg = degreeProxy(assists, [
-		'driftAngle',
-		'driftAngleRange',
-		'driftMaxAngle',
-	]);
-	assistsFolder
-		.add(driftDeg, 'driftAngle', 0, 90, 1)
-		.name('drift angle (°)')
-		.onChange(applyAssists);
-	assistsFolder
-		.add(driftDeg, 'driftAngleRange', 0, 90, 1)
-		.name('drift steer range (°)')
-		.onChange(applyAssists);
-	assistsFolder
-		.add(driftDeg, 'driftMaxAngle', 0, 90, 1)
-		.name('drift max angle (°)')
-		.onChange(applyAssists);
-	assistsFolder
-		.add(assists, 'driftSpeedKeep', 0, 1, 0.01)
-		.name('drift speed keep')
-		.onChange(applyAssists);
-	assistsFolder
 		.add(assists, 'rollInfluence', 0, 1, 0.01)
 		.name('roll influence')
 		.onChange(applyAssists);
@@ -745,7 +712,6 @@ export function createVehicleSettings(
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
 		let text = `${pad(state.speed * 3.6, 0, 4)} km/h  ${pad(state.engineRpm, 0, 5)} rpm  gear ${gear}${state.isShifting ? '*' : ''}\n`;
 		text += `thr ${pad(state.throttle, 2, 4)} brk ${pad(state.brake, 2, 4)} steer ${pad(state.steerAngle * toDeg, 1, 5)}°\n`;
-		text += `slide ${pad(state.slideAngle * toDeg, 1, 5)}°${state.isDrifting ? '  DRIFT' : ''}\n`;
 		text += '      load   slip  angle  comp\n';
 		const count = b3.getNumVehicleWheels(stateBuffer);
 		for (let i = 0; i < count; i++) {

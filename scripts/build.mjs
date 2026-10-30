@@ -444,11 +444,6 @@ export interface VehicleStateRecord {
   steerAngle: number;
   wheelsInContact: number;
   stuck: boolean;
-  /** In a drift held by the drift assist */
-  isDrifting: boolean;
-  /** Angle between the heading and the direction of travel, positive with the velocity to the
-   * left of the heading (radians) */
-  slideAngle: number;
 }
 export interface VehicleWheelRecord {
   /** Wheel center, world space */

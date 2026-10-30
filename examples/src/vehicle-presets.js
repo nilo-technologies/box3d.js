@@ -508,7 +508,6 @@ export const realismLevels = {
 		rollInfluence: 0,
 		counterSteer: 0,
 		driftGripScale: 1,
-		driftAssist: 0,
 		downforceScale: 1,
 		comDrop: 0,
 		selfRighting: 0,
@@ -524,7 +523,6 @@ export const realismLevels = {
 		rollInfluence: 0.15,
 		counterSteer: 0.15,
 		driftGripScale: 0.85,
-		driftAssist: 0,
 		downforceScale: 1.5,
 		comDrop: 0.05,
 		selfRighting: 1,
@@ -540,7 +538,6 @@ export const realismLevels = {
 		rollInfluence: 0.35,
 		counterSteer: 0.3,
 		driftGripScale: 0.7,
-		driftAssist: 0.4,
 		downforceScale: 2.5,
 		comDrop: 0.1,
 		selfRighting: 4,
@@ -556,7 +553,6 @@ export const realismLevels = {
 		rollInfluence: 0.55,
 		counterSteer: 0.5,
 		driftGripScale: 0.55,
-		driftAssist: 0.7,
 		downforceScale: 4,
 		comDrop: 0.17,
 		selfRighting: 6,
@@ -572,7 +568,6 @@ export const realismLevels = {
 		rollInfluence: 0.75,
 		counterSteer: 0.6,
 		driftGripScale: 0.4,
-		driftAssist: 1,
 		downforceScale: 6,
 		comDrop: 0.25,
 		selfRighting: 10,
@@ -602,7 +597,6 @@ function applyRealism(def, level) {
 	a.rollInfluence = level.rollInfluence;
 	a.counterSteer = level.counterSteer;
 	a.driftGripScale = level.driftGripScale;
-	a.driftAssist = level.driftAssist;
 	a.downforce *= level.downforceScale;
 	a.selfRighting = level.selfRighting;
 	a.airControl = level.airControl;

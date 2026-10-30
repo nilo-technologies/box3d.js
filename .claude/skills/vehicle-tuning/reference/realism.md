@@ -8,7 +8,6 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | `rollInfluence` | 0 | 0.15 | 0.35 | 0.55 | 0.75 | set |
 | `counterSteer` | 0 | 0.15 | 0.3 | 0.5 | 0.6 | set |
 | `driftGripScale` | 1 | 0.85 | 0.7 | 0.55 | 0.4 | set |
-| `driftAssist` | 0 | 0 | 0.4 | 0.7 | 1 | set |
 | downforce | ×1 | ×1.5 | ×2.5 | ×4 | ×6 | multiply the car's `downforce` |
 | center of mass drop | 0 | 0.05 | 0.1 | 0.17 | 0.25 | subtract from `centerOfMassOffset` y (m) |
 | `selfRighting` | 0 | 1 | 4 | 6 | 10 | set |
@@ -28,7 +27,6 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | may spin in the 120 km/h step steer | yes | yes | no | no | no |
 | back on its wheels from side and roof | must stay on the roof | either | must | must | must |
 | braking, lateral g | archetype | ÷ and × 1.1 | 1.2 | 1.32 | 1.45 |
-| holds a handbrake drift (the `drift*` checks) | no | no | must | must | must |
 
 ## How the targets scale
 
@@ -42,7 +40,6 @@ The metrics script turns an archetype range [lo, hi] (from archetypes.md) into t
 | lateral g | lo × grip to hi × grip × 1.08 |
 | step steer roll | archetype roll range × the level's roll factors in the table above: 100% is [lo, hi], 75% is [0.6 lo, 0.85 hi], 50% is [0, 0.65 hi] and so on. Below 75% there is no lower bound. |
 | handbrake | heading change 45-360°, peak yaw rate 60-400°/s |
-| drift (50% and below) | after a 0.4 s handbrake flick at 70 km/h and full throttle: sideways (over 10°) for at least 2.5 s of 3, a centered slide angle of 12-40°, full steer into the drift at least 10° more and half steer out at least 8° less, a peak under 70° and at least 80% of the speed kept |
 | ride height | chassis 0.3-1.2 m above the ground after settling |
 | launch line | under 2 m off the line by 100 km/h |
 
@@ -55,5 +52,4 @@ Across a car's levels, lateral g must not fall, braking must not get longer, rol
 - **Grip 1.45 at arcade**: enough that a keyboard player at full lock cannot overwhelm the tires, without lateral g so high that the car feels glued (1.6-1.9 g measured).
 - **counterSteer 0.6, driftGripScale 0.4 at arcade**: with counterSteer 0.7 and driftGripScale 0.45 the arcade cars rotated less under the handbrake than the 25% cars (141 vs 157°/s), because the counter steer caught the slide. 0.6/0.4 restores the ordering (170°/s).
 - **selfRighting 4 at 50%**: 3 was enough for the low sports car but not the taller rally body on its roof. Taller or narrower bodies need more.
-- **Drift assist 0.4 / 0.7 / 1 from 50% down**: without it an arcade car's handbrake slide either snapped straight within 0.5 s of releasing the handbrake (counter steer and traction control caught it) or, with those off, spun. With it every 50%-and-below preset holds the drift for the full 3 s at 20-30° centered and 48-53° full steer into it. 75% and 100% keep it off: a realistic car's drift is the driver's job.
 - **TC and ABS from 50% down**: below that the player should not have to manage wheelspin or lockups.

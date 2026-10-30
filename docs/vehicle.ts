@@ -68,7 +68,6 @@ b3.b3Vehicle_SetWheel(vehicle, 0, suspension);
 const assists = b3.b3Vehicle_GetAssists(vehicle);
 assists.tractionControl = false;
 assists.driftGripScale = 0.5; // the handbrake makes the rear loose
-assists.driftAssist = 1; // arcade: a handbrake slide becomes a drift the steering holds
 b3.b3Vehicle_SetAssists(vehicle, assists);
 
 // Flip the car back onto its wheels
