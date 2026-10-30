@@ -8,6 +8,7 @@
   - `vehicle-demo.ts` builds its car with `spawnCar`, which can be destroyed and replaced while driving. The vehicle settings panel has a `destroy()`.
   - `.claude/skills/vehicle-tuning` is a skill for coding agents: the tuning workflow, a symptom to setting cheat sheet, every vehicle parameter as the engine uses it, and what tuning the matrix taught.
   - The smoke test drives all 45 presets and checks the preset layers.
+- The vehicle examples have sound, made with the Web Audio API and no audio files. The engine's pitch follows the rpm and each car's cylinder count, and its tone opens with the throttle; sliding tires squeal, wind rises with speed, and the suspension thumps when it hits its bump stop. Sound starts on the first key press or click. N mutes it, and the panel has a volume slider.
 
 Engine features for a Roblox-faithful physics port. `vendor/box3d` moves to `nilo-technologies/box3d` `main`, which adds to box3d's `main` (mover and pogo joints, broad-phase and solver work, recording format 6) the cylindrical joint, shape enable/disable, distance-joint springs in stiffness units, and per-shape mesh rest offsets (recording format 8). `b3VehicleAssists.brakeReverse` (default `true`) is bound: with the automatic gearbox and no forward input, the brake selects reverse once stopped.
 

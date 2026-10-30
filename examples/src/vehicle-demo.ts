@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
+import { createVehicleAudio } from './vehicle-audio';
 import {
 	createPresetVehicleDef,
 	type VehiclePresetName,
@@ -698,6 +699,33 @@ export async function runVehicleDemo(
 
 	let car = spawnCar(options.preset, options.color, spawn);
 
+	// ---- Sound. The cylinder count sets the engine's pitch for a given rpm.
+	const cylinderCounts: Record<string, number> = {
+		fwd: 4,
+		rwd: 6,
+		awd: 6,
+		offroad: 8,
+		sports: 6,
+		rally: 4,
+		super: 8,
+	};
+	const cylindersFor = (name: VehiclePresetName) =>
+		cylinderCounts[vehiclePresets[name].matrix?.car ?? name] ?? 6;
+	const audio = createVehicleAudio();
+	audio.setCylinders(cylindersFor(options.preset));
+	const sound = { volume: audio.volume };
+	let unmutedVolume = sound.volume || 0.5;
+	const volumeController = app.gui
+		.add(sound, 'volume', 0, 1, 0.05)
+		.name('sound volume (N mutes)')
+		.onChange((value: number) => audio.setVolume(value));
+	function toggleMute(): void {
+		if (sound.volume > 0) unmutedVolume = sound.volume;
+		sound.volume = sound.volume > 0 ? 0 : unmutedVolume;
+		audio.setVolume(sound.volume);
+		volumeController.updateDisplay();
+	}
+
 	// ---------------------------------------------------------------------------
 	// Input
 	// ---------------------------------------------------------------------------
@@ -791,6 +819,7 @@ export async function runVehicleDemo(
 			[p[0], groundY + spawnClearance, p[2]],
 			rotation,
 		);
+		audio.setCylinders(cylindersFor(name));
 		clearTrail();
 	}
 
@@ -801,6 +830,7 @@ export async function runVehicleDemo(
 		else if (code === 'KeyM') setManual(!isManual());
 		else if (code === 'KeyR') resetCar(false);
 		else if (code === 'KeyT') resetCar(true);
+		else if (code === 'KeyN') toggleMute();
 		else pressHandlers.get(code)?.();
 	}
 
@@ -845,7 +875,7 @@ export async function runVehicleDemo(
 
 	const controlsHelp =
 		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
-		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · gamepad works too';
+		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · gamepad works too';
 	const info = document.createElement('div');
 	info.className = 'overlay';
 	function setInfo(title: string, blurb: string, extra = ''): void {
@@ -973,6 +1003,8 @@ export async function runVehicleDemo(
 		// make them jitter
 		invQuat.copy(currQuat).invert();
 		const smoothing = 1 - Math.exp(-dt * 35);
+		let skid = 0;
+		let compression = 0;
 		for (let i = 0; i < car.wheelCount; i++) {
 			b3.getVehicleWheelAt(wheelRecord, stateBuffer, i);
 			const visual = car.wheelVisuals[i];
@@ -1003,6 +1035,9 @@ export async function runVehicleDemo(
 					)
 				: 0;
 			const heat = Math.min(Math.max((slide - 0.35) / 0.65, 0), 1);
+			skid = Math.max(skid, heat);
+			if (wheelRecord.hasContact)
+				compression = Math.max(compression, wheelRecord.compression);
 			slipColor.copy(tireBase).lerp(tireHot, heat);
 			visual.tire.color.copy(slipColor);
 			if (wheelRecord.hasContact && heat > 0.2 && Math.abs(state.speed) > 1) {
@@ -1036,6 +1071,17 @@ export async function runVehicleDemo(
 		app.camera.position.copy(camPos);
 		app.controls.target.copy(camTarget);
 		app.camera.lookAt(camTarget);
+
+		audio.update(
+			{
+				engineRpm: state.engineRpm,
+				throttle: state.throttle,
+				speed: state.speed,
+				skid,
+				compression,
+			},
+			dt,
+		);
 
 		worldRenderer.update();
 		updateHud();
