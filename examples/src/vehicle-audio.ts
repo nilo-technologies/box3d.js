@@ -26,6 +26,9 @@ export type VehicleAudio = {
 	readonly volume: number;
 };
 
+/** Engine pitch relative to the firing frequency: a fifth lower sounds deeper and calmer */
+const ENGINE_PITCH = 2 / 3;
+
 function noiseBuffer(context: AudioContext, seconds: number): AudioBuffer {
 	const buffer = context.createBuffer(
 		1,
@@ -68,20 +71,21 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 		master.gain.value = level;
 		master.connect(ctx.destination);
 
-		// Engine: a sawtooth at the firing frequency over a square an octave below, through a
-		// low pass that opens with the throttle
+		// Engine: a triangle below the firing frequency over a sine an octave under it, through a
+		// gentle low pass that opens a little with the throttle. Both waveforms are soft, with few
+		// high harmonics.
 		const engineTone = ctx.createBiquadFilter();
 		engineTone.type = 'lowpass';
-		engineTone.Q.value = 2;
+		engineTone.Q.value = 0.7;
 		const engineGain = ctx.createGain();
 		engineGain.gain.value = 0;
 		engineTone.connect(engineGain).connect(master);
 		const engine = ctx.createOscillator();
-		engine.type = 'sawtooth';
+		engine.type = 'triangle';
 		const engineSub = ctx.createOscillator();
-		engineSub.type = 'square';
+		engineSub.type = 'sine';
 		const subGain = ctx.createGain();
-		subGain.gain.value = 0.5;
+		subGain.gain.value = 0.8;
 		engine.connect(engineTone);
 		engineSub.connect(subGain).connect(engineTone);
 		engine.start();
@@ -161,16 +165,18 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 			// Smooth every parameter over a few frames so steps in the simulation do not click
 			const glide = 0.05;
 
+			// A fifth below the firing frequency, but not under 40 Hz so small speakers still play it
 			const firing = (Math.max(sound.engineRpm, 300) / 60) * (cylinders / 2);
-			nodes.engine.frequency.setTargetAtTime(firing, t, glide);
-			nodes.engineSub.frequency.setTargetAtTime(firing / 2, t, glide);
+			const pitch = Math.max(firing * ENGINE_PITCH, 40);
+			nodes.engine.frequency.setTargetAtTime(pitch, t, glide);
+			nodes.engineSub.frequency.setTargetAtTime(pitch / 2, t, glide);
 			nodes.engineTone.frequency.setTargetAtTime(
-				firing * (1.5 + 4 * sound.throttle),
+				pitch * (1.2 + 1.8 * sound.throttle),
 				t,
 				glide,
 			);
 			nodes.engineGain.gain.setTargetAtTime(
-				0.12 + 0.18 * sound.throttle,
+				0.07 + 0.13 * sound.throttle,
 				t,
 				glide,
 			);
