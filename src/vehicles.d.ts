@@ -123,14 +123,10 @@ export interface VehicleDrivetrainLayer {
 /** The third preset layer */
 export interface VehicleRealismLevel {
 	title: string;
-	/** Multiplies every tire friction coefficient */
+	/** Multiplies every tire friction coefficient, and the rear brake torque */
 	tireGrip: number;
 	rollInfluence: number;
 	counterSteer: number;
-	/** Multiplies the rear tires' lateral friction (on top of tireGrip) */
-	rearGrip: number;
-	/** Multiplies the rear tires' lateral peak slip angle */
-	rearPeakAngle: number;
 	/** Multiplies the car's steering speedReference */
 	speedReferenceScale: number;
 	driftGripScale: number;

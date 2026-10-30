@@ -4,10 +4,8 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 
 | Field | 100 | 75 | 50 | 25 | 0 (arcade) | How to apply |
 | --- | --- | --- | --- | --- | --- | --- |
-| tire grip | 1.0 | 1.1 | 1.2 | 1.32 | 1.45 | multiply all four friction values (`longitudinalPeakFriction`, `longitudinalSlideFriction`, `lateralPeakFriction`, `lateralSlideFriction`) on every wheel, and the rear wheels' `maxBrakeTorque` |
-| rear grip | 1 | 1.1 | 1.15 | 1.18 | 1.2 | multiply the rear wheels' `lateralPeakFriction` and `lateralSlideFriction` again (on top of tire grip) |
-| rear peak angle | ×1 | ×0.9 | ×0.8 | ×0.78 | ×0.75 | multiply the rear wheels' `lateralPeakAngle` |
-| steering falloff | ×1 | ×1.1 | ×1.3 | ×1.35 | ×1.4 | multiply `steering.speedReference` |
+| tire grip | 1.0 | 1.15 | 1.3 | 1.45 | 1.6 | multiply all four friction values (`longitudinalPeakFriction`, `longitudinalSlideFriction`, `lateralPeakFriction`, `lateralSlideFriction`) on every wheel, and the rear wheels' `maxBrakeTorque` |
+| steering falloff | ×1 | ×1 | ×1 | ×1.15 | ×1.15 | multiply `steering.speedReference` |
 | `rollInfluence` | 0 | 0.1 | 0.15 | 0.2 | 0.25 | set |
 | `counterSteer` | 0 | 0.15 | 0.2 | 0.2 | 0.2 | set |
 | `driftGripScale` | 1 | 0.85 | 0.7 | 0.55 | 0.4 | set |
@@ -29,7 +27,7 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | step steer roll, × the archetype range | 1.0 to 1.0 | 0.6 to 0.85 | up to 0.65 | up to 0.45 | up to 0.3 |
 | may spin in the 120 km/h step steer | yes | yes | no | no | no |
 | back on its wheels from side and roof | must stay on the roof | either | must | must | must |
-| braking, lateral g | archetype | ÷ and × 1.1 | 1.2 | 1.32 | 1.45 |
+| braking, lateral g | archetype | ÷ and × 1.15 | 1.3 | 1.45 | 1.6 |
 | keyboard moves (brake and turn, trail brake, lift off, slalom, flick) stay under 25° of sideslip | no | no | must | must | must |
 | full lock at 120 km/h reaches this share of the level's lateral g floor | no target | 0.75 | 0.8 | 0.85 | 0.9 |
 
@@ -50,16 +48,16 @@ The metrics script turns an archetype range [lo, hi] (from archetypes.md) into t
 | ride height | chassis 0.3-1.2 m above the ground after settling |
 | launch line | under 2 m off the line by 100 km/h |
 
-Example, hatch at 75% FWD: 0-100 5.32-7.20 s, top speed 232-275 km/h, braking 28.6-36.4 m, lateral g 0.99-1.28, roll 0.84-4.25°.
+Example, hatch at 75% FWD: 0-100 5.32-7.20 s, top speed 232-275 km/h, braking 27.3-34.8 m, lateral g 1.04-1.34, roll 0.84-4.25°.
 
 Across a car's levels, lateral g must not fall, braking must not get longer, roll must not grow and handbrake rotation must not slow as realism drops.
 
 ## Why these values
 
-- **Forgiving steering from 75% down**: a keyboard player only has full lock, full brake and full throttle, so the levels must survive those. The rear grip and rear peak angle rows make the rear hold on after the front lets go, so too much lock runs wide instead of spinning; a smaller peak angle also keeps the rear slip angle small in normal corners. That stability lets `counterSteer` stay at 0.2: it acts in every corner, not only in slides (findings #31), and at 0.6 the arcade car turned at 0.8 g at full lock and 120 km/h with 1.6 g of grip. The steering falloff row gives back the lock at speed that the extra grip can use (the arcade car now turns at 1.6 g there). `rollInfluence` stays low because it takes load off the outside rear wheel, which then locks when braking in a turn (findings #30).
+- **Forgiving steering from 75% down**: a keyboard player only has full lock, full brake and full throttle, so the levels must survive those. Every level below 100% has more grip on all four tires, which keeps the car's balance and so its handbrake drifts (a rear only grip bias stabilised the car too, but cut handbrake rotation by up to 20%, findings #33). From 25% down the steering falloff row gives more lock at speed, so full lock uses the extra grip (the arcade sports car turns at 1.84-1.94 g at 120 km/h); at 50% the same extra lock let the RWD car spin going lock to lock. `counterSteer` stays at 0.2: it acts in every corner, not only in slides, and at 0.6 the arcade car turned at 0.8 g at full lock and 120 km/h (findings #31). `rollInfluence` stays low because it takes load off the outside rear wheel, which then locks when braking in a turn (findings #30).
 - **Rear brakes scale with the grip** so the brake balance stays the same share of the rear grip at every level. Front brakes are capped by ABS (or lock without it), so they stay as the car layer sets them.
 - **selfRighting 8 at 25%**: with less `rollInfluence` the 25% sports car rolled more, and one perturbed variant tipped over slowly onto two wheels after landing a jump on the rough ground; 6 did not catch it.
-- **Grip 1.45 at arcade**: enough that a keyboard player at full lock cannot overwhelm the tires, without lateral g so high that the car feels glued (1.6-1.9 g measured).
+- **Grip 1.6 at arcade** (was 1.45): with more steering at speed, 1.55 still let the arcade RWD sports car spin in the flick (51°); 1.6 holds it under 12° in every perturbed variant. Lateral g is 1.78 g on the sports car.
 - **driftGripScale 0.4 at arcade**: with counterSteer 0.7 and driftGripScale 0.45 the arcade cars rotated less under the handbrake than the 25% cars (141 vs 157°/s), because the counter steer caught the slide. 0.6/0.4 restored the ordering (170°/s); counterSteer is now 0.2 and the ordering holds with room to spare.
 - **selfRighting 4 at 50%**: 3 was enough for the low sports car but not the taller rally body on its roof. Taller or narrower bodies need more.
 - **TC and ABS from 50% down**: below that the player should not have to manage wheelspin or lockups.

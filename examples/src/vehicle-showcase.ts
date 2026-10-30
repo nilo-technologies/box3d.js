@@ -88,8 +88,8 @@ function describeRealism(realism: VehicleRealism): string {
 	];
 	if (level.rollInfluence > 0)
 		parts.push(`roll influence ${level.rollInfluence}`);
-	if (level.rearGrip > 1)
-		parts.push(`rear grip ×${level.rearGrip.toFixed(2)} for stability`);
+	if (level.speedReferenceScale > 1)
+		parts.push(`steering at speed ×${level.speedReferenceScale}`);
 	if (level.counterSteer > 0) parts.push(`counter steer ${level.counterSteer}`);
 	if (level.selfRighting > 0) parts.push(`self righting ${level.selfRighting}`);
 	if (level.maxTiltAngle > 0) parts.push(`tilt limit ${level.maxTiltAngle}°`);

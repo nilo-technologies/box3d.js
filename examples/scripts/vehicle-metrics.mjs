@@ -81,10 +81,10 @@ export const archetypes = {
 // steering's speed falloff does not leave grip unused (null: the car's own steering, no target).
 export const realismTargets = {
 	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true, turnShare: null },
-	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false, turnShare: 0.75 },
-	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.8 },
-	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.85 },
-	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.9 },
+	75: { grip: 1.15, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false, turnShare: 0.75 },
+	50: { grip: 1.3, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.8 },
+	25: { grip: 1.45, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.85 },
+	0: { grip: 1.6, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.9 },
 };
 
 // Keyboard moves a forgiving car (50% realism and below) must survive: the peak sideslip in each
