@@ -5,10 +5,11 @@
 // then pass through a soft saturator and a muffler low pass that opens with the throttle.
 // Uneven firing angles or uneven pulse strengths between banks give the burble of a cross-plane
 // V8 or the rumble of a boxer; small random timing and strength changes keep it from sounding
-// like a machine. Off throttle at high rpm, some firings pop (overrun crackle).
+// like a machine. During an overrun crackle burst, some firings pop.
 //
-// The voice arrives as a message (see EngineVoiceConfig in vehicle-audio.ts), the rpm and the
-// throttle as AudioParams. An electric voice is a few sines at fixed orders of the rpm instead.
+// The voice arrives as a message (see EngineVoiceConfig in vehicle-audio.ts), the rpm, the
+// throttle and the crackle level as AudioParams. vehicle-audio.ts decides when the exhaust
+// crackles (after a hard pull, on some lifts) and sets overrun for the length of the burst. An electric voice is a few sines at fixed orders of the rpm instead.
 
 /** Topology-preserving state variable filter (Simper). band is normalized to a peak of 1. */
 class Svf {
@@ -63,6 +64,14 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				maxValue: 1,
 				automationRate: 'k-rate',
 			},
+			{
+				// Crackle burst level, 0 none to 1 a lift from a fully hot exhaust
+				name: 'overrun',
+				defaultValue: 0,
+				minValue: 0,
+				maxValue: 1,
+				automationRate: 'k-rate',
+			},
 		];
 	}
 
@@ -111,6 +120,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		}
 		const rpm = parameters.rpm[0];
 		const throttle = parameters.throttle[0];
+		const overrun = parameters.overrun[0];
 
 		if (v.whine) {
 			// Electric: sines at fixed orders of the motor speed, a little louder under load
@@ -144,7 +154,6 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		);
 		// Pulses are weaker off throttle, as the engine is pumping air rather than burning fuel
 		const load = 0.5 + 0.5 * throttle;
-		const overrun = throttle < 0.1 && rpm > 2500;
 		const step = (rpm * 6) / sampleRate; // degrees of crank per sample
 		const [, , gain1] = v.formants[0];
 		const [, , gain2] = v.formants[1];
@@ -164,7 +173,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					: fire > prev && fire <= next;
 				if (crossed) {
 					let amp = c.gain * load * (1 + v.ampJitter * (Math.random() * 2 - 1));
-					if (overrun && Math.random() < v.crackle) {
+					if (overrun > 0 && Math.random() < v.crackle * overrun) {
 						amp *= 2;
 						this.pop = Math.max(this.pop, 0.5 + 0.7 * Math.random());
 					}
