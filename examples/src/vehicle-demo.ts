@@ -1,6 +1,6 @@
 // Shared driving demo used by the vehicle examples: builds the world (paved track or off-road
-// terrain), the car visuals, a chase camera, the HUD, keyboard and gamepad input, and the
-// reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is interpolated
+// terrain), the car visuals, a chase camera, the HUD, keyboard, gamepad and touch input, and
+// the reusable settings panel. Physics runs at a fixed 60 Hz and the chassis is interpolated
 // between steps for high refresh rate displays. The car is built by spawnCar and can be
 // swapped for another preset while driving, which the showcase uses.
 
@@ -32,6 +32,7 @@ import {
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
 import { createSteeringLimiter } from './vehicle-steering';
+import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
 	addRaceTrackArt,
 	applyTopoAtmosphere,
@@ -873,10 +874,11 @@ export async function runVehicleDemo(
 	function readInput() {
 		const down = (...codes: string[]) =>
 			codes.some((c) => keys.has(c)) ? 1 : 0;
-		let throttle = down('KeyW', 'ArrowUp');
-		let reverse = down('KeyS', 'ArrowDown');
+		let throttle = down('KeyW', 'ArrowUp', touchCodes.gas);
+		let reverse = down('KeyS', 'ArrowDown', touchCodes.brake);
 		let steer = down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft');
-		let handbrake = down('Space');
+		let handbrake = down('Space', touchCodes.handbrake);
+		if (touch.steering) steer = touch.steer;
 
 		const pad = (navigator.getGamepads?.() ?? []).find((p) => p !== null);
 		if (pad) {
@@ -911,19 +913,39 @@ export async function runVehicleDemo(
 	const controlsHelp =
 		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
 		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · gamepad works too';
+	const touchHelp =
+		'Left pad steers, further out for more lock · ▲ gas · ▼ brake, hold to reverse · HB handbrake · ↻ flip upright';
 	const info = document.createElement('div');
 	info.className = 'overlay';
+	let infoText = [vehiclePresets[options.preset].title, options.blurb, ''];
+	let touchShown = false;
 	function setInfo(title: string, blurb: string, extra = ''): void {
+		infoText = [title, blurb, extra];
+		// The extra line lists hotkeys, which a touch screen has no use for
+		const help = touchShown ? touchHelp : controlsHelp + extra;
 		info.innerHTML =
 			`<b>${title}</b><br>${blurb}<br>` +
-			`<span style="opacity:.75">${controlsHelp}${extra}</span>`;
+			`<span style="opacity:.75">${help}</span>`;
 	}
-	setInfo(vehiclePresets[options.preset].title, options.blurb);
 	document.body.appendChild(info);
 
+	const touch = createTouchControls({
+		keys,
+		onPress,
+		onShow: () => {
+			touchShown = true;
+			setInfo(infoText[0], infoText[1], infoText[2]);
+			// On a phone the open panel covers most of the view; its title bar opens it again
+			if (Math.min(innerWidth, innerHeight) < 600) app.gui.close();
+		},
+	});
+	setInfo(infoText[0], infoText[1], infoText[2]);
+
+	// The touch controls move and shrink the HUD through these variables, see example.css
 	const hud = document.createElement('div');
 	hud.style.cssText =
-		'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);padding:8px 16px;border-radius:8px;' +
+		'position:fixed;left:50%;bottom:var(--vehicle-hud-bottom,18px);transform:translateX(-50%) scale(var(--vehicle-hud-scale,1));' +
+		'transform-origin:50% 100%;padding:8px 16px;border-radius:8px;' +
 		'background:rgba(0,0,0,.55);color:#eee;font:600 14px ui-monospace,monospace;text-align:center;' +
 		'pointer-events:none;user-select:none;min-width:260px';
 	hud.innerHTML =
@@ -1000,7 +1022,7 @@ export async function runVehicleDemo(
 			car.live.tractionControl ? 'TC' : '',
 			car.live.abs ? 'ABS' : '',
 			state.isLaunching ? 'LAUNCH' : '',
-			state.stuck ? 'stuck: press R' : '',
+			state.stuck ? (touchShown ? 'stuck: tap ↻' : 'stuck: press R') : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
 		if (raceTrack) {
