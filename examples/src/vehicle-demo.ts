@@ -716,16 +716,16 @@ export async function runVehicleDemo(
 		cylinderCounts[vehiclePresets[name].matrix?.car ?? name] ?? 6;
 	const audio = createVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
-	const sound = { volume: audio.volume };
-	let unmutedVolume = sound.volume || 0.5;
+	const soundSettings = { volume: audio.volume };
+	let unmutedVolume = soundSettings.volume || 0.5;
 	const volumeController = app.gui
-		.add(sound, 'volume', 0, 1, 0.05)
+		.add(soundSettings, 'volume', 0, 1, 0.05)
 		.name('sound volume (N mutes)')
 		.onChange((value: number) => audio.setVolume(value));
 	function toggleMute(): void {
-		if (sound.volume > 0) unmutedVolume = sound.volume;
-		sound.volume = sound.volume > 0 ? 0 : unmutedVolume;
-		audio.setVolume(sound.volume);
+		if (soundSettings.volume > 0) unmutedVolume = soundSettings.volume;
+		soundSettings.volume = soundSettings.volume > 0 ? 0 : unmutedVolume;
+		audio.setVolume(soundSettings.volume);
 		volumeController.updateDisplay();
 	}
 
@@ -1075,16 +1075,27 @@ export async function runVehicleDemo(
 		app.controls.target.copy(camTarget);
 		app.camera.lookAt(camTarget);
 
-		audio.update(
-			{
-				engineRpm: state.engineRpm,
-				throttle: state.throttle,
-				speed: state.speed,
-				skid,
-				compression,
-			},
-			dt,
-		);
+		const sound = {
+			engineRpm: state.engineRpm,
+			throttle: state.throttle,
+			speed: state.speed,
+			skid,
+			compression,
+		};
+		audio.update(sound, dt);
+
+		// Opt-in readout for scripted test drives: a page script that sets
+		// window.vehicleTelemetry = {} gets the car's sound inputs and pose every frame
+		const telemetry = (window as { vehicleTelemetry?: object })
+			.vehicleTelemetry;
+		if (telemetry) {
+			Object.assign(telemetry, sound, {
+				preset: car.name,
+				cylinders: cylindersFor(car.name),
+				position: [currPos.x, currPos.y, currPos.z],
+				yaw: carYaw(),
+			});
+		}
 
 		worldRenderer.update();
 		updateHud();
