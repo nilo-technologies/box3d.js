@@ -17,7 +17,7 @@ Every field and what the engine really does with it is in [reference/parameters.
 
 1. **Pin the brief.** Archetype (sports, rally, super, hatch, or the closest), realism level (100, 75, 50, 25, 0) and drivetrain (fwd, rwd, awd). If the brief is between levels, pick the nearer one and say so.
 2. **Write the car layer** from the archetype ranges: mass, center of mass, wheel layout, tires, engine, gears, brakes, bars, steering, aero. Any field the archetype does not list stays at its `b3DefaultVehicleDef()` default; that is intended. Check the derived numbers before you run anything (see "Sanity math" below).
-3. **Apply the drivetrain layer**, then **the realism row**, exactly as the reference tables say, in that order. The realism row comes last because it multiplies or offsets values the earlier layers set (tire friction, downforce, center of mass height). Brake and handbrake torques are not scaled by the realism row. For a single preset, size them in the car layer for the grip of the level you are building (see "Sanity math"). In the matrix one car layer serves all five levels, so size them once and check every level with `--car`.
+3. **Apply the drivetrain layer**, then **the realism row**, exactly as the reference tables say, in that order. The realism row comes last because it multiplies or offsets values the earlier layers set (tire friction, rear side grip, rear brakes, steering falloff, downforce, center of mass height). Front brake and handbrake torques are not scaled by the realism row; the rear brake is, by the tire grip, so size it in the car layer for 100% grip. For a single preset, size the front brake in the car layer for the grip of the level you are building (see "Sanity math"). In the matrix one car layer serves all five levels, so size them once and check every level with `--car`.
 4. **Measure.** Save the car as a preset module (template below) and run
    `node examples/scripts/vehicle-metrics.mjs --file path/to/car.mjs`
    from the repo root. It needs the built `dist/` (already committed). One car takes about a second.
@@ -56,7 +56,7 @@ Rules for `apply(def)`:
 
 ## What the metrics measure
 
-All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 20 checks at 50% realism and below and 16 or 17 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
+All on flat ground with the default shape friction (0.6, the tire reference, so grip is scaled by 1). The exact ranges for each realism level, and the fixed ranges below, are in [reference/realism.md](reference/realism.md) under "How the targets scale". `--json` prints every check with its range. A car gets 26 checks at 50% realism and below and 17 at 75% and 100% (the spin and righting rules differ); `--quick` drops the top speed check.
 
 | Metric | Test | Realistic means |
 | --- | --- | --- |
@@ -65,6 +65,8 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | `braking` | lift 0.25 s, full brake from 100 km/h | archetype range ÷ realism grip |
 | `lateralG` | 70 km/h, steering ramped to half lock with the speed falloff off | archetype range × realism grip |
 | `stepRoll`, `spun`, `flipped` | 120 km/h then full steer with the throttle held for 3 s | realistic cars roll and may spin; arcade cars barely roll and must not spin |
+| `turnsAtSpeed` | the same step steer: lateral g averaged over 0.5-2.5 s | from 75% down, full lock must use a share of the level's grip (0.75-0.9 of the lateral g floor) |
+| `forgiving brakeTurn`, `trailBrake`, `liftOff`, `slalom`, `flick` | keyboard moves: full brake and lock at 110 km/h, braking mid corner, lifting mid corner, lock to lock, opposite lock and let go | at 50% and below the peak sideslip stays under 25° |
 | `shiftShare` | flat out through the gears | the engine upshifts at 87-93% of the limiter (median), as racing games do |
 | `handbrakeYaw`, `handbrakeRate` | 60 km/h, full steer and a 0.8 s handbrake pull | at least 45° and 60°/s; less realism rotates faster |
 | `sideRighted`, `roofRighted` | dropped on the side and on the roof, 6 s | 100% stays on its roof; 50% and below get back on their wheels |
@@ -88,7 +90,9 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | braking long without ABS | tire `longitudinalSlideFriction` (locked wheels slide), brake balance: rear brake lower so the rears lock last | `abs: true` if the level allows it |
 | lateral g low | `lateralPeakFriction` and `lateralSlideFriction` | lower `rollInfluence` does not add grip; downforce only helps at speed |
 | understeer (front slides first, FWD) | stiffer rear bar, softer front bar | front `lateralPeakFriction`, front weight (z) |
-| snap oversteer, spins in the step steer | softer rear bar or stiffer front, rear LSD lower, `counterSteer` (arcade only) | rear tire `lateralSlideFriction` closer to the peak |
+| snap oversteer, spins in the step steer | softer rear bar or stiffer front, rear LSD lower | rear tire `lateralSlideFriction` closer to the peak. At the arcade levels the realism row's rear grip and rear peak angle do this; more `counterSteer` costs turning in every corner (findings #31) |
+| spins braking in a turn (`forgiving brakeTurn`, `trailBrake`) | rear `maxBrakeTorque` down toward the ideal split (about 25-30% of the braking on a 50/50 car) | lower `rollInfluence`. ABS does not catch a wheel locking in a corner (findings #30) |
+| full lock at speed turns too little (`turnsAtSpeed`) | `steering.speedReference` up | lower `counterSteer`: it takes lock away in every corner (findings #31) |
 | too much body roll | anti-roll bars, then spring `frequency`, lower `centerOfMassOffset` y | `rollInfluence` (an assist: realism 50 and below) |
 | too little body roll at 100% or 75% | softer bars, `rollInfluence` 0 | the FWD layer adds bar stiffness overall (×0.8 front, ×1.6 rear), so an FWD car rolls less than the archetype's RWD figure |
 | flips in corners | lower center of mass, `rollInfluence` up, `maxTiltAngle` | never on a realistic car on flat ground: fix the geometry first |
@@ -103,7 +107,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 - **Axle load** ≈ mass × 9.81 × axle share ÷ 2 per wheel. The share comes from `centerOfMassOffset` z: 0.15 m on a 2.55 m wheelbase moves about 6%.
 - **Tire peak torque** per wheel ≈ load × μ × radius, where μ is the longitudinal peak friction × the level's tire grip.
-- **Brakes**: the risk is a front wheel locking at the brake step, before the weight has moved forward; with ABS on it then stays locked (findings #7). So size the front brake against the static front peak torque at the grip of the level you build: start at 1.15-1.25x for a single level car. Then measure. If braking is long, look at the front slip: if the fronts did not lock, a stronger brake shortens the stop (a soft, tall rally car stopped 2 m shorter at 1.7x); if they locked, go back down. The archetype brake values are the committed cars', which serve every level from 100% to arcade with one brake size, so they read high (about 1.6x) against 100% grip. Without ABS, a stronger brake just locks the wheels and braking is set by the sliding friction. Rear brakes are usually half to two thirds of the front; a rear heavy mid engine car runs nearer 90%.
+- **Brakes**: the risk is a front wheel locking at the brake step, before the weight has moved forward; with ABS on it then stays locked (findings #7). So size the front brake against the static front peak torque at the grip of the level you build: start at 1.15-1.25x for a single level car. Then measure. If braking is long, look at the front slip: if the fronts did not lock, a stronger brake shortens the stop (a soft, tall rally car stopped 2 m shorter at 1.7x); if they locked, go back down. The archetype brake values are the committed cars', which serve every level from 100% to arcade with one brake size, so they read high (about 1.6x) against 100% grip. Without ABS, a stronger brake just locks the wheels and braking is set by the sliding friction. Size the rear brake near the ideal split at full braking: rear share ≈ static rear share - (center of mass height ÷ wheelbase) × deceleration in g, about 25-30% of the braking on a 50/50 road car (the sports car runs 2600/900 N·m). More rear brake locks the inside rear when braking in a turn, and ABS does not catch it (findings #30); the realism row then scales the rear with the grip. A rear heavy mid engine car runs a larger rear share.
 - **Handbrake**: about the rear peak torque at 100% grip or more, so it can lock the rears. Slightly under is fine: weight comes off the rear under braking, and below 100% realism `driftGripScale` cuts the rear side grip anyway.
 - **Launch**: wheel force in first gear = `maxTorque` × gear × `finalDrive` ÷ radius. If this is several times the driven axle's grip (load × μ), the launch is traction limited and gearing will not help.
 - **Speed at the limiter** in gear n = `maxRpm` ÷ (gear n × `finalDrive`) × 2π ÷ 60 × radius.

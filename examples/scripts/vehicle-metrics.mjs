@@ -77,13 +77,19 @@ export const archetypes = {
 // How each realism level moves the targets. Grip scales braking and lateral g. Roll scales the
 // archetype's step steer roll range: a realistic car must roll, an arcade car hardly at all.
 // The rest says what a level must or must not do in the step steer and self righting tests.
+// turnShare is how much of the level's lateral g floor full lock must reach at 120 km/h, so the
+// steering's speed falloff does not leave grip unused (null: the car's own steering, no target).
 export const realismTargets = {
-	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true },
-	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false },
-	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false },
-	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false },
-	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false },
+	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true, turnShare: null },
+	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false, turnShare: 0.75 },
+	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.8 },
+	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.85 },
+	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.9 },
 };
+
+// Keyboard moves a forgiving car (50% realism and below) must survive: the peak sideslip in each
+// stays under this many degrees, with no steering limiter or other help from the caller
+export const forgivingSlip = 25;
 
 export function targetRanges({ archetype, realism, drive }) {
 	const a = archetypes[archetype];
@@ -99,6 +105,7 @@ export function targetRanges({ archetype, realism, drive }) {
 		braking: [a.braking[0] / r.grip / 1.05, a.braking[1] / r.grip],
 		lateralG: [a.lateralG[0] * r.grip, a.lateralG[1] * r.grip * 1.08],
 		stepRoll: [a.stepRoll[0] * r.roll[0], a.stepRoll[1] * r.roll[1]],
+		stepTurnG: r.turnShare === null ? null : [a.lateralG[0] * r.grip * r.turnShare, Number.POSITIVE_INFINITY],
 		handbrakeYaw: [45, 360],
 		handbrakeRate: [60, 400],
 		shiftShare: [0.87, 0.93],
@@ -412,9 +419,16 @@ function testStepSteer(preset) {
 	const yaw0 = pose(car.chassis).yaw;
 	let yaw = 0;
 	let prevYaw = yaw0;
+	// Lateral acceleration (speed times yaw rate) averaged over 0.5-2.5 s: how hard full lock turns
+	let turn = 0;
 	for (let i = 0; i < 180; i++) {
 		b3.b3Vehicle_SetInput(car.vehicle, input(1, 0, 1));
 		step(car);
+		if (i >= 30 && i < 150) {
+			b3.b3Body_GetLinearVelocity(vel, car.chassis);
+			b3.b3Body_GetAngularVelocity(ang, car.chassis);
+			turn += (Math.hypot(vel[0], vel[2]) * Math.abs(ang[1])) / 9.81 / 120;
+		}
 		const p = pose(car.chassis);
 		roll = Math.max(roll, Math.abs(p.roll));
 		minUp = Math.min(minUp, p.upright);
@@ -431,9 +445,53 @@ function testStepSteer(preset) {
 		stepRoll: roll,
 		stepSideslip: slip,
 		stepYaw: Math.abs(yaw) * toDeg,
+		stepTurnG: turn,
 		spun: slip > 35,
 		flipped: minUp < 0.5,
 	};
+}
+
+// What a keyboard player does: full lock, full brake and full throttle, nothing in between. Each
+// move starts at a steady speed and returns the peak sideslip. A forgiving car slides a little
+// and keeps going; a car that punishes the player spins.
+const keyboardMoves = {
+	// Full brake and full lock at once from 110 km/h, the usual way into a corner
+	brakeTurn: [110, () => input(0, 1, 1), 2.5],
+	// Turned in on the throttle, then braking mid corner
+	trailBrake: [90, (t) => (t < 1 ? input(1, 0, 1) : input(0, 1, 1)), 3],
+	// Full lock on the throttle, then lifting mid corner
+	liftOff: [80, (t) => input(t < 1.5 ? 1 : 0, 0, 1), 3],
+	// Lock to lock every 0.8 s on the throttle, then straight
+	slalom: [90, (t) => input(1, 0, t < 4 ? (Math.floor(t / 0.8) % 2 ? -1 : 1) : 0), 6],
+	// Too much lock, the opposite lock to catch it, then letting go
+	flick: [100, (t) => input(1, 0, t < 1.2 ? 1 : t < 2.4 ? -1 : 0), 5],
+};
+
+function testKeyboard(preset) {
+	const out = {};
+	for (const [name, [kmhStart, script, seconds]] of Object.entries(keyboardMoves)) {
+		const car = settled(preset);
+		const target = kmhStart / kmh;
+		let t = 0;
+		while (readState(car.vehicle).speed < target && t < 25) {
+			b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+			step(car);
+			t += dt;
+		}
+		for (let i = 0; i < 30; i++) {
+			b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+			step(car);
+		}
+		let slip = 0;
+		for (let i = 0; i < seconds / dt; i++) {
+			b3.b3Vehicle_SetInput(car.vehicle, script(i * dt));
+			step(car);
+			slip = Math.max(slip, sideslip(car.chassis));
+		}
+		out[`${name}Slip`] = slip;
+		b3.b3DestroyWorld(car.world);
+	}
+	return out;
 }
 
 // 60 km/h, full steer and a 0.8 s handbrake pull: the heading change after 1.5 s and the peak
@@ -541,6 +599,7 @@ export function measure(preset, { quick = false } = {}) {
 		...testShifts(preset),
 		...testLateral(preset),
 		...testStepSteer(preset),
+		...testKeyboard(preset),
 		...testHandbrake(preset),
 		...testSelfRight(preset),
 		...testRough(preset),
@@ -584,6 +643,13 @@ export function check(m, target, { quick = false } = {}) {
 	rule('noFlip', !m.flipped, m.flipped ? 'flipped in the step steer' : 'stays on its wheels');
 	if (!t.maySpin) {
 		rule('noSpin', !m.spun, `peak sideslip ${m.stepSideslip.toFixed(0)} deg (want < 35)`);
+		for (const move of Object.keys(keyboardMoves)) {
+			const slip = m[`${move}Slip`];
+			rule(`forgiving ${move}`, slip < forgivingSlip, `peak sideslip ${slip.toFixed(0)} deg (want < ${forgivingSlip})`);
+		}
+	}
+	if (t.stepTurnG) {
+		rule('turnsAtSpeed', m.stepTurnG >= t.stepTurnG[0], `${m.stepTurnG.toFixed(2)} g at full lock and 120 km/h (want >= ${t.stepTurnG[0].toFixed(2)})`);
 	}
 	range('handbrakeYaw', 'deg', 0);
 	range('handbrakeRate', 'deg/s', 0);
@@ -733,7 +799,7 @@ if (isMain) {
 			const failed = checks.filter((c) => !c.pass);
 			const m = metrics;
 			console.log(
-				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(24)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${args.quick ? 'skipped' : `${m.topSpeed.toFixed(0)} (gear ${m.topGear}, ${m.topRpm.toFixed(0)} rpm)`} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
+				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(24)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${args.quick ? 'skipped' : `${m.topSpeed.toFixed(0)} (gear ${m.topGear}, ${m.topRpm.toFixed(0)} rpm)`} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} turn ${m.stepTurnG.toFixed(2)} g${m.flipped ? ' FLIP' : ''} | keys ${Object.keys(keyboardMoves).map((k) => m[`${k}Slip`].toFixed(0)).join('/')} deg | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
 			);
 			for (const c of failed) console.log(`       x ${c.name}: ${c.detail}`);
 		}

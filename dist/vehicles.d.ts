@@ -127,6 +127,12 @@ export interface VehicleRealismLevel {
 	tireGrip: number;
 	rollInfluence: number;
 	counterSteer: number;
+	/** Multiplies the rear tires' lateral friction (on top of tireGrip) */
+	rearGrip: number;
+	/** Multiplies the rear tires' lateral peak slip angle */
+	rearPeakAngle: number;
+	/** Multiplies the car's steering speedReference */
+	speedReferenceScale: number;
 	driftGripScale: number;
 	/** Multiplies the car's downforce */
 	downforceScale: number;

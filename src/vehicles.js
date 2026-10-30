@@ -297,8 +297,10 @@ export const vehicleCars = {
 		layout: [0.8, -0.02, 1.3, -1.25],
 		wheelRadius: 0.33,
 		wheelInertia: 1.0,
+		// About 26% of the braking on the rear, near the ideal split at full braking. More rear brake
+		// locks the inside rear when braking in a turn, and ABS does not catch it while cornering.
 		front: { width: 0.245, brake: 2600, frequency: 2.0 },
-		rear: { width: 0.275, brake: 1500, frequency: 2.2 },
+		rear: { width: 0.275, brake: 900, frequency: 2.2 },
 		handbrake: 2500,
 		suspension: {
 			minLength: 0.17,
@@ -512,6 +514,18 @@ export const drivetrainLayers = {
  * Realism levels, from a car as it would really drive (100) to a full arcade car (0).
  * `tireGrip` and `downforceScale` multiply the car's values; `comDrop` lowers the center of
  * mass below the car's own (m). `tractionControl` and `abs` of null keep the car's own setting.
+ * The rear brakes scale with `tireGrip` too, so the brake balance stays the same share of the
+ * grip at every level.
+ *
+ * The steering fields make the less realistic levels forgiving for a keyboard player, who only
+ * ever uses full lock, full brake and full throttle. `rearGrip` and `rearPeakAngle` multiply the
+ * rear tires' side grip and the slip angle where it peaks, so the rear holds on after the front
+ * lets go: too much lock runs the car wide instead of spinning it. With that stability from the
+ * tires, `counterSteer` can stay low (it acts in every corner, not only in slides, so a high value
+ * takes lock away and the car turns less), and `speedReferenceScale` gives back the steering at
+ * speed that the extra grip can use. `rollInfluence` stays low: lifting the cornering forces toward
+ * the center of mass takes load off the outside rear wheel, which then locks under braking in a
+ * turn and spins the car.
  */
 export const realismLevels = {
 	100: {
@@ -519,6 +533,9 @@ export const realismLevels = {
 		tireGrip: 1.0,
 		rollInfluence: 0,
 		counterSteer: 0,
+		rearGrip: 1,
+		rearPeakAngle: 1,
+		speedReferenceScale: 1,
 		driftGripScale: 1,
 		downforceScale: 1,
 		comDrop: 0,
@@ -532,8 +549,11 @@ export const realismLevels = {
 	75: {
 		title: '75% realistic',
 		tireGrip: 1.1,
-		rollInfluence: 0.15,
+		rollInfluence: 0.1,
 		counterSteer: 0.15,
+		rearGrip: 1.1,
+		rearPeakAngle: 0.9,
+		speedReferenceScale: 1.1,
 		driftGripScale: 0.85,
 		downforceScale: 1.5,
 		comDrop: 0.05,
@@ -547,8 +567,11 @@ export const realismLevels = {
 	50: {
 		title: '50% realistic',
 		tireGrip: 1.2,
-		rollInfluence: 0.35,
-		counterSteer: 0.3,
+		rollInfluence: 0.15,
+		counterSteer: 0.2,
+		rearGrip: 1.15,
+		rearPeakAngle: 0.8,
+		speedReferenceScale: 1.3,
 		driftGripScale: 0.7,
 		downforceScale: 2.5,
 		comDrop: 0.1,
@@ -562,12 +585,15 @@ export const realismLevels = {
 	25: {
 		title: '25% realistic',
 		tireGrip: 1.32,
-		rollInfluence: 0.55,
-		counterSteer: 0.5,
+		rollInfluence: 0.2,
+		counterSteer: 0.2,
+		rearGrip: 1.18,
+		rearPeakAngle: 0.78,
+		speedReferenceScale: 1.35,
 		driftGripScale: 0.55,
 		downforceScale: 4,
 		comDrop: 0.17,
-		selfRighting: 6,
+		selfRighting: 8,
 		airControl: 2.5,
 		airAngularDamping: 2.5,
 		maxTiltAngle: 70,
@@ -577,8 +603,11 @@ export const realismLevels = {
 	0: {
 		title: 'Arcade',
 		tireGrip: 1.45,
-		rollInfluence: 0.75,
-		counterSteer: 0.6,
+		rollInfluence: 0.25,
+		counterSteer: 0.2,
+		rearGrip: 1.2,
+		rearPeakAngle: 0.75,
+		speedReferenceScale: 1.4,
 		driftGripScale: 0.4,
 		downforceScale: 6,
 		comDrop: 0.25,
@@ -600,9 +629,17 @@ const tireFrictionKeys = [
 
 function applyRealism(def, level) {
 	for (let i = 0; i < def.wheelCount; i++) {
-		const tire = def.wheels[i].tire;
-		for (const key of tireFrictionKeys) tire[key] *= level.tireGrip;
+		const wheel = def.wheels[i];
+		for (const key of tireFrictionKeys) wheel.tire[key] *= level.tireGrip;
+		if (wheel.steerFactor === 0) {
+			// Front brakes are capped by ABS at the tires' peak anyway; the rears set the balance
+			wheel.maxBrakeTorque *= level.tireGrip;
+			wheel.tire.lateralPeakFriction *= level.rearGrip;
+			wheel.tire.lateralSlideFriction *= level.rearGrip;
+			wheel.tire.lateralPeakAngle *= level.rearPeakAngle;
+		}
 	}
+	def.steering.speedReference *= level.speedReferenceScale;
 	const [x, y, z] = def.chassis.centerOfMassOffset;
 	def.chassis.centerOfMassOffset = [x, y - level.comDrop, z];
 	const a = def.assists;

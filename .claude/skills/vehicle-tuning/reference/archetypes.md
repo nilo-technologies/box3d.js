@@ -40,7 +40,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | top speed is set by | drag | gearing (6th at the limiter ≈ 210 km/h) | drag | drag |
 | engine inertia | 0.2 | 0.12 | 0.15 | 0.15-0.2 |
 | anti-roll F/R (N/m) | 16000 / 13000 | 16000 / 12000 | 30000 / 26000 | 20000 / 14000 |
-| brakes F/R (N·m) | 2600 / 1500 | 2580 / 1680 | 2400 / 2200 | 1800 / 1200 |
+| brakes F/R (N·m) | 2600 / 900 | 2580 / 1680 | 2400 / 2200 | 1800 / 1200 |
 | handbrake (N·m) | 2500 | 4480 (hydraulic) | 2000-2200 | 2500 |
 | steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
