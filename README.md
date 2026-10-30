@@ -254,43 +254,9 @@ npm install box3d.js
       </a>
     </td>
     <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-fwd">
-        <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: FWD hatchback
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-rwd">
-        <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: RWD sports car
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-awd">
-        <img src="./examples/public/screenshots/example-vehicle-awd.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: AWD road car
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-offroad">
-        <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: AWD off-roader
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
       <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-showcase">
         <img src="./examples/public/screenshots/example-vehicle-showcase.png" width="180" height="120" style="object-fit:cover;"/><br/>
         Vehicle: preset showcase
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-sound">
-        <img src="./examples/public/screenshots/example-vehicle-sound.png" width="180" height="120" style="object-fit:cover;"/><br/>
-        Vehicle: sound lab
       </a>
     </td>
   </tr>
@@ -1387,7 +1353,7 @@ console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`
 
 ### Presets
 
-`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and a matrix of 45 more, a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node.
+`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node.
 
 ```ts
 // box3d.js/vehicles has ready tuned cars. A preset tunes a b3DefaultVehicleDef() and gives the
@@ -1411,36 +1377,12 @@ superDef.assists.abs = true;
 applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
 ```
 
-The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive come from `box3d.js/vehicles`.
+The vehicle example has a tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets it drives come from `box3d.js/vehicles`.
 
-The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
+The example, a preset showcase, swaps between 45 presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
 
 <table>
   <tr>
-  <td align="center">
-    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-fwd">
-      <img src="./examples/public/screenshots/example-vehicle-fwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
-      <strong>Vehicle: FWD hatchback</strong>
-    </a>
-  </td>
-  <td align="center">
-    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-rwd">
-      <img src="./examples/public/screenshots/example-vehicle-rwd.png" width="200" height="133" style="object-fit:cover;"/><br/>
-      <strong>Vehicle: RWD sports car</strong>
-    </a>
-  </td>
-  <td align="center">
-    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-awd">
-      <img src="./examples/public/screenshots/example-vehicle-awd.png" width="200" height="133" style="object-fit:cover;"/><br/>
-      <strong>Vehicle: AWD road car</strong>
-    </a>
-  </td>
-  <td align="center">
-    <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-offroad">
-      <img src="./examples/public/screenshots/example-vehicle-offroad.png" width="200" height="133" style="object-fit:cover;"/><br/>
-      <strong>Vehicle: AWD off-roader</strong>
-    </a>
-  </td>
   <td align="center">
     <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-showcase">
       <img src="./examples/public/screenshots/example-vehicle-showcase.png" width="200" height="133" style="object-fit:cover;"/><br/>
