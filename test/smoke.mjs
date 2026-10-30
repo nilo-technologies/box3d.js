@@ -1679,6 +1679,90 @@ async function vehicleScenarios( b3 )
 		b3.b3DestroyWorld( world );
 	}
 
+	// Chassis-space wheel readout: the local pose composed with the chassis transform is the world
+	// wheel transform, for a tilted, steering, moving car with the default axes and with up = +z,
+	// forward = +x. The bulk readout matches the per-wheel one and carries the raw spin values.
+	{
+		const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE;
+		assert.equal( stride, 11, 'wheel local stride' );
+		assert.equal( b3.B3_MAX_VEHICLE_WHEELS, 8, 'max vehicle wheels' );
+		const qmul = ( a, b ) => [
+			a[ 3 ] * b[ 0 ] + a[ 0 ] * b[ 3 ] + a[ 1 ] * b[ 2 ] - a[ 2 ] * b[ 1 ],
+			a[ 3 ] * b[ 1 ] - a[ 0 ] * b[ 2 ] + a[ 1 ] * b[ 3 ] + a[ 2 ] * b[ 0 ],
+			a[ 3 ] * b[ 2 ] + a[ 0 ] * b[ 1 ] - a[ 1 ] * b[ 0 ] + a[ 2 ] * b[ 3 ],
+			a[ 3 ] * b[ 3 ] - a[ 0 ] * b[ 0 ] - a[ 1 ] * b[ 1 ] - a[ 2 ] * b[ 2 ],
+		];
+		const rotate = ( q, v ) => qmul( qmul( q, [ ...v, 0 ] ), [ -q[ 0 ], -q[ 1 ], -q[ 2 ], q[ 3 ] ] ).slice( 0, 3 );
+		const normalize = ( v ) => v.map( ( x ) => x / Math.hypot( ...v ) );
+		const tilt = axisAngle( normalize( [ 1, 0, 0.6 ] ), 0.12 );
+
+		const frames = [
+			{ label: 'default axes', up: [ 0, 1, 0 ], forward: [ 0, 0, 1 ], toChassis: ( p ) => p, rotation: [ 0, 0, 0, 1 ] },
+			// left = up x forward = +y, so a default (left, up, forward) point maps to (forward, left, up), and
+			// the body turns chassis +x (forward) to world +z, +y (left) to world +x and +z (up) to world +y
+			{ label: 'up +z forward +x', up: [ 0, 0, 1 ], forward: [ 1, 0, 0 ], toChassis: ( p ) => [ p[ 2 ], p[ 0 ], p[ 1 ] ], rotation: [ -0.5, -0.5, -0.5, 0.5 ] },
+		];
+		for ( const frame of frames )
+		{
+			const world = createWorld( tilt );
+			const def = b3.b3DefaultVehicleDef();
+			def.chassis.up = frame.up;
+			def.chassis.forward = frame.forward;
+			const wheels = def.wheels;
+			for ( let i = 0; i < def.wheelCount; i++ ) wheels[ i ].position = frame.toChassis( wheels[ i ].position );
+			def.wheels = wheels;
+			const { vehicle, chassis } = createCar( world, {
+				def, position: [ 0, 1, 0 ], rotation: qmul( tilt, frame.rotation ), halfExtents: frame.toChassis( [ 0.9, 0.3, 2.1 ] ),
+			} );
+			step( world, 60 );
+			b3.b3Vehicle_SetInput( vehicle, input( 1, 0, 0.6 ) );
+			step( world, 90 );
+
+			const s = readState( vehicle );
+			const label = frame.label;
+			const chassisUp = rotate( b3.b3Body_GetRotation( rot, chassis ), frame.up );
+			assert.equal( s.wheelsInContact, 4, `${label}: all four wheels touch the slope` );
+			assert.ok( s.speed > 3, `${label}: the car is moving (${s.speed.toFixed( 2 )} m/s)` );
+			assert.ok( chassisUp[ 1 ] > 0.95 && chassisUp[ 1 ] < 0.9995, `${label}: the car rides upright and tilted (up.y ${chassisUp[ 1 ].toFixed( 4 )})` );
+			assert.ok( Math.abs( s.wheels[ 0 ].steerAngle ) > 0.05, `${label}: front wheels steer` );
+
+			const data = new Float32Array( b3.B3_MAX_VEHICLE_WHEELS * stride );
+			assert.equal( b3.b3Vehicle_GetWheelLocalData( data, vehicle ), 4, `${label}: bulk readout reports the wheel count` );
+			const [ cp, cq ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], chassis );
+			let worstP = 0, worstQ = 0;
+			for ( let i = 0; i < 4; i++ )
+			{
+				const [ lp, lq ] = b3.b3Vehicle_GetWheelLocalTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
+				const [ wp, wq ] = b3.b3Vehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
+				const p = rotate( cq, lp ).map( ( x, k ) => x + cp[ k ] );
+				const q = qmul( cq, lq );
+				worstP = Math.max( worstP, Math.hypot( p[ 0 ] - wp[ 0 ], p[ 1 ] - wp[ 1 ], p[ 2 ] - wp[ 2 ] ) );
+				worstQ = Math.max( worstQ, 1 - Math.abs( q[ 0 ] * wq[ 0 ] + q[ 1 ] * wq[ 1 ] + q[ 2 ] * wq[ 2 ] + q[ 3 ] * wq[ 3 ] ) );
+
+				const o = i * stride;
+				assert.deepEqual( [ ...data.subarray( o, o + 7 ) ], [ ...lp, ...lq ].map( Math.fround ), `${label}: bulk pose ${i} matches the per-wheel read` );
+				const w = s.wheels[ i ];
+				assert.deepEqual( [ ...data.subarray( o + 7, o + 11 ) ], [ w.rotationAngle, w.angularVelocity, w.steerAngle, w.suspensionLength ],
+					`${label}: wheel ${i} raw spin, steer and suspension` );
+				// The chassis-space center sits below the attachment point by the suspension length
+				const attach = b3.b3Vehicle_GetWheel( vehicle, i ).position;
+				const drop = attach.map( ( x, k ) => x - lp[ k ] );
+				assert.ok( Math.hypot( ...drop.map( ( x, k ) => x - w.suspensionLength * frame.up[ k ] ) ) < 1e-6, `${label}: wheel ${i} hangs along chassis up` );
+			}
+			assert.ok( worstP < 1e-5, `${label}: chassis transform x local position = world wheel position (err ${worstP.toExponential( 1 )})` );
+			assert.ok( worstQ < 1e-6, `${label}: chassis rotation x local rotation = world wheel rotation (err ${worstQ.toExponential( 1 )})` );
+			assert.ok( s.wheels.every( ( w ) => Math.abs( w.angularVelocity ) > 5 ), `${label}: wheels spin` );
+
+			const plain = new Array( 4 * stride ).fill( 0 );
+			assert.equal( b3.b3Vehicle_GetWheelLocalData( plain, vehicle ), 4, `${label}: a plain array works too` );
+			assert.deepEqual( plain, [ ...data.subarray( 0, 4 * stride ) ], `${label}: plain array matches` );
+			assert.throws( () => b3.b3Vehicle_GetWheelLocalData( new Float32Array( 4 * stride - 1 ), vehicle ), RangeError, `${label}: a short array is refused` );
+			b3.b3DestroyVehicle( vehicle );
+			assert.equal( b3.b3Vehicle_GetWheelLocalData( data, vehicle ), 0, `${label}: destroyed vehicle reports no wheels` );
+			b3.b3DestroyWorld( world );
+		}
+	}
+
 	// Reading an invalid vehicle packs no wheels, and the wheel reader refuses indices that were not packed
 	{
 		const world = createWorld();
