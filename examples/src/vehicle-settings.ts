@@ -13,12 +13,19 @@ import type {
 	b3VehicleId,
 	b3VehicleSteering,
 	b3VehicleTransmission,
+	b3VehicleTurbo,
 	b3VehicleWheelDef,
 	VehicleStateBuffer,
 	VehicleStateRecord,
 	VehicleWheelRecord,
 } from 'box3d.js';
 import type GUI from 'lil-gui';
+import {
+	makeVehicleTurbo,
+	turboGain,
+	turboTypes,
+	type VehicleTurboName,
+} from './vehicle-presets';
 
 export type VehicleSettings = {
 	/** Refresh the telemetry readout. Call after stepping. */
@@ -60,6 +67,8 @@ const folderTips: Record<string, string> = {
 		'Bars that link the left and right wheels of an axle to reduce body roll',
 	Engine:
 		'Torque curve and inertia. Torque rises linearly from idle to the peak rpm, then falls to the max rpm.',
+	Turbo:
+		'Forced induction. Boost multiplies the torque curve by 1 + the summed stage gains, building with lag as the rpm and throttle rise.',
 	Transmission: 'Gearbox and clutch',
 	Drivetrain:
 		'Differentials: how engine torque is split between the driven wheels',
@@ -141,6 +150,22 @@ const controllerTips: Record<string, Record<string, string>> = {
 		inertia: 'Engine and flywheel inertia. Lower revs up and down faster.',
 		angularDamping:
 			'Internal engine friction. It is what slows the car when you lift off the throttle.',
+	},
+	Turbo: {
+		type: 'Fits a turbo type from the presets. The peak torque with full boost stays the same, so this changes how the torque arrives, not how much there is.',
+		gain: 'Torque added at full boost, as a fraction of the torque curve. 0.5 gives 1.5 times the torque. 0 turns the stage off.',
+		spoolRpm: 'Rpm where this stage starts to build boost',
+		fullBoostRpm: 'Rpm where this stage reaches full boost',
+		spoolTime:
+			'Time constant of the boost rising toward its target: the turbo lag (s)',
+		bleedTime:
+			'Time constant of the boost falling, for example when you lift off the throttle (s)',
+		instantFraction:
+			'Share of the boost that arrives with no lag. 0 is an exhaust turbo, 1 a supercharger, in between an electric-assisted turbo.',
+		parasiticTorque:
+			'Torque the engine spends driving the compressor at full boost, as a belt driven supercharger does',
+		antiLag:
+			'Keeps the boost up off throttle and through shifts, as rally cars do. It still follows the rpm.',
 	},
 	Transmission: {
 		automatic:
@@ -241,6 +266,7 @@ export function createVehicleSettings(
 
 	const chassis: b3VehicleChassis = b3.b3Vehicle_GetChassis(vehicle);
 	const engine: b3VehicleEngine = b3.b3Vehicle_GetEngine(vehicle);
+	const turbo: b3VehicleTurbo = b3.b3Vehicle_GetTurbo(vehicle);
 	const transmission: b3VehicleTransmission =
 		b3.b3Vehicle_GetTransmission(vehicle);
 	const drivetrain: b3VehicleDrivetrain = b3.b3Vehicle_GetDrivetrain(vehicle);
@@ -253,6 +279,7 @@ export function createVehicleSettings(
 
 	const applyChassis = () => b3.b3Vehicle_SetChassis(vehicle, chassis);
 	const applyEngine = () => b3.b3Vehicle_SetEngine(vehicle, engine);
+	const applyTurbo = () => b3.b3Vehicle_SetTurbo(vehicle, turbo);
 	const applyTransmission = () =>
 		b3.b3Vehicle_SetTransmission(vehicle, transmission);
 	const applyDrivetrain = () => b3.b3Vehicle_SetDrivetrain(vehicle, drivetrain);
@@ -491,6 +518,65 @@ export function createVehicleSettings(
 		.name('engine braking')
 		.onChange(applyEngine);
 
+	// ---- Turbo
+	const turboFolder = root.addFolder('Turbo').close();
+	const turboChoice: { type: VehicleTurboName | 'custom' } = {
+		type: turboGain(turbo) > 0 ? 'custom' : 'none',
+	};
+	const turboOptions: Record<string, string> = { Custom: 'custom' };
+	for (const [key, t] of Object.entries(turboTypes))
+		turboOptions[t.title] = key;
+	turboFolder
+		.add(turboChoice, 'type', turboOptions)
+		.onChange((type: VehicleTurboName | 'custom') => {
+			if (type === 'custom') return;
+			// Keep the rated torque: the peak with full boost
+			const rated = engine.maxTorque * (1 + turboGain(turbo));
+			copyInto(
+				turbo as unknown as Record<string, unknown>,
+				makeVehicleTurbo(type, engine.maxRpm, rated) as unknown as Record<
+					string,
+					unknown
+				>,
+			);
+			engine.maxTorque = rated / (1 + turboGain(turbo));
+			applyEngine();
+			applyTurbo();
+			for (const c of root.controllersRecursive()) c.updateDisplay();
+		});
+	// Hand edits no longer match a type
+	const editTurbo = () => {
+		turboChoice.type = 'custom';
+		applyTurbo();
+		for (const c of turboFolder.controllersRecursive()) c.updateDisplay();
+	};
+	for (let i = 0; i < turbo.stages.length; i++) {
+		const stage = turbo.stages[i];
+		const f = turboFolder.addFolder(`stage ${i + 1}`);
+		f.add(stage, 'gain', 0, 2, 0.01).onChange(editTurbo);
+		f.add(stage, 'spoolRpm', 0, 12000, 50)
+			.name('spool rpm')
+			.onChange(editTurbo);
+		f.add(stage, 'fullBoostRpm', 0, 12000, 50)
+			.name('full boost rpm')
+			.onChange(editTurbo);
+		f.add(stage, 'spoolTime', 0, 3, 0.01)
+			.name('spool time (s)')
+			.onChange(editTurbo);
+		f.add(stage, 'bleedTime', 0, 1, 0.01)
+			.name('bleed time (s)')
+			.onChange(editTurbo);
+	}
+	turboFolder
+		.add(turbo, 'instantFraction', 0, 1, 0.01)
+		.name('instant fraction')
+		.onChange(editTurbo);
+	turboFolder
+		.add(turbo, 'parasiticTorque', 0, 200, 1)
+		.name('parasitic torque (N·m)')
+		.onChange(editTurbo);
+	turboFolder.add(turbo, 'antiLag').name('anti-lag').onChange(editTurbo);
+
 	// ---- Transmission
 	const transmissionFolder = root.addFolder('Transmission').close();
 	const mode = {
@@ -711,6 +797,8 @@ export function createVehicleSettings(
 		const gear =
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
 		let text = `${pad(state.speed * 3.6, 0, 4)} km/h  ${pad(state.engineRpm, 0, 5)} rpm  gear ${gear}${state.isShifting ? '*' : ''}\n`;
+		if (turboGain(turbo) > 0)
+			text += `boost +${pad(state.boost * 100, 0, 3)}% of +${(turboGain(turbo) * 100).toFixed(0)}%\n`;
 		text += `thr ${pad(state.throttle, 2, 4)} brk ${pad(state.brake, 2, 4)} steer ${pad(state.steerAngle * toDeg, 1, 5)}°\n`;
 		text += '      load   slip  angle  comp\n';
 		const count = b3.getNumVehicleWheels(stateBuffer);
@@ -773,6 +861,7 @@ export function createVehicleSettings(
 			b3VehicleDef,
 			| 'chassis'
 			| 'engine'
+			| 'turbo'
 			| 'transmission'
 			| 'drivetrain'
 			| 'antiRoll'
@@ -783,6 +872,7 @@ export function createVehicleSettings(
 		const pairs: [object, object][] = [
 			[chassis, source.chassis],
 			[engine, source.engine],
+			[turbo, source.turbo],
 			[transmission, source.transmission],
 			[drivetrain, source.drivetrain],
 			[antiRoll, source.antiRoll],
@@ -801,6 +891,7 @@ export function createVehicleSettings(
 		copyAll({
 			chassis: b3.b3Vehicle_GetChassis(vehicle),
 			engine: b3.b3Vehicle_GetEngine(vehicle),
+			turbo: b3.b3Vehicle_GetTurbo(vehicle),
 			transmission: b3.b3Vehicle_GetTransmission(vehicle),
 			drivetrain: b3.b3Vehicle_GetDrivetrain(vehicle),
 			antiRoll: b3.b3Vehicle_GetAntiRoll(vehicle),
@@ -818,6 +909,7 @@ export function createVehicleSettings(
 
 	function reset(): void {
 		copyAll(defaults);
+		turboChoice.type = turboGain(turbo) > 0 ? 'custom' : 'none';
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,
@@ -827,6 +919,7 @@ export function createVehicleSettings(
 		}
 		applyChassis();
 		applyEngine();
+		applyTurbo();
 		applyTransmission();
 		applyDrivetrain();
 		applyAntiRoll();

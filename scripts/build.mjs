@@ -435,6 +435,8 @@ export interface VehicleStateRecord {
   /** Forward speed (m/s) */
   speed: number;
   engineRpm: number;
+  /** Summed turbo boost. The engine makes 1 + boost times its torque curve. */
+  boost: number;
   /** -1 reverse, 0 neutral, 1 and up forward gears */
   gear: number;
   isShifting: boolean;

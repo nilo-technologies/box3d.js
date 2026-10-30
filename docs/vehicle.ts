@@ -73,3 +73,22 @@ b3.b3Vehicle_SetAssists(vehicle, assists);
 // Flip the car back onto its wheels
 b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
 /* SNIPPET_END: tune */
+
+/* SNIPPET_START: turbo */
+// A turbo multiplies the torque curve by 1 + boost. Each stage's boost chases a target set by
+// the throttle and the rpm, rising with the spool time (the lag) and falling with the bleed time.
+const turbo = b3.b3Vehicle_GetTurbo(vehicle);
+turbo.stages[0] = { gain: 0.5, spoolRpm: 2500, fullBoostRpm: 4000, spoolTime: 0.8, bleedTime: 0.15 };
+b3.b3Vehicle_SetTurbo(vehicle, turbo);
+
+// A sequential twin adds a second, slower stage higher up
+turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.2, bleedTime: 0.2 };
+// instantFraction 1 removes the lag (a supercharger), parasiticTorque is its belt drive loss,
+// and antiLag holds the boost off throttle and through shifts
+turbo.instantFraction = 0;
+turbo.antiLag = false;
+b3.b3Vehicle_SetTurbo(vehicle, turbo);
+
+b3.b3World_Step(world, 1 / 60, 4);
+console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
+/* SNIPPET_END: turbo */

@@ -47,6 +47,21 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 | `inertia` | 0.3 | Engine and flywheel. Lower is quicker revving. With traction control on, spinning up this inertia in first gear eats into the torque the tire gets (see findings). |
 | `angularDamping` | 0.08 | Engine braking. |
 
+## turbo
+
+Forced induction, all zero (naturally aspirated) by default. The torque curve is multiplied by 1 + boost, where boost is the sum over the stages of `gain` × that stage's spool (0 to 1). Updated once per step, before the engine solve. `examples/src/vehicle-presets.js` has ten ready types in `turboTypes`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `stages[i].gain` | 0 | Torque added at full boost as a fraction of the curve. 0 turns the stage off. |
+| `stages[i].spoolRpm`, `fullBoostRpm` | 0, 0 | The boost target eases in (smoothstep) between them, times the throttle. |
+| `stages[i].spoolTime`, `bleedTime` | 0, 0 | Time constants toward a higher and a lower target (implicit, so 0 is instant). Shifts cut the throttle, so the boost bleeds through every shift. |
+| `instantFraction` | 0 | Share of the boost that skips the lag: 1 is a supercharger, between 0 and 1 an electric-assisted turbo. |
+| `parasiticTorque` | 0 | Subtracted at full boost, scaled by boost ÷ total gain. For superchargers. |
+| `antiLag` | false | The target ignores the throttle (still follows the rpm), so boost holds off throttle and through shifts. |
+
+Traction control and the clutch launch floor both see the boosted torque. With the rated torque kept the same, a turbo never makes a car quicker: below the spool rpm it has less torque than the NA engine. A big laggy turbo (`big`) fails the sports and rally 100% realistic 0-100 targets for that reason (6.3 s and 5.4 s); every other type passes on `sports-100-rwd`, `rally-100-awd`, `super-100-rwd` and `sports-50-fwd`.
+
 ## transmission
 
 | Field | Default | Notes |

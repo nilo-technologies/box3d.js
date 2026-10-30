@@ -321,7 +321,7 @@ constexpr int debugTransformI32 = 1;           // role
 
 // vehicle state buffer: one vehicle record, then one record per wheel
 constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1;             // 5: gear isShifting wheelsInContact stuck wheelCount
-constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1;             // 5: speed engineRpm throttle brake steerAngle
+constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle boost
 constexpr int vehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
 constexpr int vehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
                                                           //     longitudinalForce lateralForce slipRatio slipAngle angularVelocity
@@ -347,7 +347,7 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
 	&& debugTransformF64 == 7 && debugTransformI32 == 1,
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
-static_assert( vehicleI32 == 5 && vehicleF32 == 5 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
+static_assert( vehicleI32 == 5 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
 }
 
@@ -1895,7 +1895,7 @@ struct VehicleStateBuffer
 		b3VehicleState s = b3Vehicle_GetState( vehicleId );
 		wheelCount = b3Vehicle_GetWheelCount( vehicleId );
 		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, wheelCount } );
-		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle } );
+		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle, s.boost } );
 
 		for ( int i = 0; i < wheelCount; ++i )
 		{
@@ -3931,6 +3931,21 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "inertia", &b3VehicleEngine::inertia )
 		.field( "angularDamping", &b3VehicleEngine::angularDamping );
 
+	value_object<b3VehicleTurboStage>( "b3VehicleTurboStage" )
+		.field( "gain", &b3VehicleTurboStage::gain )
+		.field( "spoolRpm", &b3VehicleTurboStage::spoolRpm )
+		.field( "fullBoostRpm", &b3VehicleTurboStage::fullBoostRpm )
+		.field( "spoolTime", &b3VehicleTurboStage::spoolTime )
+		.field( "bleedTime", &b3VehicleTurboStage::bleedTime );
+
+	registerFixedArray<std::array<b3VehicleTurboStage, B3_MAX_VEHICLE_TURBO_STAGES>>( "b3VehicleTurboStages", std::make_index_sequence<B3_MAX_VEHICLE_TURBO_STAGES>{} );
+
+	value_object<b3VehicleTurbo>( "b3VehicleTurbo" )
+		.field( "stages", &b3VehicleTurbo::stages )
+		.field( "instantFraction", &b3VehicleTurbo::instantFraction )
+		.field( "parasiticTorque", &b3VehicleTurbo::parasiticTorque )
+		.field( "antiLag", &b3VehicleTurbo::antiLag );
+
 	registerFixedArray<std::array<float, B3_MAX_VEHICLE_GEARS>>( "b3VehicleGearRatios", std::make_index_sequence<B3_MAX_VEHICLE_GEARS>{} );
 
 	value_object<b3VehicleTransmission>( "b3VehicleTransmission" )
@@ -4003,6 +4018,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "wheels", &b3VehicleDef::wheels )
 		.field( "wheelCount", &b3VehicleDef::wheelCount )
 		.field( "engine", &b3VehicleDef::engine )
+		.field( "turbo", &b3VehicleDef::turbo )
 		.field( "transmission", &b3VehicleDef::transmission )
 		.field( "drivetrain", &b3VehicleDef::drivetrain )
 		.field( "antiRoll", &b3VehicleDef::antiRoll )
@@ -4019,6 +4035,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 	value_object<b3VehicleState>( "b3VehicleState" )
 		.field( "speed", &b3VehicleState::speed )
 		.field( "engineRpm", &b3VehicleState::engineRpm )
+		.field( "boost", &b3VehicleState::boost )
 		.field( "gear", &b3VehicleState::gear )
 		.field( "isShifting", &b3VehicleState::isShifting )
 		.field( "throttle", &b3VehicleState::throttle )
@@ -4064,6 +4081,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Vehicle_GetWheel(vehicleId, wheelIndex)", &b3Vehicle_GetWheel );
 	function( "b3Vehicle_SetEngine(vehicleId, engine)", &b3Vehicle_SetEngine );
 	function( "b3Vehicle_GetEngine(vehicleId)", &b3Vehicle_GetEngine );
+	function( "b3Vehicle_SetTurbo(vehicleId, turbo)", &b3Vehicle_SetTurbo );
+	function( "b3Vehicle_GetTurbo(vehicleId)", &b3Vehicle_GetTurbo );
 	function( "b3Vehicle_SetTransmission(vehicleId, transmission)", &b3Vehicle_SetTransmission );
 	function( "b3Vehicle_GetTransmission(vehicleId)", &b3Vehicle_GetTransmission );
 	function( "b3Vehicle_SetDrivetrain(vehicleId, drivetrain)", &b3Vehicle_SetDrivetrain );

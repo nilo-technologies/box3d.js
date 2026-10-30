@@ -22,6 +22,7 @@ import { quatFromAxisAngle } from './math';
 import { createVehicleAudio } from './vehicle-audio';
 import {
 	createPresetVehicleDef,
+	turboGain,
 	type VehiclePresetName,
 	vehiclePresets,
 } from './vehicle-presets';
@@ -463,6 +464,8 @@ export async function runVehicleDemo(
 		 */
 		live: {
 			maxRpm: number;
+			/** Summed turbo stage gain, the boost at full boost. 0 without a turbo. */
+			fullBoost: number;
 			manual: boolean;
 			tractionControl: boolean;
 			abs: boolean;
@@ -498,6 +501,7 @@ export async function runVehicleDemo(
 
 		const live: Car['live'] = {
 			maxRpm: defaults.engine.maxRpm,
+			fullBoost: turboGain(defaults.turbo),
 			manual: false,
 			tractionControl: false,
 			abs: false,
@@ -505,6 +509,7 @@ export async function runVehicleDemo(
 		};
 		function refreshLive(): void {
 			live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
+			live.fullBoost = turboGain(b3.b3Vehicle_GetTurbo(vehicle));
 			live.manual =
 				b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
 				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
@@ -992,6 +997,7 @@ export async function runVehicleDemo(
 		const flags = [
 			isManual() ? 'MANUAL' : 'AUTO',
 			`${state.engineRpm.toFixed(0)} rpm`,
+			car.live.fullBoost > 0 ? `boost +${(state.boost * 100).toFixed(0)}%` : '',
 			car.live.tractionControl ? 'TC' : '',
 			car.live.abs ? 'ABS' : '',
 			state.stuck ? 'stuck: press R' : '',
@@ -1189,6 +1195,7 @@ export async function runVehicleDemo(
 			speed: state.speed,
 			skid,
 			compression,
+			boost: car.live.fullBoost > 0 ? state.boost / car.live.fullBoost : 0,
 		};
 		audio.update(sound, dt);
 

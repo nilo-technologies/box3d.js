@@ -741,6 +741,23 @@ export type b3VehicleEngine = {
   angularDamping: number
 };
 
+export type b3VehicleTurboStage = {
+  gain: number,
+  spoolRpm: number,
+  fullBoostRpm: number,
+  spoolTime: number,
+  bleedTime: number
+};
+
+export type b3VehicleTurboStages = [ b3VehicleTurboStage, b3VehicleTurboStage ];
+
+export type b3VehicleTurbo = {
+  stages: b3VehicleTurboStages,
+  instantFraction: number,
+  parasiticTorque: number,
+  antiLag: boolean
+};
+
 export type b3VehicleGearRatios = [ number, number, number, number, number, number, number, number ];
 
 export type b3VehicleTransmission = {
@@ -818,6 +835,7 @@ export type b3VehicleDef = {
   wheels: b3VehicleWheels,
   wheelCount: number,
   engine: b3VehicleEngine,
+  turbo: b3VehicleTurbo,
   transmission: b3VehicleTransmission,
   drivetrain: b3VehicleDrivetrain,
   antiRoll: b3VehicleAntiRoll,
@@ -836,6 +854,7 @@ export type b3VehicleInput = {
 export type b3VehicleState = {
   speed: number,
   engineRpm: number,
+  boost: number,
   gear: number,
   isShifting: boolean,
   throttle: number,
@@ -1416,6 +1435,8 @@ interface EmbindModule {
   b3Vehicle_GetChassis(vehicleId: b3VehicleId): b3VehicleChassis;
   b3Vehicle_SetEngine(vehicleId: b3VehicleId, engine: b3VehicleEngine): void;
   b3Vehicle_GetEngine(vehicleId: b3VehicleId): b3VehicleEngine;
+  b3Vehicle_SetTurbo(vehicleId: b3VehicleId, turbo: b3VehicleTurbo): void;
+  b3Vehicle_GetTurbo(vehicleId: b3VehicleId): b3VehicleTurbo;
   b3Vehicle_SetTransmission(vehicleId: b3VehicleId, transmission: b3VehicleTransmission): void;
   b3Vehicle_GetTransmission(vehicleId: b3VehicleId): b3VehicleTransmission;
   b3Vehicle_SetDrivetrain(vehicleId: b3VehicleId, drivetrain: b3VehicleDrivetrain): void;
@@ -1646,6 +1667,8 @@ export interface VehicleStateRecord {
   /** Forward speed (m/s) */
   speed: number;
   engineRpm: number;
+  /** Summed turbo boost. The engine makes 1 + boost times its torque curve. */
+  boost: number;
   /** -1 reverse, 0 neutral, 1 and up forward gears */
   gear: number;
   isShifting: boolean;

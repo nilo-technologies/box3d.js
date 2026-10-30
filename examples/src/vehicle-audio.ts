@@ -1,7 +1,7 @@
 // Procedural car sound for the vehicle examples, made with the Web Audio API and no audio files:
 // an engine whose pitch follows the rpm and whose tone opens up with the throttle, tire squeal
-// from filtered noise that follows how far the tires slide, wind noise with speed, and a thump
-// when the suspension hits its bump stop. Browsers only start audio after a user gesture, so
+// from filtered noise that follows how far the tires slide, wind noise with speed, a thump
+// when the suspension hits its bump stop, and a turbo whistle with a blow-off hiss on lift. Browsers only start audio after a user gesture, so
 // the context resumes on the first key press or click.
 
 export type VehicleSound = {
@@ -14,6 +14,8 @@ export type VehicleSound = {
 	skid: number;
 	/** Largest suspension compression this frame, 0 extended to 1 at the bump stop */
 	compression: number;
+	/** Turbo boost as a fraction of full boost, 0 to 1. Always 0 without a turbo. */
+	boost: number;
 };
 
 export type VehicleAudio = {
@@ -63,6 +65,8 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 		squealFilter: BiquadFilterNode;
 		squealGain: GainNode;
 		windGain: GainNode;
+		whistle: OscillatorNode;
+		whistleGain: GainNode;
 		thumpBuffer: AudioBuffer;
 	} | null = null;
 
@@ -117,6 +121,16 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 			.connect(windGain)
 			.connect(master);
 
+		// Turbo whistle: a quiet high sine whose pitch rises with the boost, as the compressor wheel
+		// spins up
+		const whistle = ctx.createOscillator();
+		whistle.type = 'sine';
+		whistle.frequency.value = 2000;
+		const whistleGain = ctx.createGain();
+		whistleGain.gain.value = 0;
+		whistle.connect(whistleGain).connect(master);
+		whistle.start();
+
 		return {
 			master,
 			engine,
@@ -126,6 +140,8 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 			squealFilter,
 			squealGain,
 			windGain,
+			whistle,
+			whistleGain,
 			thumpBuffer: noiseBuffer(ctx, 0.25),
 		};
 	}
@@ -155,8 +171,27 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 		source.start(t);
 	}
 
+	// Blow-off valve: a short hiss of noise when the throttle closes on boost
+	function blowOff(strength: number) {
+		if (!context || !nodes) return;
+		const source = context.createBufferSource();
+		source.buffer = nodes.thumpBuffer;
+		const filter = context.createBiquadFilter();
+		filter.type = 'bandpass';
+		filter.frequency.value = 2600;
+		filter.Q.value = 0.8;
+		const gain = context.createGain();
+		const t = context.currentTime;
+		gain.gain.setValueAtTime(0.35 * strength, t);
+		gain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+		source.connect(filter).connect(gain).connect(nodes.master);
+		source.start(t);
+	}
+
 	let lastCompression = 0;
 	let thumpCooldown = 0;
+	let lastThrottle = 0;
+	let blowOffCooldown = 0;
 
 	return {
 		update(sound, dt) {
@@ -205,6 +240,24 @@ export function createVehicleAudio(volume = 0.5): VehicleAudio {
 				thumpCooldown = 0.25;
 			}
 			lastCompression = sound.compression;
+
+			nodes.whistle.frequency.setTargetAtTime(
+				1800 + 4200 * sound.boost,
+				t,
+				glide,
+			);
+			nodes.whistleGain.gain.setTargetAtTime(0.03 * sound.boost, t, glide);
+			blowOffCooldown = Math.max(blowOffCooldown - dt, 0);
+			if (
+				lastThrottle > 0.5 &&
+				sound.throttle < 0.1 &&
+				sound.boost > 0.3 &&
+				blowOffCooldown === 0
+			) {
+				blowOff(sound.boost);
+				blowOffCooldown = 0.3;
+			}
+			lastThrottle = sound.throttle;
 		},
 		setCylinders(count) {
 			cylinders = count;
