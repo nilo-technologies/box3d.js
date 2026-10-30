@@ -1,5 +1,6 @@
 // Measures vehicle presets in Node and checks them against target ranges for their archetype,
-// drivetrain and realism level. Runs against the built dist/, like test/smoke.mjs.
+// drivetrain and realism level. Runs the built dist/ engine, like test/smoke.mjs, with the presets
+// from src/vehicles.js so a tuning edit needs no rebuild.
 //
 //   node examples/scripts/vehicle-metrics.mjs --preset rally-50-awd
 //   node examples/scripts/vehicle-metrics.mjs --car super            all 15 supercar presets
@@ -7,10 +8,10 @@
 //   node examples/scripts/vehicle-metrics.mjs --file my-car.mjs      a preset module (see below)
 //   add --json for machine readable output, --quick to skip the top speed run, --perturb
 //   to rerun each car with the mass 3% and the tire grip 2% off each way, and --turbo <type>
-//   to fit a turbo from turboTypes in vehicle-presets.js (the rated torque stays the same)
+//   to fit a turbo from turboTypes in src/vehicles.js (the rated torque stays the same)
 //
 // A --file module exports `preset` ({ title, halfExtents, apply(def) }, the same shape as the
-// entries in examples/src/vehicle-presets.js) and `target`
+// entries in src/vehicles.js) and `target`
 // ({ archetype: 'sports' | 'rally' | 'super' | 'hatch', realism: 100 | 75 | 50 | 25 | 0,
 // drive: 'fwd' | 'rwd' | 'awd' }).
 //
@@ -23,7 +24,7 @@ import { pathToFileURL } from 'node:url';
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const presetsModule = await import(
-	new URL('examples/src/vehicle-presets.js', root).href
+	new URL('src/vehicles.js', root).href
 );
 const { vehiclePresets, realismLevels, turboTypes, applyTurbo } = presetsModule;
 

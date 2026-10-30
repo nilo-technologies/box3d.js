@@ -1,11 +1,11 @@
 // Vehicle: preset showcase. 45 presets, three cars (sports car, rally car, supercar) at five
 // realism levels from 100% realistic to arcade, each as FWD, RWD or AWD, with the car's own
 // turbo or any other type. Pick one in the Preset folder or with the hotkeys and it replaces the
-// car where it stands. The presets are layered in vehicle-presets.js: car, then drivetrain, then
+// car where it stands. The presets are layered in box3d.js/vehicles: car, then drivetrain, then
 // realism level, then turbo. Each car plays its own engine sound.
 
+import { vehicleCars, vehiclePresets } from 'box3d.js/vehicles';
 import { runVehicleDemo } from './vehicle-demo';
-import { vehicleCars, vehiclePresets } from './vehicle-presets';
 import { showcaseStart, showcaseTurbo } from './vehicle-showcase';
 
 const { preset, terrain, turbo } = showcaseStart();

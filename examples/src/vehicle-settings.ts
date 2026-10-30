@@ -19,14 +19,14 @@ import type {
 	VehicleStateRecord,
 	VehicleWheelRecord,
 } from 'box3d.js';
-import type GUI from 'lil-gui';
 import {
 	findTurboType,
 	makeVehicleTurbo,
 	turboGain,
 	turboTypes,
 	type VehicleTurboName,
-} from './vehicle-presets';
+} from 'box3d.js/vehicles';
+import type GUI from 'lil-gui';
 
 export type VehicleSettings = {
 	/** Refresh the telemetry readout. Call after stepping. */

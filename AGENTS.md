@@ -44,7 +44,7 @@ pnpm check          # biome lint + format check for examples/src
 
 ## Vehicle presets
 
-- `examples/src/vehicle-presets.js` holds the vehicle presets: the four originals and a 45 car matrix (sports, rally, super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers (car, then drivetrain, then realism level).
+- `src/vehicles.js` (with `src/vehicles.d.ts`, shipped as `box3d.js/vehicles`) holds the vehicle presets: the four originals and a 45 car matrix (sports, rally, super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers (car, then drivetrain, then realism level). The metrics and laps scripts read `src/vehicles.js` directly, so tuning needs no rebuild, but `dist/vehicles.mjs` and `dist/vehicles.d.ts` are plain copies that must be refreshed before committing (`pnpm build` does it; `pnpm test` fails on a stale copy).
 - To build or tune a car, follow the skill in `.claude/skills/vehicle-tuning/SKILL.md`, and check the result with `node examples/scripts/vehicle-metrics.mjs` (`--preset <name>`, `--car <name>`, `--all`, or `--file <module>`). Every matrix preset must pass it.
 
 ## Conventions

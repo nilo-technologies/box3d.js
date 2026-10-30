@@ -1,5 +1,6 @@
 import Box3D from 'box3d.js/inline';
 import type { Box3DModule } from 'box3d.js';
+import { applyTurbo, buildVehiclePreset, createPresetVehicleDef, vehiclePresets } from 'box3d.js/vehicles';
 
 const b3: Box3DModule = await Box3D();
 const worldDef = b3.b3DefaultWorldDef();
@@ -93,3 +94,25 @@ b3.b3Vehicle_SetTurbo(vehicle, turbo);
 b3.b3World_Step(world, 1 / 60, 4);
 console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
 /* SNIPPET_END: turbo */
+
+/* SNIPPET_START: presets */
+// box3d.js/vehicles has ready tuned cars. A preset tunes a b3DefaultVehicleDef() and gives the
+// size of the chassis box it was tuned for.
+const presetName = 'rally-50-awd'; // <car>-<realism>-<drive>, or 'fwd' | 'rwd' | 'awd' | 'offroad'
+const [hx, hy, hz] = vehiclePresets[presetName].halfExtents;
+
+const rallyBodyDef = b3.b3DefaultBodyDef();
+rallyBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+rallyBodyDef.position = [5, 1, 0];
+const rallyChassis = b3.b3CreateBody(world, rallyBodyDef);
+b3.b3CreateBoxShape(rallyChassis, b3.b3DefaultShapeDef(), hx, hy, hz);
+
+const rallyDef = createPresetVehicleDef(b3, presetName);
+rallyDef.chassisId = rallyChassis;
+const rally = b3.b3CreateVehicle(world, rallyDef);
+
+// Or build one from its layers, with an optional turbo type, and change anything before creating it
+const superDef = buildVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
+superDef.assists.abs = true;
+applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
+/* SNIPPET_END: presets */

@@ -1,6 +1,6 @@
 // Vehicle: RWD sports car. Rear wheel drive: limited slip, 420 N·m, handbrake drifts.
 // The car, world, camera and settings panel come from vehicle-demo.ts; the tuning lives in
-// vehicle-presets.js and every value can be changed live in the Vehicle folder.
+// box3d.js/vehicles and every value can be changed live in the Vehicle folder.
 
 import { runVehicleDemo } from './vehicle-demo';
 

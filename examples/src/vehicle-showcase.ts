@@ -4,8 +4,6 @@
 // default (carTurbos), so the showcase plays the turbo whistle, blow-off and stutter.
 
 import type { Box3DModule, b3VehicleId } from 'box3d.js';
-import type GUI from 'lil-gui';
-import type { VehicleTerrain } from './vehicle-demo';
 import {
 	drivetrainLayers,
 	realismLevels,
@@ -18,7 +16,9 @@ import {
 	vehicleCars,
 	vehiclePresetName,
 	vehiclePresets,
-} from './vehicle-presets';
+} from 'box3d.js/vehicles';
+import type GUI from 'lil-gui';
+import type { VehicleTerrain } from './vehicle-demo';
 
 export type ShowcaseHost = {
 	gui: GUI;

@@ -2,6 +2,7 @@
 // build variants (separate-wasm and inlined single-file).
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DynamicMover } from '../dist/character.mjs';
 
 function fallingBox( b3 )
@@ -1264,12 +1265,12 @@ function meshRestOffset( b3 )
 }
 
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
-// determinism, live setters, the example presets (the four originals and the 45 car matrix),
+// determinism, live setters, the presets in box3d.js/vehicles (the four originals and the 45 car matrix),
 // the preset layers, and a 50 car perf check.
 async function vehicleScenarios( b3 )
 {
 	const { vehiclePresets, createPresetVehicleDef, realismLevels, vehicleCars, drivetrainLayers, buildVehiclePreset } =
-		await import( '../examples/src/vehicle-presets.js' );
+		await import( '../dist/vehicles.mjs' );
 	const dt = 1 / 60;
 
 	function axisAngle( axis, angle )
@@ -1436,7 +1437,7 @@ async function vehicleScenarios( b3 )
 	// Turbo: naturally aspirated by default, live settings round-trip, boost builds with lag and
 	// shows in both readouts. Every turbo type keeps the car's rated torque.
 	{
-		const { turboTypes, turboGain, buildVehiclePreset } = await import( '../examples/src/vehicle-presets.js' );
+		const { turboTypes, turboGain, buildVehiclePreset } = await import( '../dist/vehicles.mjs' );
 		const world = createWorld();
 		const { vehicle, chassis } = createCar( world );
 		const na = b3.b3Vehicle_GetTurbo( vehicle );
@@ -1871,6 +1872,13 @@ async function check( label, importPath, decompositionOptions )
 }
 
 console.log( 'box3d.js smoke test' );
+// The hand-written modules are copied into dist/ by the build. A stale copy ships old code.
+for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 'three.d.ts' ], [ 'character.js', 'character.mjs' ],
+	[ 'character.d.ts', 'character.d.ts' ], [ 'vehicles.js', 'vehicles.mjs' ], [ 'vehicles.d.ts', 'vehicles.d.ts' ] ] )
+{
+	assert.equal( readFileSync( new URL( `../dist/${built}`, import.meta.url ), 'utf8' ), readFileSync( new URL( `../src/${source}`, import.meta.url ), 'utf8' ),
+		`dist/${built} differs from src/${source}: run pnpm build` );
+}
 await check( 'separate-wasm', '../dist/box3d.mjs' );
 await check( 'inline       ', '../dist/box3d.inline.mjs' );
 await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );

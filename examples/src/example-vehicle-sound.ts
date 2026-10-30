@@ -2,18 +2,18 @@
 // bump stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
 // rev, drag the sliders yourself, or let a loop drive it (free revs, a pull through the gears
 // and a stop, a drift). A small engine and turbo model stands in for the physics, using the
-// rpm range, gearing and turbo types from vehicle-presets.js. The scope shows the waveform and
+// rpm range, gearing and turbo types from box3d.js/vehicles. The scope shows the waveform and
 // the spectrum. The tuning is saved and shared with the driving examples, whose Sound folder
 // has the same settings.
 
-import GUI from 'lil-gui';
-import { createVehicleAudio, type VehicleSound } from './vehicle-audio';
 import {
 	turboTypes,
 	type VehicleCarName,
 	type VehicleTurboName,
 	vehicleCars,
-} from './vehicle-presets';
+} from 'box3d.js/vehicles';
+import GUI from 'lil-gui';
+import { createVehicleAudio, type VehicleSound } from './vehicle-audio';
 import { addSoundPanel, carEngines } from './vehicle-sound-panel';
 
 type Mode = 'keys' | 'manual' | 'rev' | 'pull' | 'drift';

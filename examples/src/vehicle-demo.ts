@@ -16,11 +16,6 @@ import type {
 	VehicleWheelRecord,
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
-import * as THREE from 'three';
-import { createWorldRenderer } from './box3d-three';
-import { createHarness } from './harness';
-import { quatFromAxisAngle } from './math';
-import { createVehicleAudio } from './vehicle-audio';
 import {
 	applyTurbo,
 	createPresetVehicleDef,
@@ -28,7 +23,12 @@ import {
 	type VehiclePresetName,
 	type VehicleTurboName,
 	vehiclePresets,
-} from './vehicle-presets';
+} from 'box3d.js/vehicles';
+import * as THREE from 'three';
+import { createWorldRenderer } from './box3d-three';
+import { createHarness } from './harness';
+import { quatFromAxisAngle } from './math';
+import { createVehicleAudio } from './vehicle-audio';
 import {
 	createVehicleSettings,
 	type VehicleSettings,
@@ -71,7 +71,7 @@ export type VehicleDemoOptions = {
 	blurb: string;
 	/** Adds the Preset folder and hotkeys that swap between the preset matrix cars */
 	showcase?: boolean;
-	/** Fits a turbo type from vehicle-presets.js on top of the preset. 'none' by default. */
+	/** Fits a turbo type from box3d.js/vehicles on top of the preset. 'none' by default. */
 	turbo?: VehicleTurboName;
 };
 

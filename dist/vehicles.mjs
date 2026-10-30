@@ -1,5 +1,15 @@
-// Vehicle presets shared by the vehicle examples and test/smoke.mjs. Plain JS so Node can
-// import it without a TypeScript step; types live in vehicle-presets.d.ts.
+// Vehicle presets for box3d.js: the four original cars and a 45 car matrix (sports, rally,
+// super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers: car, then drivetrain, then
+// realism level, then an optional turbo. Each preset tunes a b3DefaultVehicleDef() in place.
+//
+//   import { createPresetVehicleDef, vehiclePresets } from 'box3d.js/vehicles';
+//   const [hx, hy, hz] = vehiclePresets['rally-50-awd'].halfExtents; // chassis box
+//   const def = createPresetVehicleDef(b3, 'rally-50-awd');
+//   def.chassisId = chassis;
+//   const vehicle = b3.b3CreateVehicle(worldId, def);
+//
+// Plain JS so Node can import it without a TypeScript step; types live in vehicles.d.ts.
+// Shipped as dist/vehicles.mjs, and used by the examples, test/smoke.mjs and the vehicle scripts.
 
 const deg = (degrees) => (degrees * Math.PI) / 180;
 

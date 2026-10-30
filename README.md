@@ -287,6 +287,12 @@ npm install box3d.js
         Vehicle: preset showcase
       </a>
     </td>
+    <td align="center">
+      <a href="https://nilo-technologies.github.io/box3d.js/#example-vehicle-sound">
+        <img src="./examples/public/screenshots/example-vehicle-sound.png" width="180" height="120" style="object-fit:cover;"/><br/>
+        Vehicle: sound lab
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1379,7 +1385,33 @@ b3.b3World_Step(world, 1 / 60, 4);
 console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
 ```
 
-The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+### Presets
+
+`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and a matrix of 45 more, a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node.
+
+```ts
+// box3d.js/vehicles has ready tuned cars. A preset tunes a b3DefaultVehicleDef() and gives the
+// size of the chassis box it was tuned for.
+const presetName = 'rally-50-awd'; // <car>-<realism>-<drive>, or 'fwd' | 'rwd' | 'awd' | 'offroad'
+const [hx, hy, hz] = vehiclePresets[presetName].halfExtents;
+
+const rallyBodyDef = b3.b3DefaultBodyDef();
+rallyBodyDef.type = b3.b3BodyType.b3_dynamicBody;
+rallyBodyDef.position = [5, 1, 0];
+const rallyChassis = b3.b3CreateBody(world, rallyBodyDef);
+b3.b3CreateBoxShape(rallyChassis, b3.b3DefaultShapeDef(), hx, hy, hz);
+
+const rallyDef = createPresetVehicleDef(b3, presetName);
+rallyDef.chassisId = rallyChassis;
+const rally = b3.b3CreateVehicle(world, rallyDef);
+
+// Or build one from its layers, with an optional turbo type, and change anything before creating it
+const superDef = buildVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
+superDef.assists.abs = true;
+applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
+```
+
+The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive come from `box3d.js/vehicles`.
 
 The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
 
