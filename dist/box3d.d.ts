@@ -797,6 +797,11 @@ export type b3VehicleSteering = {
 export type b3VehicleAssists = {
   counterSteer: number,
   driftGripScale: number,
+  driftAssist: number,
+  driftAngle: number,
+  driftAngleRange: number,
+  driftMaxAngle: number,
+  driftSpeedKeep: number,
   tractionControl: boolean,
   abs: boolean,
   downforce: number,
@@ -842,7 +847,9 @@ export type b3VehicleState = {
   brake: number,
   steerAngle: number,
   wheelsInContact: number,
-  stuck: boolean
+  stuck: boolean,
+  isDrifting: boolean,
+  slideAngle: number
 };
 
 export type b3VehicleWheelState = {
@@ -1655,6 +1662,11 @@ export interface VehicleStateRecord {
   steerAngle: number;
   wheelsInContact: number;
   stuck: boolean;
+  /** In a drift held by the drift assist */
+  isDrifting: boolean;
+  /** Angle between the heading and the direction of travel, positive with the velocity to the
+   * left of the heading (radians) */
+  slideAngle: number;
 }
 export interface VehicleWheelRecord {
   /** Wheel center, world space */

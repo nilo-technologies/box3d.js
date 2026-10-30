@@ -1283,7 +1283,7 @@ b3.b3CreateWheelJoint(world, wheelDef);
 
 ## Vehicles
 
-`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, ABS, a sticky tire that holds the car on slopes, counter steer, an arcade drift assist, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
 
 ```ts
 // The vehicle drives an existing dynamic body. Create the chassis shapes first.
@@ -1349,6 +1349,7 @@ b3.b3Vehicle_SetWheel(vehicle, 0, suspension);
 const assists = b3.b3Vehicle_GetAssists(vehicle);
 assists.tractionControl = false;
 assists.driftGripScale = 0.5; // the handbrake makes the rear loose
+assists.driftAssist = 1; // arcade: a handbrake slide becomes a drift the steering holds
 b3.b3Vehicle_SetAssists(vehicle, assists);
 
 // Flip the car back onto its wheels
@@ -1357,7 +1358,7 @@ b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
 
 The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
 
-The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
+The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, a held drift, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
 
 <table>
   <tr>
