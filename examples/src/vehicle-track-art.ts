@@ -1,7 +1,7 @@
 // Minimal topographic look for the vehicle examples: warm paper tones, terrain shaded by height
 // and slope with contour lines every 2 m, a flat background, dark roads with thin white edges and coral
-// accents. On the race tracks the road is its own ribbon mesh along the track's spline, so its
-// edges and lines are crisp instead of following the 2 m terrain grid.
+// accents. On the race circuit the road is the same mesh the car drives on, along the track's
+// spline, so its edges and lines are crisp instead of following the 2 m terrain grid.
 
 import * as THREE from 'three';
 import type { RaceTrack } from './vehicle-tracks';
@@ -203,11 +203,14 @@ function bumpGeometry(points: number[], half: number): THREE.BufferGeometry {
 		half + ramp / 2,
 		half + ramp,
 	];
+	// The hull's base, under the ground beside the road
+	let base = 0;
+	for (let k = 1; k < points.length; k += 3) base = Math.min(base, points[k]);
 	const positions: number[] = [];
 	for (const [u, h] of along) {
 		for (const w of across) {
 			const edge = Math.max(0, Math.abs(w) - half) / ramp;
-			positions.push(w, -0.05 + (h + 0.05) * (1 - edge), u);
+			positions.push(w, base + (h - base) * (1 - edge), u);
 		}
 	}
 	const indices: number[] = [];
@@ -229,22 +232,30 @@ function bumpGeometry(points: number[], half: number): THREE.BufferGeometry {
 	return geometry;
 }
 
-/** The height field's surface at (x, z), on the same triangles the terrain mesh draws */
-function fieldHeight(track: RaceTrack, x: number, z: number): number {
-	const { heights, countX, countZ, cell, origin } = track.field;
-	const fx = Math.min(Math.max((x - origin[0]) / cell, 0), countX - 1.001);
-	const fz = Math.min(Math.max((z - origin[1]) / cell, 0), countZ - 1.001);
-	const ix = Math.floor(fx);
-	const iz = Math.floor(fz);
-	const u = fx - ix;
-	const v = fz - iz;
-	const h = (i: number, k: number) => heights[(iz + k) * countX + ix + i];
-	// Each cell is split along the diagonal from (1, 0) to (0, 1)
-	if (u + v <= 1)
-		return h(0, 0) + (h(1, 0) - h(0, 0)) * u + (h(0, 1) - h(0, 0)) * v;
-	return (
-		h(1, 1) + (h(0, 1) - h(1, 1)) * (1 - u) + (h(1, 0) - h(1, 1)) * (1 - v)
+/**
+ * The road mesh the car drives on: asphalt across the road, fading to the darker ground tone
+ * down the ramps at its edges
+ */
+function roadGeometry(
+	road: NonNullable<RaceTrack['road']>,
+): THREE.BufferGeometry {
+	const asphalt = new THREE.Color(topo.asphalt);
+	const verge = new THREE.Color(topo.solid);
+	const colors: number[] = [];
+	const color = new THREE.Color();
+	for (const t of road.verge) {
+		color.copy(asphalt).lerp(verge, Math.min(1, t * 1.5));
+		colors.push(color.r, color.g, color.b);
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute(
+		'position',
+		new THREE.Float32BufferAttribute(road.positions, 3),
 	);
+	geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(road.indices);
+	geometry.computeVertexNormals();
+	return geometry;
 }
 
 /** The race track's terrain, road, start line, bumps and start gate */
@@ -280,23 +291,20 @@ export function addRaceTrackArt(
 	terrain.computeVertexNormals();
 	group.add(new THREE.Mesh(terrain, topoMaterial({ vertexColors: true })));
 
-	// Road, edge lines and start line. Off-road there is no road strip: the edge lines follow the
+	// Road, edge lines and start line. The road is drawn from the mesh the car drives on, flat
+	// at the centreline's height. Off-road there is no road strip: the edge lines follow the
 	// ground itself and mark the way.
 	const half = track.width / 2;
-	const paved = track.surface === 'asphalt';
-	const ground = paved
+	const ground = track.road
 		? undefined
-		: (x: number, z: number) => fieldHeight(track, x, z);
-	if (paved) {
-		group.add(
-			new THREE.Mesh(
-				ribbon(track, -half, half, 0.05),
-				overlayMaterial(topo.asphalt),
-			),
-		);
+		: (x: number, z: number) => track.groundAt(x, z);
+	if (track.road) {
+		const material = overlayMaterial(0xffffff);
+		material.vertexColors = true;
+		group.add(new THREE.Mesh(roadGeometry(track.road), material));
 	}
 	const line = overlayMaterial(topo.line);
-	const lineLift = paved ? 0.07 : 0.03;
+	const lineLift = track.road ? 0.02 : 0.03;
 	for (const side of [-1, 1]) {
 		const a = side * (half - 0.35);
 		group.add(
@@ -318,7 +326,7 @@ export function addRaceTrackArt(
 		),
 	);
 
-	// Bumps in the accent colour, lifted with the road strip (when there is one) so even the small ones show, with smooth
+	// Bumps in the accent colour, lifted a centimetre so even the small ones show, with smooth
 	// normals so the low sun shades their shape
 	const bumpMaterial = new THREE.MeshStandardMaterial({
 		color: topo.accent,
@@ -349,7 +357,7 @@ export function addRaceTrackArt(
 		const mesh = new THREE.Mesh(bumpGeometry(bump.points, half), bumpMaterial);
 		mesh.position.set(
 			bump.position[0],
-			bump.position[1] + (paved ? 0.05 : 0.01),
+			bump.position[1] + 0.01,
 			bump.position[2],
 		);
 		mesh.rotation.y = bump.yaw;

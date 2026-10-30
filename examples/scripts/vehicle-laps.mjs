@@ -45,7 +45,7 @@ export function driveLap(trackName, preset, options = {}) {
 	const worldDef = api.b3DefaultWorldDef();
 	worldDef.gravity = [0, -9.81, 0];
 	const world = api.b3CreateWorld(worldDef);
-	const { field } = createRaceTrackBodies(api, world, track);
+	const { field, mesh } = createRaceTrackBodies(api, world, track);
 	const bodyDef = api.b3DefaultBodyDef();
 	bodyDef.type = api.b3BodyType.b3_dynamicBody;
 	const start = track.start;
@@ -183,6 +183,7 @@ export function driveLap(trackName, preset, options = {}) {
 	}
 	api.b3DestroyWorld(world);
 	api.b3DestroyHeightField(field);
+	if (mesh) api.b3DestroyMesh(mesh);
 	return {
 		completed: progress >= n,
 		lapTime: t,

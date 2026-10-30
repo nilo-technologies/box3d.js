@@ -2,6 +2,7 @@ import type {
 	Box3DModule,
 	b3BodyId,
 	b3HeightFieldData,
+	b3MeshData,
 	b3Vec3,
 	b3WorldId,
 } from 'box3d.js';
@@ -30,6 +31,12 @@ export interface RaceTrackDef {
 	hills: number;
 	/** Height of the surface irregularities (m) */
 	roughness: number;
+	/**
+	 * A road surface of its own, as a triangle mesh: `sink` is how far the terrain under it sits
+	 * below the road (m), `ramp` how wide the slope from each road edge down to the terrain is (m).
+	 * Without it the car drives on the height field.
+	 */
+	road?: { sink: number; ramp: number };
 	/** Control points of the closed centreline: [x, z, elevation] */
 	points: [number, number, number][];
 	/** Start line, the centreline point nearest [x, z] */
@@ -79,6 +86,15 @@ export interface RaceTrack {
 		/** World x and z of the first height */
 		origin: [number, number];
 	};
+	/** The road mesh, on a track with a `road` */
+	road: {
+		/** Flat [x, y, z, ...] in world space */
+		positions: number[];
+		/** Triangles, counter-clockwise seen from above */
+		indices: number[];
+		/** Per point: 0 on the road, rising to 1 at the outer edge of the ramp */
+		verge: number[];
+	} | null;
 	bumps: RaceTrackBump[];
 	start: { position: b3Vec3; yaw: number; s: number };
 	/** Distance to the centreline, the road height there and the nearest sample */
@@ -86,6 +102,8 @@ export interface RaceTrack {
 		x: number,
 		z: number,
 	): { distance: number; y: number; sample: RaceTrackSample } | null;
+	/** The height field's surface at (x, z) */
+	groundAt(x: number, z: number): number;
 }
 
 export const raceTracks: Record<RaceTrackName, RaceTrackDef>;
@@ -98,7 +116,10 @@ export function createRaceTrackBodies(
 	track: RaceTrack,
 ): {
 	ground: b3BodyId;
+	/** The road mesh's body, on a track with a `road` */
+	road: b3BodyId | null;
 	bumpBodies: b3BodyId[];
 	walls: b3BodyId[];
 	field: b3HeightFieldData | null;
+	mesh: b3MeshData | null;
 };
