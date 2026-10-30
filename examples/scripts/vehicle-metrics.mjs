@@ -77,9 +77,9 @@ export const archetypes = {
 export const realismTargets = {
 	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true },
 	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false },
-	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false },
-	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false },
-	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false },
+	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false, drifts: true },
+	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false, drifts: true },
+	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false, drifts: true },
 };
 
 // The archetype 0-100 figures are launch control runs. The test is a flat out launch, so a two
@@ -103,6 +103,7 @@ export function targetRanges({ archetype, realism, drive }) {
 		stepRoll: [a.stepRoll[0] * r.roll[0], a.stepRoll[1] * r.roll[1]],
 		handbrakeYaw: [45, 360],
 		handbrakeRate: [60, 400],
+		driftAngle: [12, 40],
 		shiftShare: [0.87, 0.93],
 		rideHeight: [0.3, 1.2],
 		...r,
@@ -474,6 +475,62 @@ function testHandbrake(preset) {
 	};
 }
 
+// 70 km/h, a 0.4 s handbrake flick at full steer, then full throttle for 3 s with the steering
+// held fully into the drift, centered or half out of it. How long the slide lasts, the angle it
+// settles at over the last 2 s and the speed it keeps. Full counter steer is not tested: with
+// the drift assist it swings the car through into a drift the other way.
+function driftRun(preset, steer) {
+	const car = settled(preset);
+	const target = 70 / kmh;
+	let t = 0;
+	while (readState(car.vehicle).speed < target && t < 20) {
+		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		step(car);
+		t += dt;
+	}
+	for (let i = 0; i < 24; i++) {
+		b3.b3Vehicle_SetInput(car.vehicle, input(0, 0, 1, 1));
+		step(car);
+	}
+	const speed0 = readState(car.vehicle).speed;
+	let held = 0;
+	let peak = 0;
+	let late = 0;
+	let lateCount = 0;
+	let minUp = 1;
+	for (let i = 0; i < 180; i++) {
+		b3.b3Vehicle_SetInput(car.vehicle, input(1, 0, steer));
+		step(car);
+		const slip = sideslip(car.chassis);
+		peak = Math.max(peak, slip);
+		if (slip > 10) held = (i + 1) * dt;
+		if (i >= 60) {
+			late += slip;
+			lateCount += 1;
+		}
+		minUp = Math.min(minUp, pose(car.chassis).upright);
+	}
+	const speed1 = readState(car.vehicle).speed;
+	b3.b3DestroyWorld(car.world);
+	return { held, peak, angle: late / lateCount, speedKept: speed1 / speed0, upright: minUp };
+}
+
+function testDrift(preset) {
+	const centered = driftRun(preset, 0);
+	const into = driftRun(preset, 1);
+	const out = driftRun(preset, -0.5);
+	return {
+		driftHeld: centered.held,
+		driftAngle: centered.angle,
+		driftAngleInto: into.angle,
+		driftAngleOut: out.angle,
+		driftHeldOut: out.held,
+		driftPeak: Math.max(centered.peak, into.peak, out.peak),
+		driftSpeedKept: centered.speedKept,
+		driftUpright: Math.min(centered.upright, into.upright, out.upright),
+	};
+}
+
 // Dropped on its side, then on its roof, with no input: is it back on its wheels after 6 s?
 // The chassis is one box with no cabin, so a car with a low center of mass usually tips back
 // off its side by itself. The roof is the real test of the self righting assist.
@@ -543,6 +600,7 @@ export function measure(preset, { quick = false } = {}) {
 		...testLateral(preset),
 		...testStepSteer(preset),
 		...testHandbrake(preset),
+		...testDrift(preset),
 		...testSelfRight(preset),
 		...testRough(preset),
 	};
@@ -589,6 +647,17 @@ export function check(m, target, { quick = false } = {}) {
 	range('handbrakeYaw', 'deg', 0);
 	range('handbrakeRate', 'deg/s', 0);
 	rule('handbrakeUpright', m.handbrakeUpright > 0.5, `upright ${m.handbrakeUpright.toFixed(2)}`);
+	if (t.drifts) {
+		rule('driftHeld', m.driftHeld >= 2.5, `sideways for ${m.driftHeld.toFixed(2)} s of 3 after the handbrake (want >= 2.5)`);
+		range('driftAngle', 'deg', 0);
+		rule(
+			'driftSteer',
+			m.driftAngleInto >= m.driftAngle + 10 && m.driftAngleOut <= m.driftAngle - 8,
+			`${m.driftAngleOut.toFixed(0)} / ${m.driftAngle.toFixed(0)} / ${m.driftAngleInto.toFixed(0)} deg steering out / centered / into (want 8 and 10 deg apart)`,
+		);
+		rule('driftNoSpin', m.driftPeak < 70 && m.driftUpright > 0.5, `peak ${m.driftPeak.toFixed(0)} deg (want < 70)`);
+		rule('driftSpeed', m.driftSpeedKept >= 0.8, `keeps ${(m.driftSpeedKept * 100).toFixed(0)}% of its speed at full throttle (want >= 80%)`);
+	}
 	rule('roughFinite', m.roughFinite, 'state stays finite on rough ground');
 	if (!t.maySpin) {
 		rule('roughUpright', m.roughUpright > 0.5, `upright ${m.roughUpright.toFixed(2)} at worst on rough ground`);

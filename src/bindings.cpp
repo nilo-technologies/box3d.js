@@ -320,8 +320,8 @@ constexpr int debugTransformF64 = 3 + 4;       // position rotation
 constexpr int debugTransformI32 = 1;           // role
 
 // vehicle state buffer: one vehicle record, then one record per wheel
-constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1;             // 5: gear isShifting wheelsInContact stuck wheelCount
-constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1;             // 5: speed engineRpm throttle brake steerAngle
+constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: gear isShifting wheelsInContact stuck wheelCount isDrifting
+constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle slideAngle
 constexpr int vehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
 constexpr int vehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
                                                           //     longitudinalForce lateralForce slipRatio slipAngle angularVelocity
@@ -347,7 +347,7 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
 	&& debugTransformF64 == 7 && debugTransformI32 == 1,
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
-static_assert( vehicleI32 == 5 && vehicleF32 == 5 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
+static_assert( vehicleI32 == 6 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
 }
 
@@ -1894,8 +1894,8 @@ struct VehicleStateBuffer
 
 		b3VehicleState s = b3Vehicle_GetState( vehicleId );
 		wheelCount = b3Vehicle_GetWheelCount( vehicleId );
-		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, wheelCount } );
-		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle } );
+		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, wheelCount, s.isDrifting ? 1 : 0 } );
+		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle, s.slideAngle } );
 
 		for ( int i = 0; i < wheelCount; ++i )
 		{
@@ -3981,6 +3981,11 @@ EMSCRIPTEN_BINDINGS( box3d )
 	value_object<b3VehicleAssists>( "b3VehicleAssists" )
 		.field( "counterSteer", &b3VehicleAssists::counterSteer )
 		.field( "driftGripScale", &b3VehicleAssists::driftGripScale )
+		.field( "driftAssist", &b3VehicleAssists::driftAssist )
+		.field( "driftAngle", &b3VehicleAssists::driftAngle )
+		.field( "driftAngleRange", &b3VehicleAssists::driftAngleRange )
+		.field( "driftMaxAngle", &b3VehicleAssists::driftMaxAngle )
+		.field( "driftSpeedKeep", &b3VehicleAssists::driftSpeedKeep )
 		.field( "tractionControl", &b3VehicleAssists::tractionControl )
 		.field( "abs", &b3VehicleAssists::abs )
 		.field( "downforce", &b3VehicleAssists::downforce )
@@ -4025,7 +4030,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "brake", &b3VehicleState::brake )
 		.field( "steerAngle", &b3VehicleState::steerAngle )
 		.field( "wheelsInContact", &b3VehicleState::wheelsInContact )
-		.field( "stuck", &b3VehicleState::stuck );
+		.field( "stuck", &b3VehicleState::stuck )
+		.field( "isDrifting", &b3VehicleState::isDrifting )
+		.field( "slideAngle", &b3VehicleState::slideAngle );
 
 	value_object<b3VehicleWheelState>( "b3VehicleWheelState" )
 		.field( "hasContact", &b3VehicleWheelState::hasContact )
