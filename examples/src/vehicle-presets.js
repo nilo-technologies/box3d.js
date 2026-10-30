@@ -106,7 +106,7 @@ function rwd(def) {
 	def.engine.maxTorque = 420;
 	def.engine.peakTorqueRpm = 5200;
 	def.engine.maxRpm = 7200;
-	def.transmission.shiftUpRpm = 6800;
+	def.transmission.shiftUpRpm = 6200;
 	def.transmission.shiftDownRpm = 3000;
 	setDifferentials(def, [axle(2, 3, 1, 1.4)]);
 	setAntiRoll(def, 20000, 26000);
@@ -318,7 +318,10 @@ export const vehicleCars = {
 		},
 		gears: [3.6, 2.2, 1.55, 1.2, 0.98, 0.82],
 		finalDrive: 3.6,
-		shiftUpRpm: 6900,
+		// The engine shifts at 90% of the limiter, where racing games shift. The gearbox reads the
+		// road speed, which trails the engine by the clutch slip (about 270 rpm here), so the
+		// setting sits that far below 90%.
+		shiftUpRpm: 6200,
 		shiftDownRpm: 3200,
 		shiftTime: 0.12,
 		antiRoll: [16000, 13000],
@@ -332,7 +335,8 @@ export const vehicleCars = {
 		drag: 0.4,
 		tractionControl: false,
 		abs: true,
-		drive: { frontLsd: 1.15, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4 },
+		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
+		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4 },
 	},
 	rally: {
 		title: 'Rally car',
@@ -375,7 +379,7 @@ export const vehicleCars = {
 		},
 		gears: [3.3, 2.3, 1.75, 1.4, 1.15, 0.98],
 		finalDrive: 4.4,
-		shiftUpRpm: 7100,
+		shiftUpRpm: 6500,
 		shiftDownRpm: 3600,
 		shiftTime: 0.08,
 		antiRoll: [16000, 12000],
@@ -436,9 +440,9 @@ export const vehicleCars = {
 		},
 		gears: [3.2, 2.3, 1.75, 1.4, 1.15, 0.95, 0.78],
 		finalDrive: 3.4,
-		// Keep the upshift well below the rev limiter: the gearbox shifts on the road speed, which
-		// trails the engine by the clutch slip, so an upshift at 8200 never fires at full load
-		shiftUpRpm: 7900,
+		// The engine shifts at 90% of the limiter; the clutch slips about 490 rpm here, so the
+		// setting is that much lower. Near the limiter an upshift would never fire at all.
+		shiftUpRpm: 7150,
 		shiftDownRpm: 4200,
 		shiftTime: 0.08,
 		antiRoll: [30000, 26000],

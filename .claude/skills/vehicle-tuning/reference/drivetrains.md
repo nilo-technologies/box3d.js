@@ -4,7 +4,7 @@ Apply after the car layer and before the realism row. Each car carries four numb
 
 ## FWD
 
-- One differential: wheels 0 and 1, `torqueRatio` 1, `limitedSlipRatio` = `frontLsd` (open 1.0 for an economy car, 1.15-1.3 for a hot hatch or a sporty car).
+- One differential: wheels 0 and 1, `torqueRatio` 1, `limitedSlipRatio` = `frontLsd`. Keep it open (1.0) unless the car has traction control: under wheelspin a limited slip front axle pulls the car to one side, 5.8 m over a 200 m flat out run for the 100% sports car at 1.15, against 0.2 m open. With TC the wheels barely spin and 1.15-1.3 suits a hot hatch.
 - Move the center of mass forward 0.15 m (`centerOfMassOffset` z += 0.15). A transverse engine sits over the front axle, and it puts weight on the driven wheels. Without it a 420 N·m FWD sports car took 7.05 s to 100 km/h; with it, 6.32 s.
 - Anti-roll: front × 0.8, rear × 1.6. The stiffer rear bar lets the rear rotate and offsets the front-drive understeer.
 - A front engine car is naturally 60/40 front heavy as FWD. A mid engine car converted to FWD keeps only about 40% on the front even after the shift, so its launch is traction limited (5-8 s to 100 km/h for a 720 N·m car): that is physics, not a tuning fault.

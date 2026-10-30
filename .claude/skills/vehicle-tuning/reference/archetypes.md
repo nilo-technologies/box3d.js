@@ -36,7 +36,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | max rpm | 7000-7500 | 7500 | 8500 | 6500-7000 |
 | gear ratios | 3.6, 2.2, 1.55, 1.2, 0.98, 0.82 | 3.3, 2.3, 1.75, 1.4, 1.15, 0.98 | 3.2, 2.3, 1.75, 1.4, 1.15, 0.95, 0.78 | 3.46, 2.05, 1.37, 1.03, 0.85, 0.78 |
 | final drive | 3.6 | 4.4 | 3.4 | 3.9 |
-| shift up / down (rpm) | 6900 / 3200 | 7100 / 3600 | 7900 / 4200 | 6200 / 2800 |
+| shift up / down (rpm) | 6200 / 3200 | 6500 / 3600 | 7150 / 4200 | 0.9 × `maxRpm` - 270 / 2800 |
 | top speed is set by | drag | gearing (6th at the limiter ≈ 210 km/h) | drag | drag |
 | engine inertia | 0.2 | 0.12 | 0.15 | 0.15-0.2 |
 | anti-roll F/R (N/m) | 16000 / 13000 | 16000 / 12000 | 30000 / 26000 | 20000 / 14000 |
@@ -45,7 +45,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
 | own TC / ABS | off / on | off / off | on / on | on / on |
-| LSDs F/R/center, AWD front share | 1.15 / 1.5 / 1.3, 0.4 | 1.3 / 1.6 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
+| LSDs F/R/center, AWD front share | 1.0 (open) / 1.5 / 1.3, 0.4 | 1.3 / 1.6 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
 
 ## Character notes
 

@@ -103,6 +103,7 @@ export function targetRanges({ archetype, realism, drive }) {
 		stepRoll: [a.stepRoll[0] * r.roll[0], a.stepRoll[1] * r.roll[1]],
 		handbrakeYaw: [45, 360],
 		handbrakeRate: [60, 400],
+		shiftShare: [0.87, 0.93],
 		rideHeight: [0.3, 1.2],
 		...r,
 	};
@@ -329,6 +330,29 @@ function testTopSpeed(preset) {
 	return out;
 }
 
+// Flat out through the gears: the engine rpm just before each automatic upshift. Racing games
+// shift at about 90% of the limiter. The median ignores a first gear shift that wheelspin held
+// back, since the gearbox waits for the driven wheels to grip.
+function testShifts(preset) {
+	const car = settled(preset);
+	const rpms = [];
+	let gear = readState(car.vehicle).gear;
+	let prevRpm = readState(car.vehicle).engineRpm;
+	const top = car.def.transmission.gearCount;
+	for (let t = 0; t < 40 && gear < top; t += dt) {
+		b3.b3Vehicle_SetInput(car.vehicle, input(1));
+		step(car);
+		const s = readState(car.vehicle);
+		if (s.gear > gear) rpms.push(prevRpm);
+		gear = s.gear;
+		prevRpm = s.engineRpm;
+	}
+	b3.b3DestroyWorld(car.world);
+	const sorted = [...rpms].sort((a, b) => a - b);
+	const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : Number.NaN;
+	return { shiftRpm: median, shiftShare: median / car.def.engine.maxRpm, shiftCount: rpms.length };
+}
+
 // Steady speed, steering ramped from straight to half lock over 6 s. Lateral acceleration is
 // speed times yaw rate, averaged over 0.5 s, and only counts while the car is not sliding
 // sideways.
@@ -515,6 +539,7 @@ export function measure(preset, { quick = false } = {}) {
 		...testSettle(preset),
 		...testLaunchAndBrake(preset),
 		...(quick ? { topSpeed: Number.NaN, topSpeedUpright: 1 } : testTopSpeed(preset)),
+		...testShifts(preset),
 		...testLateral(preset),
 		...testStepSteer(preset),
 		...testHandbrake(preset),
@@ -552,6 +577,8 @@ export function check(m, target, { quick = false } = {}) {
 		const t = checks[checks.length - 1];
 		t.detail += ` in gear ${m.topGear}/${m.topGearCount} at ${m.topRpm.toFixed(0)} rpm (limiter ${m.topMaxRpm})`;
 	}
+	range('shiftShare', 'of the limiter');
+	checks[checks.length - 1].detail += ` (median upshift at ${m.shiftRpm.toFixed(0)} rpm over ${m.shiftCount} shifts)`;
 	range('lateralG', 'g');
 	rule('stepReached', m.stepReached, 'reaches 120 km/h');
 	range('stepRoll', 'deg', 1);

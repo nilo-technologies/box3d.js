@@ -54,7 +54,7 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 | `mode` | auto | `b3_vehicleTransmissionAuto` or `Manual` (`b3Vehicle_SetGear`). |
 | `gearRatios[0..7]`, `gearCount` | 6 gears 3.3…0.78 | |
 | `reverseRatio`, `finalDrive` | 3.2, 3.9 | |
-| `shiftUpRpm`, `shiftDownRpm` | 6000, 2600 | The automatic shifts on the lower of engine rpm and road rpm (wheel speed through the gearing). At full load the clutch slips a few hundred rpm, so road rpm never reaches the limiter: keep `shiftUpRpm` at least 5% under `maxRpm` or the car sits on the limiter. Upshifts are also blocked while a driven wheel spins past twice its peak slip or is in the air. A downshift only happens if the lower gear lands under 90% of `shiftUpRpm`. |
+| `shiftUpRpm`, `shiftDownRpm` | 6000, 2600 | The automatic shifts on the lower of engine rpm and road rpm (wheel speed through the gearing). At full load the clutch slips a few hundred rpm, so road rpm never reaches the limiter: set `shiftUpRpm` about 0.9 × `maxRpm` minus that slip (about 270 rpm on a 400 N·m car, 490 on a 720 N·m one) so the engine shifts at 90% of the limiter, the racing game convention the metrics check. A setting within ~5% of the limiter never fires. Upshifts are also blocked while a driven wheel spins past twice its peak slip or is in the air. A downshift only happens if the lower gear lands under 90% of `shiftUpRpm`. |
 | `shiftTime`, `clutchReleaseTime`, `shiftLatency` | 0.15, 0.2, 0.5 | Throttle is cut during `shiftTime`. |
 | `clutchStrength` | 10 | Coupling, N·m·s/rad. |
 

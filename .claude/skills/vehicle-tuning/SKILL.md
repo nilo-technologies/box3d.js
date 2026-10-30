@@ -65,6 +65,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | `braking` | lift 0.25 s, full brake from 100 km/h | archetype range ÷ realism grip |
 | `lateralG` | 70 km/h, steering ramped to half lock with the speed falloff off | archetype range × realism grip |
 | `stepRoll`, `spun`, `flipped` | 120 km/h then full steer with the throttle held for 3 s | realistic cars roll and may spin; arcade cars barely roll and must not spin |
+| `shiftShare` | flat out through the gears | the engine upshifts at 87-93% of the limiter (median), as racing games do |
 | `handbrakeYaw`, `handbrakeRate` | 60 km/h, full steer and a 0.8 s handbrake pull | at least 45° and 60°/s; less realism rotates faster |
 | `sideRighted`, `roofRighted` | dropped on the side and on the roof, 6 s | 100% stays on its roof; 50% and below get back on their wheels |
 | `rough*` | 15 s flat out over bumps, weaving | finite state always; 50% and below stay upright |
@@ -76,7 +77,8 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 | --- | --- | --- |
 | 0-100 too slow, wheels spinning (rpm at the limiter, slip ≫ peak) | more weight on the driven axle (`centerOfMassOffset` z), limited slip on the driven diff | shorter first gear does not help: it is traction limited. TC on a two wheel drive car costs time too, see findings |
 | 0-100 too slow, no wheelspin | `engine.maxTorque`, `finalDrive`, lower `engine.inertia` | `peakTorqueRpm` closer to the launch rpm |
-| top speed low, and the output shows a gear below the top one at the limiter | `shiftUpRpm` at least 5% under `maxRpm` | see findings: the shift uses road rpm, which trails the engine |
+| shift point off (the `shiftShare` check) | `shiftUpRpm` ≈ 0.9 × `maxRpm` minus the clutch slip (about 270 rpm, 490 on a 720 N·m car) | the gearbox reads road rpm, which trails the engine, so the engine shifts higher than the setting |
+| top speed low, and the output shows a gear below the top one at the limiter | `shiftUpRpm` lower | as above: road rpm never reaches a setting near the limiter |
 | tops out a gear below the top one, below the limiter | fine if it passes: the road rpm in that gear sits just under `shiftUpRpm`. To use the top gear, lower `shiftUpRpm` a little | |
 | top speed low, top gear, below the limiter (drag limited) | `assists.drag`, more power (`maxTorque`, a higher `peakTorqueRpm`) | a top gear that puts the engine nearer its power peak at top speed |
 | top speed low, top gear, at the limiter (gearing limited) | taller top gear or `finalDrive`, or a higher `maxRpm` | |

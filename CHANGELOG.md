@@ -8,6 +8,7 @@
   - `vehicle-demo.ts` builds its car with `spawnCar`, which can be destroyed and replaced while driving. The vehicle settings panel has a `destroy()`.
   - `.claude/skills/vehicle-tuning` is a skill for coding agents: the tuning workflow, a symptom to setting cheat sheet, every vehicle parameter as the engine uses it, and what tuning the matrix taught.
   - The smoke test drives all 45 presets and checks the preset layers.
+  - The automatic gearbox in the matrix cars and the RWD sports car example upshifts at 90% of the rev limit, as racing games do, and the metrics script checks it (`shiftShare`). The gearbox reads road speed, which trails the engine by the clutch slip, so the settings sit below 90% (6200, 6500 and 7150 rpm for the sports car, rally car and supercar).
 - The vehicle examples' track has rounded speed humps (8 cm high, 3.7 m long, like real ones) instead of 14 cm ridges, which bottomed out every car's suspension and could flip cars at 45 km/h and up. The matrix cars' dampers are softer in compression than in rebound, so bumps reach the body more gently.
 - The vehicle examples have sound, made with the Web Audio API and no audio files. The engine's pitch follows the rpm and each car's cylinder count, and its tone opens with the throttle; sliding tires squeal, wind rises with speed, and the suspension thumps when it hits its bump stop. Sound starts on the first key press or click. N mutes it, and the panel has a volume slider.
 
