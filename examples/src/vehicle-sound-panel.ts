@@ -1,5 +1,5 @@
 // Sound tuning panel for the sound lab (example-vehicle-sound.ts): a lil-gui folder with every
-// setting in VehicleSoundParams (engine voice and character, tires, turbo, wind, bump stop),
+// setting in VehicleSoundParams (engine voice and character, listener, tires, turbo, wind, bump stop),
 // buttons that play the blow-off, the stutter (flutter) and the bump, hotkeys for the first two
 // (V and C), and copy, paste and reset. Changes apply live and are saved in localStorage (only
 // what differs from the defaults). The driving examples don't read it: they play
@@ -12,12 +12,17 @@
 import type GUI from 'lil-gui';
 import {
 	assignSoundParams,
+	type BrapStyle,
+	brapStyles,
 	cloneSoundParams,
 	defaultSoundParams,
 	diffSoundParams,
+	type EngineExhaust,
 	type EngineVoiceChoice,
 	type EngineVoiceName,
 	engineVoices,
+	type ListenerPosition,
+	listenerPositions,
 	type SoundWave,
 	type TurboValve,
 	type VehicleAudio,
@@ -56,6 +61,21 @@ for (const [key, voice] of Object.entries(engineVoices)) {
 	voiceOptions[voice.title] = key as EngineVoiceName;
 }
 
+const exhaustOptions: Record<string, EngineExhaust> = {
+	'Exhaust pipes': 'pipes',
+	'Two resonances (older)': 'resonances',
+};
+
+const brapOptions: Record<string, BrapStyle> = {};
+for (const [key, title] of Object.entries(brapStyles)) {
+	brapOptions[title] = key as BrapStyle;
+}
+
+const listenerOptions: Record<string, ListenerPosition> = {};
+for (const [key, position] of Object.entries(listenerPositions)) {
+	listenerOptions[position.title] = key as ListenerPosition;
+}
+
 const valveOptions: Record<string, TurboValve> = {
 	'Blow-off valve (pssh)': 'blowOff',
 	'Stutter / compressor flutter (stu-tu-tu)': 'flutter',
@@ -82,6 +102,7 @@ const characterSliders: Slider<EngineParams>[] = [
 	['grit', 0, 2.5, 0.01, 'grit (combustion noise)'],
 	['drive', 0.3, 2.5, 0.01, 'drive (saturation)'],
 	['crackle', 0, 5, 0.01, 'overrun crackle'],
+	['intake', 0, 3, 0.01, 'intake roar'],
 ];
 
 const classicSliders: Slider<EngineParams>[] = [
@@ -199,6 +220,8 @@ export function addSoundPanel(
 		.add(params.engine, 'voice', voiceOptions)
 		.name('voice')
 		.onChange(() => showVoiceControls());
+	engine.add(params.engine, 'exhaust', exhaustOptions).name('exhaust model');
+	engine.add(params.engine, 'brap', brapOptions).name('rotary idle (brap)');
 	sliders(engine, params.engine, engineVolumeSliders);
 	const character = engine.addFolder('Character');
 	sliders(character, params.engine, characterSliders);
@@ -229,6 +252,10 @@ export function addSoundPanel(
 		for (const c of classic.controllers) c.enable(isClassic);
 	}
 	showVoiceControls();
+
+	const listener = folder.addFolder('Listener');
+	listener.add(params.listener, 'position', listenerOptions).name('heard from');
+	listener.add(params.listener, 'room', 0, 3, 0.01).name('room reflections');
 
 	const tires = folder.addFolder('Tires').close();
 	sliders(tires, params.tires, tireSliders);
