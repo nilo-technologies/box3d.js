@@ -218,7 +218,7 @@ const controllerTips: Record<string, Record<string, string>> = {
 	Assists: {
 		tractionControl:
 			'Limits the throttle so no driven wheel gets more torque than its tire can transmit. On rear wheels it also leaves grip for cornering, so full throttle mid corner does not spin the car.',
-		abs: 'Caps the brake torque at what the tire can transmit, so the wheels do not lock and the car still steers while braking',
+		abs: 'Caps the brake torque at what the tire can transmit, leaving room for cornering, so the wheels do not lock and the car still steers while braking in a turn. It also caps engine braking on the driven wheels.',
 		launchControl:
 			'Pulling away from a stop, holds the driven tires at their peak slip, so full throttle neither spins them nor wastes grip. Ends when you lift or the tires grip at full throttle. Works with traction control off.',
 		stickyTire:

@@ -1,0 +1,203 @@
+From b2aa1ed24fd46ff5128c1c6fa62989c4d740b33f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 30 Oct 2026 10:55:54 +0000
+Subject: [PATCH] Vehicle: ABS leaves room for cornering, releases locked
+ wheels, caps engine braking
+
+ABS capped each service brake at the tire's straight line peak torque,
+so braking at full lock locked the front wheels (about 94% of a full
+brake, full lock stop on the box3d.js sports car presets) and the car
+slid wide. It also could not release a wheel once past its peak slip.
+
+The cap is now the peak torque times the room the cornering force
+leaves on the friction ellipse, from the slip angle against the
+lateral peak angle (never below 30%). Last step's lateral force would
+feed back: a wheel braking hard carries little lateral force, which
+reads as room to brake harder. A wheel past its peak slip is released
+to half its sliding torque until it grips again, as traction control
+does for wheelspin. Engine braking on a driven wheel shares the cap,
+like engine drag torque control, so lifting or braking mid corner
+does not lock the driven wheels.
+
+Straight line ABS braking is unchanged (32.2 to 32.1 m). New
+BrakeTurnTest: with ABS the fronts never lock at full lock and the car
+turns 45 deg instead of 33 deg in 1.5 s; it fails on the old code.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LRrE3ViLeMyrbcSye1CEZY
+---
+ include/box3d/vehicle.h |  4 ++-
+ src/vehicle.c           | 40 +++++++++++++++++++++++-----
+ test/test_vehicle.c     | 58 +++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 95 insertions(+), 7 deletions(-)
+
+diff --git a/include/box3d/vehicle.h b/include/box3d/vehicle.h
+index e7f2d17..108f5f8 100644
+--- a/include/box3d/vehicle.h
++++ b/include/box3d/vehicle.h
+@@ -383,7 +383,9 @@ typedef struct b3VehicleAssists
+ 	/// force, so full throttle mid corner does not spin the car.
+ 	bool tractionControl;
+ 
+-	/// Caps the brake torque at what the tire can transmit at peak grip so the wheels do not lock
++	/// Caps the brake torque at what the tire can transmit at peak grip so the wheels do not lock.
++	/// It leaves room for the cornering force, so the car still steers while braking in a turn,
++	/// releases a wheel that slips past its peak, and caps engine braking on driven wheels too.
+ 	bool abs;
+ 
+ 	/// Downforce coefficient, force = downforce * speed^2 (N*s^2/m^2)
+diff --git a/src/vehicle.c b/src/vehicle.c
+index 37ffab5..ab8f00c 100644
+--- a/src/vehicle.c
++++ b/src/vehicle.c
+@@ -1911,6 +1911,8 @@ static void b3UpdateVehicle( b3World* world, b3Vehicle* v, float dt )
+ 	float peakTorque[B3_MAX_VEHICLE_WHEELS] = { 0 };
+ 	float tractionTorque[B3_MAX_VEHICLE_WHEELS] = { 0 };
+ 	float lateralRoom[B3_MAX_VEHICLE_WHEELS] = { 0 };
++	// With ABS, the engine braking a wheel may still take on top of its service brake
++	float absRoom[B3_MAX_VEHICLE_WHEELS];
+ 	b3Vec3 localCenter = b3Body_GetLocalCenter( v->chassisId );
+ 	float gravity = b3GravityLength( world );
+ 	for ( int i = 0; i < wheelCount; ++i )
+@@ -1929,6 +1931,7 @@ static void b3UpdateVehicle( b3World* world, b3Vehicle* v, float dt )
+ 		gripY[i] = 0.0f;
+ 		bool wasSticky = wheel->isSticky;
+ 		wheel->isSticky = false;
++		absRoom[i] = FLT_MAX;
+ 
+ 		if ( wheel->hasContact == false )
+ 		{
+@@ -2021,11 +2024,32 @@ static void b3UpdateVehicle( b3World* world, b3Vehicle* v, float dt )
+ 		}
+ 
+ 		// ABS caps the service brake at the torque the tire can transmit at peak grip, so the wheel
+-		// settles near the peak slip instead of locking
+-		if ( v->assists.abs && serviceTorque > 0.0f && wheel->isSticky == false )
+-		{
+-			float limit = ground * tire->longitudinalPeakFriction * load * def->radius;
+-			brakeTorque -= serviceTorque - b3MinFloat( serviceTorque, limit );
++		// settles near the peak slip instead of locking. It also leaves room on the friction ellipse
++		// for the cornering force, so braking in a turn keeps the wheel rolling and the car steering.
++		// The cornering demand comes from the slip angle, not from last step's lateral force: a wheel
++		// braking hard carries little lateral force, which would read as room to brake harder still.
++		// At least 30% of the peak is always allowed. Engine braking on a driven wheel shares the cap
++		// (see the drivetrain solve below), as engine drag torque control does in a real car, so
++		// lifting or braking mid corner does not lock the driven wheels.
++		if ( v->assists.abs && wheel->isSticky == false )
++		{
++			float lateralUse = tire->lateralPeakAngle > 0.0f
++								   ? b3MinFloat( b3AbsFloat( wheel->slipAngle ) / tire->lateralPeakAngle, 1.0f )
++								   : 0.0f;
++			float room = b3MaxFloat( sqrtf( 1.0f - lateralUse * lateralUse ), 0.3f );
++			float limit = room * ground * tire->longitudinalPeakFriction * load * def->radius;
++
++			// A wheel past its peak slip needs only the sliding torque to stay locked, which is less
++			// than the cap above. Release it to half the sliding torque until it grips again.
++			float rollSign = vLong < 0.0f ? -1.0f : 1.0f;
++			if ( -rollSign * wheel->slipRatio > tire->longitudinalPeakSlip )
++			{
++				limit = b3MinFloat( limit, 0.5f * peakX * load * def->radius );
++			}
++
++			float applied = b3MinFloat( serviceTorque, limit );
++			brakeTorque -= serviceTorque - applied;
++			absRoom[i] = limit - applied;
+ 		}
+ 
+ 		brakeTorque += tire->rollingResistance * load * def->radius;
+@@ -2236,11 +2260,15 @@ static void b3UpdateVehicle( b3World* world, b3Vehicle* v, float dt )
+ 			float torque = shares[i] * ratio * clutchTorque;
+ 
+ 			// Drive torque has the sign of the gear ratio, so this also caps reverse. Engine braking
+-			// has the opposite sign and is left alone.
++			// has the opposite sign and is left to ABS, which caps it with the service brake.
+ 			if ( limitTraction && wheel->hasContact && torque * ratio > 0.0f )
+ 			{
+ 				torque = b3MinFloat( b3AbsFloat( torque ), tractionTorque[i] ) * ( ratio > 0.0f ? 1.0f : -1.0f );
+ 			}
++			else if ( wheel->hasContact && torque * ratio < 0.0f )
++			{
++				torque = b3MinFloat( b3AbsFloat( torque ), absRoom[i] ) * ( torque > 0.0f ? 1.0f : -1.0f );
++			}
+ 			wheel->driveTorque = torque;
+ 		}
+ 	}
+diff --git a/test/test_vehicle.c b/test/test_vehicle.c
+index eb88059..eead5fe 100644
+--- a/test/test_vehicle.c
++++ b/test/test_vehicle.c
+@@ -515,6 +515,63 @@ static int BrakingTest( void )
+ 	return 0;
+ }
+ 
++// Full brake and full lock from 90 km/h for 1.5 s: the share of steps with a front wheel locked
++// and the heading change
++static float BrakeTurn( bool abs, float* heading )
++{
++	b3WorldId worldId = CreateVehicleWorld( 1 );
++	CreateFlatGround( worldId );
++	b3VehicleDef def = b3DefaultVehicleDef();
++	def.assists.abs = abs;
++	b3VehicleId vehicleId = CreateCar( worldId, (b3Pos){ 0.0f, 0.6f, 0.0f }, &def );
++	b3BodyId chassisId = b3Vehicle_GetChassisBody( vehicleId );
++	Step( worldId, 60 );
++
++	int maxGear = 0;
++	bool inOrder;
++	AccelerateTo( worldId, vehicleId, 90.0f * KMH, 30.0f, &maxGear, &inOrder );
++
++	b3Vec3 forward = b3RotateVector( b3Body_GetRotation( chassisId ), b3Vec3_axisZ );
++	float yaw0 = atan2f( forward.x, forward.z );
++	b3Vehicle_SetInput( vehicleId, (b3VehicleInput){ .brake = 1.0f, .steer = 1.0f } );
++	int locked = 0;
++	int steps = 90;
++	for ( int i = 0; i < steps; ++i )
++	{
++		Step( worldId, 1 );
++		for ( int j = 0; j < 2; ++j )
++		{
++			if ( b3Vehicle_GetWheelState( vehicleId, j ).slipRatio < -0.5f )
++			{
++				locked += 1;
++				break;
++			}
++		}
++	}
++
++	forward = b3RotateVector( b3Body_GetRotation( chassisId ), b3Vec3_axisZ );
++	float turn = atan2f( forward.x, forward.z ) - yaw0;
++	*heading = fabsf( atan2f( sinf( turn ), cosf( turn ) ) );
++	bool finite = VehicleIsFinite( vehicleId );
++	b3DestroyWorld( worldId );
++	return finite ? (float)locked / steps : -1.0f;
++}
++
++// ABS leaves room for the cornering force, so braking at full lock keeps the front wheels rolling
++// and the car turns. Without ABS the fronts lock and the car slides on.
++static int BrakeTurnTest( void )
++{
++	float plainHeading, absHeading;
++	float plain = BrakeTurn( false, &plainHeading );
++	float abs = BrakeTurn( true, &absHeading );
++	printf( "    brake at full lock: fronts locked %.0f%% of the time, turned %.0f deg; with abs %.0f%%, %.0f deg\n",
++			100.0f * plain, plainHeading * B3_RAD_TO_DEG, 100.0f * abs, absHeading * B3_RAD_TO_DEG );
++	ENSURE( plain > 0.5f );
++	ENSURE( 0.0f <= abs && abs < 0.1f );
++	ENSURE( absHeading > 1.2f * plainHeading );
++	return 0;
++}
++
+ static float TurnRadius( const b3VehicleDef* def, float steer, float speed, float* maxRoll )
+ {
+ 	b3WorldId worldId = CreateVehicleWorld( 1 );
+@@ -1667,6 +1724,7 @@ int VehicleTest( void )
+ 	RUN_SUBTEST( LaunchControlTest );
+ 	RUN_SUBTEST( SlipRelaxationTest );
+ 	RUN_SUBTEST( BrakingTest );
++	RUN_SUBTEST( BrakeTurnTest );
+ 	RUN_SUBTEST( BrakeReverseTest );
+ 	RUN_SUBTEST( TurningTest );
+ 	RUN_SUBTEST( AntiRollTest );
+-- 
+2.43.0
+
