@@ -90,7 +90,8 @@ function assertEmscriptenVersion()
 function validateESModule( file )
 {
 	const path = join( root, file );
-	let src = readFileSync( path, 'utf8' );
+	// Emscripten writes CRLF on Windows; keep the committed outputs LF on every host.
+	let src = readFileSync( path, 'utf8' ).replaceAll( '\r\n', '\n' );
 
 	// require() -> await import
 	src = src.replaceAll( /\brequire\(\s*["']([^"']+)["']\s*\)/g, '(await import("$1"))' );
@@ -277,6 +278,10 @@ const retMeta = probe._retMeta();
 // Types for the packed query buffers and the src/facade.js reader helpers,
 // intersected into Box3DModule below so `b3.getContactAt(...)` etc. are typed.
 const facadeTypes = `export interface ShapeIdBuffer { count: number; data: Int32Array; }
+/** Native candidate filter for the *Filtered / *Packed world queries. A shape is skipped when it or
+ * its body is listed (Int32Array of index1, world0, generation triples), or when it is a sensor and
+ * excludeSensors is set. No JS callback runs per candidate. */
+export interface b3QueryOptions { ignoreBodies?: Int32Array; ignoreShapes?: Int32Array; excludeSensors?: boolean; }
 export interface ContactBuffer {
   count: number;
   contactsI32: Int32Array;
@@ -517,6 +522,21 @@ export interface Box3DFacade {
   getContactHitEventAt(out: ContactHitEvent, eb: EventsBuffer, i: number): ContactHitEvent;
   createBodyMoveEvent(): BodyMoveEvent;
   getBodyMoveEventAt(out: BodyMoveEvent, eb: EventsBuffer, i: number): BodyMoveEvent;
+  /** Every body move event of the last getEvents in one copied array, 11 numbers per event:
+   * index1, world0, generation, px, py, pz, qx, qy, qz, qw, fellAsleep (0/1). */
+  getBodyMoveEventsPacked(eb: EventsBuffer): Float64Array;
+  /** Rule ids for b3World_SetMixingRules. 'weighted' mixes (a*wA + b*wB) / (wA + wB) with per-shape
+   * weights packed into each shape's userMaterialId, so while it is active that field holds the weights
+   * and can't double as a material tag: bits 0-31 friction weight * 1000, bits 32-62 restitution
+   * weight * 1000, bit 63 set = weights present. A shape without bit 63 uses box3d's default rule. */
+  readonly b3MixingRule: {
+    readonly geometric: 0;
+    readonly average: 1;
+    readonly min: 2;
+    readonly max: 3;
+    readonly multiply: 4;
+    readonly weighted: 5;
+  };
   createSensorTouchEvent(): SensorTouchEvent;
   getSensorBeginEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
   getSensorEndEventAt(out: SensorTouchEvent, eb: EventsBuffer, i: number): SensorTouchEvent;
@@ -570,6 +590,7 @@ export interface Box3DFacade {
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
 let tsd = readFileSync( tsdPath, 'utf8' )
+	.replaceAll( '\r\n', '\n' ) // emit-tsd writes CRLF on Windows
 	.replaceAll( 'MainModuleFactory', 'Box3DFactory' )
 	.replaceAll( 'MainModule', 'Box3DModule' )
 	.replace(
@@ -595,6 +616,12 @@ const valParamSigs = {
 	b3CreateConvexDecompositionShapes: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions',
 	b3CreateConvexDecompositionShapesFromPacked: 'bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number',
 	b3CreateDecompositionCompound: 'packed: b3ConvexDecomposition, material?: b3SurfaceMaterial',
+	b3Body_SetConstantForce: 'bodyId: b3BodyId, force: b3Vec3, point: b3Vec3 | null',
+	b3Body_GetTransformsPacked: 'ids: Int32Array',
+	b3World_CollideMoverPacked: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastMoverFiltered: 'worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastRayClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
+	b3World_CastShapeClosestFiltered: 'worldId: b3WorldId, origin: b3Vec3, points: Float32Array | number[], radius: number, translation: b3Vec3, filter: b3QueryFilter, options: b3QueryOptions | null',
 };
 for ( const [ method, params ] of Object.entries( valParamSigs ) )
 {

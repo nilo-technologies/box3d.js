@@ -217,6 +217,122 @@ function eventsAndPlanes( b3 )
 	return { sawSensor, planeCount };
 }
 
+// Natively filtered queries: ignored bodies, ignored shapes and sensors are skipped inside the
+// query, and the results match the callback versions filtering the same candidates in JS.
+function filteredQueries( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, 0, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const staticAt = ( y ) =>
+	{
+		const def = b3.b3DefaultBodyDef();
+		def.position = [ 0, y, 0 ];
+		return b3.b3CreateBody( world, def );
+	};
+	// From the top: a sensor slab (y 3), a shelf (y 2), the ground (top at y 0.5)
+	const sensorBody = staticAt( 3 );
+	const sensorDef = b3.b3DefaultShapeDef();
+	sensorDef.isSensor = true;
+	const sensorShape = b3.b3CreateBoxShape( sensorBody, sensorDef, 1, 0.1, 1 );
+	const shelf = staticAt( 2 );
+	const shelfShape = b3.b3CreateBoxShape( shelf, b3.b3DefaultShapeDef(), 1, 0.1, 1 );
+	const ground = staticAt( 0 );
+	const groundShape = b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 5, 0.5, 5 );
+	b3.b3World_Step( world, 1 / 60, 4 );
+
+	const triples = ( ...ids ) => new Int32Array( ids.flatMap( ( id ) => [ id.index1, id.world0, id.generation ] ) );
+	const same = ( a, index1, world0, generation ) => a.index1 === index1 && a.world0 === world0 && a.generation === generation;
+	const filter = b3.b3DefaultQueryFilter();
+	// JS reference for the same skip rule, fed to the callback APIs
+	const skips = ( options, shapeId ) =>
+	{
+		const listed = ( arr, id ) => arr !== undefined && [ ...Array( arr.length / 3 ).keys() ].some( ( i ) => same( id, arr[ 3 * i ], arr[ 3 * i + 1 ], arr[ 3 * i + 2 ] ) );
+		return listed( options?.ignoreShapes, shapeId ) || listed( options?.ignoreBodies, b3.b3Shape_GetBody( shapeId ) ) ||
+			( options?.excludeSensors === true && b3.b3Shape_IsSensor( shapeId ) );
+	};
+	const cases = [
+		{ name: 'no options', options: null },
+		{ name: 'excludeSensors', options: { excludeSensors: true } },
+		{ name: 'ignored body', options: { ignoreBodies: triples( shelf ), excludeSensors: true } },
+		{ name: 'ignored shape', options: { ignoreShapes: triples( shelfShape, sensorShape ) } },
+		{ name: 'everything ignored', options: { ignoreShapes: triples( shelfShape, groundShape ), excludeSensors: true } },
+	];
+	const expected = { 'excludeSensors': shelfShape, 'ignored body': groundShape, 'ignored shape': groundShape, 'everything ignored': null };
+
+	const origin = [ 0, 5, 0 ];
+	const down = [ 0, -10, 0 ];
+	const points = new Float32Array( [ 0, 0, 0 ] );
+	for ( const { name, options } of cases )
+	{
+		// Ray and shape casts: closest non-skipped hit, same as a clipping JS callback
+		for ( const [ label, filtered, reference ] of [
+			[ 'ray', () => b3.b3World_CastRayClosestFiltered( world, origin, down, filter, options ),
+				( cb ) => b3.b3World_CastRay( world, origin, down, filter, cb ) ],
+			[ 'shape', () => b3.b3World_CastShapeClosestFiltered( world, origin, points, 0.2, down, filter, options ),
+				( cb ) => b3.b3World_CastShape( world, origin, points, 0.2, down, filter, cb ) ],
+		] )
+		{
+			let best = null;
+			reference( ( shapeId, point, normal, fraction ) =>
+			{
+				if ( skips( options, shapeId ) ) return -1;
+				best = { shapeId, point, normal, fraction };
+				return fraction;
+			} );
+			const hit = filtered();
+			assert.ok( hit instanceof Float64Array, `${label} (${name}): returns a Float64Array` );
+			if ( best === null )
+			{
+				assert.equal( hit.length, 0, `${label} (${name}): no hit is an empty array` );
+				continue;
+			}
+			assert.equal( hit.length, 14, `${label} (${name}): 14 numbers per hit` );
+			assert.ok( same( best.shapeId, hit[ 0 ], hit[ 1 ], hit[ 2 ] ), `${label} (${name}): same shape as the callback cast` );
+			assert.ok( same( b3.b3Shape_GetBody( best.shapeId ), hit[ 3 ], hit[ 4 ], hit[ 5 ] ), `${label} (${name}): body id` );
+			near( hit[ 7 ], best.point[ 1 ], 1e-5, `${label} (${name}): point` );
+			near( hit[ 10 ], best.normal[ 1 ], 1e-5, `${label} (${name}): normal` );
+			near( hit[ 12 ], best.fraction, 1e-6, `${label} (${name}): fraction` );
+			assert.equal( hit[ 13 ], 0, `${label} (${name}): spare slot` );
+			if ( name in expected ) assert.ok( same( expected[ name ], hit[ 0 ], hit[ 1 ], hit[ 2 ] ), `${label} (${name}): expected shape` );
+		}
+		if ( name in expected && expected[ name ] === null )
+		{
+			assert.equal( b3.b3World_CastRayClosestFiltered( world, origin, down, filter, options ).length, 0, `${name}: ray misses` );
+		}
+
+		// Mover cast: same fraction as the callback filter
+		const mover = { center1: [ 0, -0.5, 0 ], center2: [ 0, 0.5, 0 ], radius: 0.35 };
+		const fraction = b3.b3World_CastMoverFiltered( world, origin, mover, down, filter, options );
+		const referenceFraction = b3.b3World_CastMover( world, origin, mover, down, filter, ( shapeId ) => !skips( options, shapeId ) );
+		assert.equal( fraction, referenceFraction, `CastMoverFiltered (${name}) matches the callback filter` );
+
+		// Mover planes: a capsule overlapping the shelf and the sensor
+		const moverOrigin = [ 0, 2.3, 0 ];
+		let referencePlanes = 0;
+		b3.b3World_CollideMover( world, moverOrigin, mover, filter, ( shapeId, buf ) =>
+		{
+			if ( !skips( options, shapeId ) ) referencePlanes += b3.getNumPlaneResults( buf );
+			return true;
+		} );
+		const planes = b3.b3World_CollideMoverPacked( world, moverOrigin, mover, filter, options );
+		assert.ok( planes instanceof Float64Array && planes.length % 14 === 0, `CollideMoverPacked (${name}): stride 14` );
+		assert.equal( planes.length / 14, referencePlanes, `CollideMoverPacked (${name}): same plane count as the callback` );
+		for ( let o = 0; o < planes.length; o += 14 )
+		{
+			const shapeId = { index1: planes[ o ], world0: planes[ o + 1 ], generation: planes[ o + 2 ] };
+			assert.ok( !skips( options, shapeId ), `CollideMoverPacked (${name}): skipped shape not reported` );
+			assert.ok( same( b3.b3Shape_GetBody( shapeId ), planes[ o + 3 ], planes[ o + 4 ], planes[ o + 5 ] ), `CollideMoverPacked (${name}): body id` );
+			assert.equal( planes[ o + 6 ], b3.b3BodyType.b3_staticBody.value, `CollideMoverPacked (${name}): body type` );
+			near( Math.hypot( planes[ o + 7 ], planes[ o + 8 ], planes[ o + 9 ] ), 1, 1e-3, `CollideMoverPacked (${name}): unit normal` );
+		}
+		if ( name === 'ignored body' ) assert.equal( planes.length, 0, 'CollideMoverPacked: ignored shelf body gives no planes' );
+		if ( name === 'no options' ) assert.ok( planes.length >= 14, 'CollideMoverPacked: the shelf gives planes' );
+	}
+
+	b3.b3DestroyWorld( world );
+}
+
 // Indexed torus around the y axis: concave, so V-HACD has to split it.
 function torusMesh( radius = 1, tube = 0.35, radial = 24, tubular = 12 )
 {
@@ -705,6 +821,448 @@ function debugDraw( b3 )
 	} );
 }
 
+const IDENTITY_FRAME = () => ( { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
+
+function zeroGravityWorld( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, 0, 0 ];
+	return b3.b3CreateWorld( worldDef );
+}
+
+function staticBody( b3, world, position = [ 0, 0, 0 ] )
+{
+	const def = b3.b3DefaultBodyDef();
+	def.type = b3.b3BodyType.b3_staticBody;
+	def.position = position;
+	return b3.b3CreateBody( world, def );
+}
+
+function dynamicBox( b3, world, position, halfExtent = 0.5, shapeDef = b3.b3DefaultShapeDef() )
+{
+	const def = b3.b3DefaultBodyDef();
+	def.type = b3.b3BodyType.b3_dynamicBody;
+	def.position = position;
+	const body = b3.b3CreateBody( world, def );
+	const shape = b3.b3CreateBoxShape( body, shapeDef, halfExtent, halfExtent, halfExtent );
+	return { body, shape };
+}
+
+function near( actual, expected, tolerance, label )
+{
+	assert.ok( Math.abs( actual - expected ) <= tolerance, `${label}: expected ${expected} ± ${tolerance}, got ${actual}` );
+}
+
+// Cylindrical joint: body B slides along and spins about frame A's x-axis, with
+// both the linear and the angular motor driving into their limits.
+function cylindricalJoint( b3 )
+{
+	const world = zeroGravityWorld( b3 );
+	const ground = staticBody( b3, world );
+	// density 1 kg/m^3: 1 kg boxes, so modest motor limits accelerate them quickly
+	const lightDef = b3.b3DefaultShapeDef();
+	lightDef.density = 1;
+	const { body } = dynamicBox( b3, world, [ 0, 4, 0 ], 0.5, lightDef );
+
+	const def = b3.b3DefaultCylindricalJointDef();
+	assert.deepEqual( Array.from( def.localSlideAxisA ), [ 1, 0, 0 ], 'default slide axis is frame A x' );
+	def.base.bodyIdA = ground;
+	def.base.bodyIdB = body;
+	def.base.localFrameA = { position: [ 0, 4, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	def.base.localFrameB = IDENTITY_FRAME();
+	def.enableMotor = true;
+	def.motorSpeed = 1;
+	def.maxMotorForce = 50;
+	def.enableAngularMotor = true;
+	def.angularMotorSpeed = 2;
+	def.maxMotorTorque = 5;
+	const joint = b3.b3CreateCylindricalJoint( world, def );
+	assert.equal( b3.b3Joint_GetType( joint ).value, b3.b3JointType.b3_cylindricalJoint.value, 'joint type is cylindrical' );
+
+	// Free: both motors run at speed, coaxially
+	for ( let i = 0; i < 15; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetSpeed( joint ), 1, 0.02, 'linear motor speed' );
+	near( b3.b3CylindricalJoint_GetAngularSpeed( joint ), 2, 0.02, 'angular motor speed' );
+	const [ p, q ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], body );
+	near( p[ 1 ], 4, 1e-3, 'stays on the axis (y)' );
+	near( p[ 2 ], 0, 1e-3, 'stays on the axis (z)' );
+	near( q[ 1 ], 0, 1e-3, 'rotates only about x (qy)' );
+	near( q[ 2 ], 0, 1e-3, 'rotates only about x (qz)' );
+	near( p[ 0 ], b3.b3CylindricalJoint_GetTranslation( joint ), 1e-4, 'translation reads the slide' );
+	near( 2 * Math.atan2( q[ 0 ], q[ 3 ] ), b3.b3CylindricalJoint_GetAngle( joint ), 1e-4, 'angle reads the spin' );
+
+	// Limits stop both motors
+	b3.b3CylindricalJoint_EnableLimit( joint, true );
+	b3.b3CylindricalJoint_SetLimits( joint, -0.25, 0.5 );
+	b3.b3CylindricalJoint_EnableAngularLimit( joint, true );
+	b3.b3CylindricalJoint_SetAngularLimits( joint, -0.5, 1.0 );
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetTranslation( joint ), 0.5, 0.02, 'linear limit holds' );
+	near( b3.b3CylindricalJoint_GetAngle( joint ), 1.0, 0.02, 'angular limit holds' );
+	near( b3.b3CylindricalJoint_GetMotorForce( joint ), 50, 0.05, 'linear motor saturates against the limit' );
+	near( b3.b3CylindricalJoint_GetMotorTorque( joint ), 5, 0.05, 'angular motor saturates against the limit' );
+
+	// Springs replace the motors. Joint setters don't wake the bodies, which may be
+	// asleep resting against the limits.
+	b3.b3Joint_WakeBodies( joint );
+	b3.b3CylindricalJoint_EnableMotor( joint, false );
+	b3.b3CylindricalJoint_EnableAngularMotor( joint, false );
+	b3.b3CylindricalJoint_EnableSpring( joint, true );
+	b3.b3CylindricalJoint_SetSpringHertz( joint, 2 );
+	b3.b3CylindricalJoint_SetSpringDampingRatio( joint, 1 );
+	b3.b3CylindricalJoint_SetTargetTranslation( joint, 0.1 );
+	b3.b3CylindricalJoint_EnableAngularSpring( joint, true );
+	b3.b3CylindricalJoint_SetAngularSpringHertz( joint, 2 );
+	b3.b3CylindricalJoint_SetAngularSpringDampingRatio( joint, 1 );
+	b3.b3CylindricalJoint_SetTargetAngle( joint, -0.3 );
+	for ( let i = 0; i < 300; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3CylindricalJoint_GetTranslation( joint ), 0.1, 0.01, 'linear spring settles at the target' );
+	near( b3.b3CylindricalJoint_GetAngle( joint ), -0.3, 0.01, 'angular spring settles at the target' );
+
+	// A slide axis off the rotation axis: slides along frame A y, still spins about x
+	const { body: slider } = dynamicBox( b3, world, [ 5, 4, 0 ], 0.5, lightDef );
+	const tilted = b3.b3DefaultCylindricalJointDef();
+	tilted.base.bodyIdA = ground;
+	tilted.base.bodyIdB = slider;
+	tilted.base.localFrameA = { position: [ 5, 4, 0 ], quaternion: [ 0, 0, 0, 1 ] };
+	tilted.base.localFrameB = IDENTITY_FRAME();
+	tilted.localSlideAxisA = [ 0, 2, 0 ];
+	tilted.enableMotor = true;
+	tilted.motorSpeed = 1;
+	tilted.maxMotorForce = 100;
+	tilted.enableAngularMotor = true;
+	tilted.angularMotorSpeed = 1;
+	tilted.maxMotorTorque = 100;
+	const tiltedJoint = b3.b3CreateCylindricalJoint( world, tilted );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const [ tp, tq ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], slider );
+	near( tp[ 0 ], 5, 1e-3, 'tilted: no motion along x' );
+	near( tp[ 1 ] - 4, b3.b3CylindricalJoint_GetTranslation( tiltedJoint ), 1e-4, 'tilted: translation is along y' );
+	near( tp[ 1 ] - 4, 0.5, 0.02, 'tilted: slid along y at the motor speed' );
+	near( tq[ 1 ], 0, 1e-3, 'tilted: rotates only about x (qy)' );
+	near( tq[ 2 ], 0, 1e-3, 'tilted: rotates only about x (qz)' );
+	near( b3.b3CylindricalJoint_GetAngle( tiltedJoint ), 0.5, 0.02, 'tilted: spun about x' );
+
+	b3.b3DestroyWorld( world );
+}
+
+// Measure the friction coefficient of a box sliding over the ground: mu = deceleration / g.
+function slidingFriction( b3, rules, groundFriction, groundMaterialId, boxFriction, boxMaterialId )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	if ( rules ) b3.b3World_SetMixingRules( world, rules[ 0 ], rules[ 1 ] );
+
+	const groundShapeDef = b3.b3DefaultShapeDef();
+	groundShapeDef.baseMaterial.friction = groundFriction;
+	groundShapeDef.baseMaterial.userMaterialId = groundMaterialId;
+	b3.b3CreateBoxShape( staticBody( b3, world ), groundShapeDef, 50, 0.5, 50 );
+
+	const boxShapeDef = b3.b3DefaultShapeDef();
+	boxShapeDef.baseMaterial.friction = boxFriction;
+	boxShapeDef.baseMaterial.userMaterialId = boxMaterialId;
+	const { body } = dynamicBox( b3, world, [ 0, 1, 0 ], 0.5, boxShapeDef );
+
+	// settle onto the ground, then launch
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	b3.b3Body_SetLinearVelocity( body, [ 10, 0, 0 ] );
+	const v = [ 0, 0, 0 ];
+	b3.b3World_Step( world, 1 / 60, 4 );
+	const v0 = b3.b3Body_GetLinearVelocity( v, body )[ 0 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const v1 = b3.b3Body_GetLinearVelocity( v, body )[ 0 ];
+	b3.b3DestroyWorld( world );
+	return ( v0 - v1 ) / ( 10 * 30 / 60 );
+}
+
+// Packed weights: bits 0-31 friction weight * 1000, bits 32-62 restitution weight * 1000, bit 63 = present
+const packWeights = ( friction, restitution ) =>
+	( 1n << 63n ) | BigInt( Math.round( friction * 1000 ) ) | ( BigInt( Math.round( restitution * 1000 ) ) << 32n );
+
+// Bounce a sphere off the ground with no gravity: rebound speed / impact speed = mixed restitution.
+function bounceRestitution( b3, rule, groundRestitution, groundMaterialId, ballRestitution, ballMaterialId )
+{
+	const world = zeroGravityWorld( b3 );
+	b3.b3World_SetMixingRules( world, b3.b3MixingRule.geometric, rule );
+	const groundShapeDef = b3.b3DefaultShapeDef();
+	groundShapeDef.baseMaterial.restitution = groundRestitution;
+	groundShapeDef.baseMaterial.userMaterialId = groundMaterialId;
+	b3.b3CreateBoxShape( staticBody( b3, world ), groundShapeDef, 5, 0.5, 5 );
+	const ballDef = b3.b3DefaultBodyDef();
+	ballDef.type = b3.b3BodyType.b3_dynamicBody;
+	ballDef.position = [ 0, 1.5, 0 ];
+	ballDef.linearVelocity = [ 0, -5, 0 ];
+	const ball = b3.b3CreateBody( world, ballDef );
+	const ballShapeDef = b3.b3DefaultShapeDef();
+	ballShapeDef.baseMaterial.restitution = ballRestitution;
+	ballShapeDef.baseMaterial.userMaterialId = ballMaterialId;
+	b3.b3CreateSphereShape( ball, ballShapeDef, { center: [ 0, 0, 0 ], radius: 0.5 } );
+	const v = [ 0, 0, 0 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const rebound = b3.b3Body_GetLinearVelocity( v, ball )[ 1 ];
+	b3.b3DestroyWorld( world );
+	return rebound / 5;
+}
+
+function mixingRules( b3 )
+{
+	const R = b3.b3MixingRule;
+	assert.deepEqual( { ...R }, { geometric: 0, average: 1, min: 2, max: 3, multiply: 4, weighted: 5 }, 'b3MixingRule values' );
+
+	const weighted = [ R.weighted, R.weighted ];
+	// (0.2 * 1 + 1.0 * 3) / (1 + 3) = 0.8
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 1, 1 ), 1.0, packWeights( 3, 1 ) ), 0.8, 0.03, 'weighted friction' );
+	// zero friction weights on both shapes: a plain average
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 0, 1 ), 1.0, packWeights( 0, 1 ) ), 0.6, 0.03, 'zero weights average' );
+	// all-zero weights still carry the presence bit, so they average instead of falling back
+	near( slidingFriction( b3, weighted, 0.2, packWeights( 0, 0 ), 1.0, packWeights( 0, 0 ) ), 0.6, 0.03, 'all-zero weights average' );
+	// a shape without the presence bit uses box3d's default geometric mean, even with other bits set
+	near( slidingFriction( b3, weighted, 0.2, 0n, 1.0, packWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'unweighted shape falls back' );
+	near( slidingFriction( b3, weighted, 0.2, 3000n, 1.0, packWeights( 3, 1 ) ), Math.sqrt( 0.2 ), 0.03, 'no presence bit falls back' );
+	near( slidingFriction( b3, null, 0.2, 0n, 1.0, 0n ), Math.sqrt( 0.2 ), 0.03, 'default rule is geometric' );
+	near( slidingFriction( b3, [ R.min, R.max ], 0.2, 0n, 1.0, 0n ), 0.2, 0.03, 'min rule' );
+	near( slidingFriction( b3, [ R.average, R.max ], 0.2, 0n, 1.0, 0n ), 0.6, 0.03, 'average rule' );
+
+	// Restitution reads its weight from bits 32-62: (0.2 * 3 + 0.8 * 1) / 4 = 0.35
+	near( bounceRestitution( b3, R.weighted, 0.2, packWeights( 0, 3 ), 0.8, packWeights( 0, 1 ) ), 0.35, 0.03, 'weighted restitution' );
+	near( bounceRestitution( b3, R.weighted, 0.2, 0n, 0.8, packWeights( 0, 1 ) ), 0.8, 0.03, 'unweighted restitution falls back to max' );
+
+	const world = zeroGravityWorld( b3 );
+	assert.throws( () => b3.b3World_SetMixingRules( world, 6, 0 ), RangeError, 'unknown rule throws' );
+	b3.b3DestroyWorld( world );
+}
+
+// Packed body move events and packed transforms match the per-item readers.
+function packedReads( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const bodies = [];
+	for ( let i = 0; i < 5; i++ )
+	{
+		const { body } = dynamicBox( b3, world, [ i * 2, 5 + i, 0 ] );
+		b3.b3Body_SetAngularVelocity( body, [ 0.3 * i, 1, 0 ] );
+		bodies.push( body );
+	}
+	const eb = b3.createEventsBuffer();
+	for ( let i = 0; i < 3; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	b3.getEvents( eb, world );
+
+	const n = b3.getNumBodyMoveEvents( eb );
+	assert.equal( n, bodies.length, 'every falling body moved' );
+	const packed = b3.getBodyMoveEventsPacked( eb );
+	assert.ok( packed instanceof Float64Array && packed.length === n * 11, 'packed events: 11 per event' );
+	const ev = b3.createBodyMoveEvent();
+	for ( let i = 0; i < n; i++ )
+	{
+		b3.getBodyMoveEventAt( ev, eb, i );
+		const o = i * 11;
+		const expected = [ ev.bodyId.index1, ev.bodyId.world0, ev.bodyId.generation, ...ev.position, ...ev.rotation, ev.fellAsleep ? 1 : 0 ];
+		assert.deepEqual( Array.from( packed.subarray( o, o + 11 ) ), expected, `packed event ${i} matches getBodyMoveEventAt` );
+	}
+	b3.destroyEventsBuffer( eb );
+
+	// Packed transforms, with a destroyed body reading as NaN
+	const gone = bodies.pop();
+	b3.b3DestroyBody( gone );
+	const ids = new Int32Array( [ ...bodies, gone ].flatMap( ( id ) => [ id.index1, id.world0, id.generation ] ) );
+	const transforms = b3.b3Body_GetTransformsPacked( ids );
+	assert.ok( transforms instanceof Float64Array && transforms.length === ( bodies.length + 1 ) * 7, 'packed transforms: 7 per body' );
+	bodies.forEach( ( body, i ) =>
+	{
+		const [ p, q ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], body );
+		assert.deepEqual( Array.from( transforms.subarray( i * 7, i * 7 + 7 ) ), [ ...p, ...q ], `packed transform ${i} matches b3Body_GetTransform` );
+	} );
+	assert.ok( transforms.subarray( bodies.length * 7 ).every( Number.isNaN ), 'invalid id reads as NaN' );
+
+	b3.b3DestroyWorld( world );
+}
+
+// A constant force balancing gravity holds a body still across steps; torques persist too.
+function constantForces( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const { body } = dynamicBox( b3, world, [ 0, 5, 0 ] );
+	const m = b3.b3Body_GetMass( body );
+
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], null );
+	const p = [ 0, 0, 0 ];
+	for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 5, 1e-4, 'balanced body holds still' );
+
+	// Off-center force at a body-local point also spins the body
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], [ 0.5, 0, 0 ] );
+	for ( let i = 0; i < 10; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetAngularVelocity( p, body )[ 2 ] > 0.1, 'off-center force applies a torque' );
+	b3.b3Body_SetConstantForce( body, [ 0, 10 * m, 0 ], null );
+	b3.b3Body_SetAngularVelocity( body, [ 0, 0, 0 ] );
+
+	b3.b3Body_SetConstantTorque( body, [ 0, m, 0 ] );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetAngularVelocity( p, body )[ 1 ] > 0.5, 'constant torque spins the body' );
+
+	b3.b3Body_ClearConstantForces( body );
+	const y0 = b3.b3Body_GetPosition( p, body )[ 1 ];
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetPosition( p, body )[ 1 ] < y0 - 1, 'cleared forces: the body falls' );
+
+	// Setting a force wakes a sleeping body once
+	b3.b3Body_SetAwake( body, false );
+	b3.b3Body_SetConstantForce( body, [ 0, 20 * m, 0 ], null );
+	assert.ok( b3.b3Body_IsAwake( body ), 'non-zero constant force wakes the body' );
+
+	// Destroying the body drops its entry; stepping must not touch the stale id
+	b3.b3DestroyBody( body );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	assert.throws( () => b3.b3Body_SetConstantForce( body, [ 0, 1, 0 ], null ), /body is not valid/, 'stale id is rejected' );
+	// Clearing tolerates any id, including a world slot past the table
+	b3.b3Body_ClearConstantForces( body );
+	b3.b3Body_ClearConstantForces( { index1: 1, world0: 60000, generation: 1 } );
+	b3.b3DestroyWorld( world );
+}
+
+// A distance-joint spring in stiffness units stretches by m*g/k whatever the mass.
+function stiffnessSpring( b3, density )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const anchor = staticBody( b3, world, [ 0, 10, 0 ] );
+	const shapeDef = b3.b3DefaultShapeDef();
+	shapeDef.density = density;
+	const { body } = dynamicBox( b3, world, [ 0, 8, 0 ], 0.25, shapeDef );
+	const m = b3.b3Body_GetMass( body );
+
+	const k = 400;
+	const def = b3.b3DefaultDistanceJointDef();
+	assert.equal( def.springStiffness, 0, 'stiffness defaults to 0' );
+	assert.equal( def.springDamping, 0, 'damping defaults to 0' );
+	def.base.bodyIdA = anchor;
+	def.base.bodyIdB = body;
+	def.length = 2;
+	def.enableSpring = true;
+	def.springStiffness = k;
+	def.springDamping = 0.5 * 2 * Math.sqrt( k * m );
+	const joint = b3.b3CreateDistanceJoint( world, def );
+	for ( let i = 0; i < 600; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const extension = b3.b3DistanceJoint_GetCurrentLength( joint ) - 2;
+
+	b3.b3DistanceJoint_SetSpringStiffness( joint, 2 * k, def.springDamping );
+	b3.b3Joint_WakeBodies( joint ); // the settled body may be asleep
+	assert.equal( b3.b3DistanceJoint_GetSpringStiffness( joint ), 2 * k, 'stiffness setter' );
+	for ( let i = 0; i < 600; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const stifferExtension = b3.b3DistanceJoint_GetCurrentLength( joint ) - 2;
+	b3.b3DestroyWorld( world );
+	return { m, k, extension, stifferExtension };
+}
+
+function distanceStiffness( b3 )
+{
+	for ( const density of [ 100, 800 ] )
+	{
+		const { m, k, extension, stifferExtension } = stiffnessSpring( b3, density );
+		near( extension, m * 10 / k, 0.01 * m * 10 / k + 1e-4, `spring settles at mg/k (m=${m})` );
+		near( stifferExtension, m * 10 / ( 2 * k ), 0.01 * m * 10 / ( 2 * k ) + 1e-4, `setter: mg/2k (m=${m})` );
+	}
+}
+
+// b3Shape_SetBakedHull / b3Shape_SetHull resize a shape in place; b3Shape_Disable takes it out of contacts and queries.
+function shapeEditing( b3 )
+{
+	const worldDef = b3.b3DefaultWorldDef();
+	worldDef.gravity = [ 0, -10, 0 ];
+	const world = b3.b3CreateWorld( worldDef );
+	const ground = staticBody( b3, world );
+	const groundShape = b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+	const { body, shape } = dynamicBox( b3, world, [ 0, 2, 0 ], 0.5 );
+	const mass = b3.b3Body_GetMass( body );
+
+	const unitCube = b3.b3CreateHull( [ -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5,
+		-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5 ] );
+	assert.ok( b3.b3Shape_SetBakedHull( shape, unitCube, { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] }, [ 2, 3, 4 ], true ), 'SetBakedHull succeeds' );
+	b3.b3DestroyHull( unitCube );
+	const aabb = b3.b3Shape_GetAABB( [ 0, 0, 0, 0, 0, 0 ], shape );
+	near( aabb[ 3 ] - aabb[ 0 ], 2, 0.05, 'resized x extent' );
+	near( aabb[ 4 ] - aabb[ 1 ], 3, 0.05, 'resized y extent' );
+	near( aabb[ 5 ] - aabb[ 2 ], 4, 0.05, 'resized z extent' );
+	near( b3.b3Body_GetMass( body ), mass * 24, mass * 0.01, 'updateBodyMass recomputes the mass' );
+
+	// 1:1 b3Shape_SetHull: swaps in a copy of the hull as is and leaves the mass alone
+	const { body: probeBody, shape: probe } = dynamicBox( b3, world, [ 20, 5, 0 ], 0.5 );
+	const probeMass = b3.b3Body_GetMass( probeBody );
+	const smallCube = b3.b3CreateHull( [ -0.25, -0.25, -0.25, 0.25, -0.25, -0.25, 0.25, 0.25, -0.25, -0.25, 0.25, -0.25,
+		-0.25, -0.25, 0.25, 0.25, -0.25, 0.25, 0.25, 0.25, 0.25, -0.25, 0.25, 0.25 ] );
+	b3.b3Shape_SetHull( probe, smallCube );
+	b3.b3DestroyHull( smallCube );
+	const probeBox = b3.b3Shape_GetAABB( [ 0, 0, 0, 0, 0, 0 ], probe );
+	near( probeBox[ 3 ] - probeBox[ 0 ], 0.5, 0.05, 'SetHull swaps the geometry' );
+	assert.equal( b3.b3Body_GetMass( probeBody ), probeMass, 'SetHull leaves the mass alone' );
+	b3.b3DestroyBody( probeBody );
+
+	// Rest on the ground, then disable the ground: no contact, no ray hit, the body falls
+	const p = [ 0, 0, 0 ];
+	for ( let i = 0; i < 90; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 0.5 + 1.5, 0.05, 'box rests on the ground' );
+	const down = () => b3.b3World_CastRayClosest( world, [ 10, 5, 10 ], [ 0, -10, 0 ], b3.b3DefaultQueryFilter() );
+	assert.ok( down().hit, 'ground is hit by a ray' );
+
+	assert.ok( b3.b3Shape_IsEnabled( groundShape ), 'shapes start enabled' );
+	b3.b3Shape_Disable( groundShape );
+	assert.equal( b3.b3Shape_IsEnabled( groundShape ), false, 'IsEnabled reports disabled' );
+	assert.equal( down().hit, false, 'disabled shape is skipped by queries' );
+	for ( let i = 0; i < 30; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	assert.ok( b3.b3Body_GetPosition( p, body )[ 1 ] < 1, 'body falls through the disabled ground' );
+
+	// Enable restores contacts and queries
+	b3.b3Body_SetTransform( body, [ 0, 3, 0 ], [ 0, 0, 0, 1 ] );
+	b3.b3Body_SetLinearVelocity( body, [ 0, 0, 0 ] );
+	b3.b3Shape_Enable( groundShape );
+	assert.ok( down().hit, 'enabled shape is hit again' );
+	for ( let i = 0; i < 90; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	near( b3.b3Body_GetPosition( p, body )[ 1 ], 0.5 + 1.5, 0.05, 'box lands on the re-enabled ground' );
+
+	b3.b3DestroyWorld( world );
+}
+
+// b3ShapeDef.meshRestOffset: a box rests flush on a mesh with offset 0, and B3_MESH_REST_OFFSET (5 mm) above it by default.
+function meshRestOffset( b3 )
+{
+	const mesh = b3.b3CreateMesh(
+		new Float32Array( [ -10, 0, -10,  -10, 0, 10,  10, 0, 10,  10, 0, -10 ] ),
+		new Uint32Array( [ 0, 1, 2,  0, 2, 3 ] ),
+	);
+	const restHeight = ( offset ) =>
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -10, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const sd = b3.b3DefaultShapeDef();
+		if ( offset !== undefined ) sd.meshRestOffset = offset;
+		const floor = b3.b3CreateMeshShape( staticBody( b3, world ), sd, mesh, [ 1, 1, 1 ] );
+		const reported = b3.b3Shape_GetMeshRestOffset( floor );
+		const { body } = dynamicBox( b3, world, [ 0, 0.5, 0 ], 0.5 );
+		for ( let i = 0; i < 120; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+		const y = b3.b3Body_GetPosition( [ 0, 0, 0 ], body )[ 1 ];
+		b3.b3Shape_SetMeshRestOffset( floor, 0.001 );
+		near( b3.b3Shape_GetMeshRestOffset( floor ), 0.001, 1e-7, 'SetMeshRestOffset round-trips' );
+		b3.b3DestroyWorld( world );
+		return { y, reported };
+	};
+
+	near( b3.b3DefaultShapeDef().meshRestOffset, 0.005, 1e-7, 'default mesh rest offset' );
+	const lifted = restHeight( undefined );
+	const flush = restHeight( 0 );
+	near( lifted.reported, 0.005, 1e-7, 'default offset reported' );
+	assert.equal( flush.reported, 0, 'zero offset reported' );
+	near( flush.y, 0.5, 0.00125, 'box rests flush on a zero offset mesh' );
+	near( lifted.y - flush.y, 0.005, 0.00125, 'default offset lifts the box by the rest offset' );
+	b3.b3DestroyMesh( mesh );
+}
+
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
 // determinism, live setters, the example presets (the four originals and the 45 car matrix),
 // the preset layers, and a 50 car perf check.
@@ -1182,6 +1740,15 @@ async function check( label, importPath, decompositionOptions )
 	assert.ok( worstNormalErr < 1e-3, `manifold normal is unit-length (err ${worstNormalErr.toExponential( 1 )})` );
 
 	const { planeCount } = eventsAndPlanes( b3 );
+	filteredQueries( b3 );
+
+	cylindricalJoint( b3 );
+	mixingRules( b3 );
+	packedReads( b3 );
+	constantForces( b3 );
+	distanceStiffness( b3 );
+	shapeEditing( b3 );
+	meshRestOffset( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 

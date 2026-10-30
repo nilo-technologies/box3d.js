@@ -1088,7 +1088,7 @@ void collectDrawSegment( b3Pos p1, b3Pos p2, b3HexColor color, void* context )
 	else if ( buf->pass == DebugPass_contactForces )
 	{
 		// Friction is the yellow segment inside the contact-forces branch.
-		// Normal impulses are magenta. drawFrictionForces is never read.
+		// Normal impulses are magenta.
 		if ( rgb( color ) == (uint32_t)b3_colorYellow )
 		{
 			if ( buf->keepFriction ) buf->addSegment( p1, p2, packed, DebugDrawRole_frictionForces );
@@ -1501,6 +1501,373 @@ private:
 	VHACD::IVHACD* m_vhacd;
 };
 #endif
+
+// --- friction / restitution mixing rules ---
+// Native callbacks installed by b3World_SetMixingRules. box3d calls them from solver
+// worker threads with no context pointer, so each rule is a stateless free function
+// (safe in the MT build, no JS call per contact). Order matches the b3MixingRule
+// constants in src/facade.js.
+enum MixingRule
+{
+	e_mixGeometric,
+	e_mixAverage,
+	e_mixMin,
+	e_mixMax,
+	e_mixMultiply,
+	e_mixWeighted,
+	e_mixRuleCount,
+};
+
+// Per-shape weights packed into b3SurfaceMaterial::userMaterialId, so the weighted rule takes
+// that field over (it can't also tag materials while this rule is active):
+// bits 0-31 friction weight * 1000 (uint32), bits 32-62 restitution weight * 1000 (31 bits),
+// bit 63 set = weights present. The mixed value is (a*wA + b*wB) / (wA + wB), a plain average
+// when both weights are 0. A shape without the presence bit uses box3d's default rule for the pair.
+constexpr uint64_t kWeightsPresent = 1ull << 63;
+
+inline bool hasWeights( uint64_t id ) { return ( id & kWeightsPresent ) != 0; }
+inline float frictionWeight( uint64_t id ) { return (float)(uint32_t)id * 0.001f; }
+inline float restitutionWeight( uint64_t id ) { return (float)(uint32_t)( ( id >> 32 ) & 0x7FFFFFFFu ) * 0.001f; }
+
+inline float weightedMix( float a, float wA, float b, float wB )
+{
+	float w = wA + wB;
+	return w > 0.0f ? ( a * wA + b * wB ) / w : 0.5f * ( a + b );
+}
+
+float mixFrictionGeometric( float a, uint64_t, float b, uint64_t ) { return sqrtf( a * b ); }
+float mixFrictionAverage( float a, uint64_t, float b, uint64_t ) { return 0.5f * ( a + b ); }
+float mixFrictionMin( float a, uint64_t, float b, uint64_t ) { return std::min( a, b ); }
+float mixFrictionMax( float a, uint64_t, float b, uint64_t ) { return std::max( a, b ); }
+float mixFrictionMultiply( float a, uint64_t, float b, uint64_t ) { return a * b; }
+float mixFrictionWeighted( float a, uint64_t idA, float b, uint64_t idB )
+{
+	if ( !hasWeights( idA ) || !hasWeights( idB ) ) return sqrtf( a * b );
+	return weightedMix( a, frictionWeight( idA ), b, frictionWeight( idB ) );
+}
+
+float mixRestitutionGeometric( float a, uint64_t, float b, uint64_t ) { return sqrtf( a * b ); }
+float mixRestitutionAverage( float a, uint64_t, float b, uint64_t ) { return 0.5f * ( a + b ); }
+float mixRestitutionMin( float a, uint64_t, float b, uint64_t ) { return std::min( a, b ); }
+float mixRestitutionMax( float a, uint64_t, float b, uint64_t ) { return std::max( a, b ); }
+float mixRestitutionMultiply( float a, uint64_t, float b, uint64_t ) { return a * b; }
+float mixRestitutionWeighted( float a, uint64_t idA, float b, uint64_t idB )
+{
+	if ( !hasWeights( idA ) || !hasWeights( idB ) ) return std::max( a, b );
+	return weightedMix( a, restitutionWeight( idA ), b, restitutionWeight( idB ) );
+}
+
+b3FrictionCallback* const g_frictionRules[e_mixRuleCount] = {
+	mixFrictionGeometric, mixFrictionAverage, mixFrictionMin, mixFrictionMax, mixFrictionMultiply, mixFrictionWeighted,
+};
+b3RestitutionCallback* const g_restitutionRules[e_mixRuleCount] = {
+	mixRestitutionGeometric, mixRestitutionAverage, mixRestitutionMin,
+	mixRestitutionMax, mixRestitutionMultiply, mixRestitutionWeighted,
+};
+
+EM_JS( void, b3ThrowMixingRuleError, ( int rule ), {
+	throw new RangeError( "box3d.js: unknown mixing rule " + rule + " (use a b3MixingRule value)" );
+} );
+
+void setMixingRules( b3WorldId worldId, int frictionRule, int restitutionRule )
+{
+	if ( frictionRule < 0 || frictionRule >= e_mixRuleCount ) b3ThrowMixingRuleError( frictionRule );
+	if ( restitutionRule < 0 || restitutionRule >= e_mixRuleCount ) b3ThrowMixingRuleError( restitutionRule );
+	b3World_SetFrictionCallback( worldId, g_frictionRules[frictionRule] );
+	b3World_SetRestitutionCallback( worldId, g_restitutionRules[restitutionRule] );
+}
+
+// --- persistent (constant) body forces ---
+// box3d clears forces after every step and drops ApplyForce(wake=false) on a sleeping
+// body. This side table, one map per world slot keyed by body index, holds forces and
+// torques set once; the b3World_Step binding re-applies them (wake=false) before each
+// step. Entries die with the body: b3DestroyBody erases them, b3DestroyWorld clears the
+// world's table, and a stale id found at step time is dropped.
+struct ConstantForce
+{
+	b3BodyId bodyId;
+	b3Vec3 force;
+	b3Vec3 localPoint; // force application point in body coordinates
+	b3Vec3 torque;
+	bool hasForce;
+	bool atCenter;
+	bool hasTorque;
+};
+
+std::unordered_map<int32_t, ConstantForce> g_constantForces[B3_MAX_WORLDS];
+
+inline bool isZero( b3Vec3 v ) { return v.x == 0.0f && v.y == 0.0f && v.z == 0.0f; }
+
+ConstantForce& constantForceEntry( b3BodyId bodyId )
+{
+	ConstantForce& entry = g_constantForces[bodyId.world0][bodyId.index1];
+	if ( entry.bodyId.index1 != bodyId.index1 || entry.bodyId.generation != bodyId.generation )
+	{
+		// fresh entry, or a stale one left by a destroyed body that reused this slot
+		entry = ConstantForce{};
+		entry.bodyId = bodyId;
+	}
+	return entry;
+}
+
+void eraseConstantForceIfEmpty( b3BodyId bodyId )
+{
+	auto& table = g_constantForces[bodyId.world0];
+	auto it = table.find( bodyId.index1 );
+	if ( it != table.end() && it->second.hasForce == false && it->second.hasTorque == false ) table.erase( it );
+}
+
+void setConstantForce( b3BodyId bodyId, b3Vec3 force, val point )
+{
+	if ( !b3Body_IsValid( bodyId ) ) throwJsError( e_bodyInvalid );
+	ConstantForce& entry = constantForceEntry( bodyId );
+	entry.hasForce = !isZero( force );
+	entry.force = force;
+	entry.atCenter = point.isNull() || point.isUndefined();
+	entry.localPoint = entry.atCenter ? b3Vec3{ 0.0f, 0.0f, 0.0f } : point.as<b3Vec3>();
+	eraseConstantForceIfEmpty( bodyId );
+	if ( !isZero( force ) ) b3Body_SetAwake( bodyId, true );
+}
+
+void setConstantTorque( b3BodyId bodyId, b3Vec3 torque )
+{
+	if ( !b3Body_IsValid( bodyId ) ) throwJsError( e_bodyInvalid );
+	ConstantForce& entry = constantForceEntry( bodyId );
+	entry.hasTorque = !isZero( torque );
+	entry.torque = torque;
+	eraseConstantForceIfEmpty( bodyId );
+	if ( !isZero( torque ) ) b3Body_SetAwake( bodyId, true );
+}
+
+// Called with unvalidated ids (b3DestroyBody, b3Body_ClearConstantForces), so range-check the
+// world slot before indexing the fixed table.
+void clearConstantForces( b3BodyId bodyId )
+{
+	if ( bodyId.world0 >= B3_MAX_WORLDS ) return;
+	auto& table = g_constantForces[bodyId.world0];
+	auto it = table.find( bodyId.index1 );
+	if ( it != table.end() && it->second.bodyId.generation == bodyId.generation ) table.erase( it );
+}
+
+void applyConstantForces( b3WorldId worldId )
+{
+	auto& table = g_constantForces[worldId.index1 - 1];
+	for ( auto it = table.begin(); it != table.end(); )
+	{
+		const ConstantForce& entry = it->second;
+		if ( !b3Body_IsValid( entry.bodyId ) )
+		{
+			it = table.erase( it );
+			continue;
+		}
+		if ( entry.hasForce )
+		{
+			if ( entry.atCenter ) b3Body_ApplyForceToCenter( entry.bodyId, entry.force, false );
+			else b3Body_ApplyForce( entry.bodyId, entry.force, b3Body_GetWorldPoint( entry.bodyId, entry.localPoint ), false );
+		}
+		if ( entry.hasTorque ) b3Body_ApplyTorque( entry.bodyId, entry.torque, false );
+		++it;
+	}
+}
+
+// --- packed body transforms ---
+// ids: Int32Array of (index1, world0, generation) triples. Returns a fresh Float64Array,
+// 7 per body: px py pz qx qy qz qw. An invalid id reads as NaN so a stale handle never
+// aborts the module.
+constexpr int kPackedTransformStride = 7;
+
+val getBodyTransformsPacked( val ids )
+{
+	std::vector<int32_t> packedIds = convertJSArrayToNumberVector<int32_t>( ids );
+	size_t count = packedIds.size() / 3;
+	std::vector<double> out( count * kPackedTransformStride );
+	for ( size_t i = 0; i < count; ++i )
+	{
+		b3BodyId bodyId = { packedIds[3 * i], (uint16_t)packedIds[3 * i + 1], (uint16_t)packedIds[3 * i + 2] };
+		double* o = out.data() + i * kPackedTransformStride;
+		if ( !b3Body_IsValid( bodyId ) )
+		{
+			std::fill( o, o + kPackedTransformStride, NAN );
+			continue;
+		}
+		b3Transform t = b3Body_GetTransform( bodyId );
+		o[0] = t.p.x; o[1] = t.p.y; o[2] = t.p.z;
+		o[3] = t.q.v.x; o[4] = t.q.v.y; o[5] = t.q.v.z; o[6] = t.q.s;
+	}
+	val result = val::global( "Float64Array" ).new_( out.size() );
+	result.call<void>( "set", val( typed_memory_view( out.size(), out.data() ) ) );
+	return result;
+}
+
+// --- natively filtered queries ---
+// b3QueryOptions { ignoreBodies?, ignoreShapes?: Int32Array of (index1, world0, generation)
+// triples, excludeSensors?: boolean }. The skip test runs inside the box3d query callback,
+// so filtering a candidate never calls into JS (each JS callback is a sandbox crossing).
+struct QueryOptions
+{
+	std::vector<int32_t> ignoreBodies;
+	std::vector<int32_t> ignoreShapes;
+	bool excludeSensors = false;
+
+	static bool listed( const std::vector<int32_t>& triples, int32_t index1, int32_t world0, int32_t generation )
+	{
+		for ( size_t i = 0; i + 2 < triples.size(); i += 3 )
+		{
+			if ( triples[i] == index1 && triples[i + 1] == world0 && triples[i + 2] == generation ) return true;
+		}
+		return false;
+	}
+
+	bool skips( b3ShapeId shapeId ) const
+	{
+		if ( listed( ignoreShapes, shapeId.index1, shapeId.world0, shapeId.generation ) ) return true;
+		if ( !ignoreBodies.empty() )
+		{
+			b3BodyId bodyId = b3Shape_GetBody( shapeId );
+			if ( listed( ignoreBodies, bodyId.index1, bodyId.world0, bodyId.generation ) ) return true;
+		}
+		return excludeSensors && b3Shape_IsSensor( shapeId );
+	}
+};
+
+QueryOptions readQueryOptions( val options )
+{
+	QueryOptions q;
+	if ( options.isUndefined() || options.isNull() ) return q;
+	val bodies = options["ignoreBodies"];
+	if ( !bodies.isUndefined() && !bodies.isNull() ) q.ignoreBodies = convertJSArrayToNumberVector<int32_t>( bodies );
+	val shapes = options["ignoreShapes"];
+	if ( !shapes.isUndefined() && !shapes.isNull() ) q.ignoreShapes = convertJSArrayToNumberVector<int32_t>( shapes );
+	val sensors = options["excludeSensors"];
+	q.excludeSensors = !sensors.isUndefined() && !sensors.isNull() && sensors.as<bool>();
+	return q;
+}
+
+val toF64( const std::vector<double>& v )
+{
+	val result = val::global( "Float64Array" ).new_( v.size() );
+	if ( !v.empty() ) result.call<void>( "set", val( typed_memory_view( v.size(), v.data() ) ) );
+	return result;
+}
+
+inline void pushShapeAndBody( std::vector<double>& out, b3ShapeId shapeId, b3BodyId bodyId )
+{
+	out.insert( out.end(), { (double)shapeId.index1, (double)shapeId.world0, (double)shapeId.generation, (double)bodyId.index1,
+							 (double)bodyId.world0, (double)bodyId.generation } );
+}
+
+// Stride 14: shape id(3), body id(3), body type, plane normal(3), plane offset, point(3) relative to origin.
+constexpr int kMoverPlaneStride = 6 + 1 + 4 + 3;
+static_assert( kMoverPlaneStride == 14, "b3World_CollideMoverPacked stride is part of the public contract" );
+
+val collideMoverPacked( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, val options )
+{
+	struct Context
+	{
+		QueryOptions options;
+		std::vector<double> out;
+	} context{ readQueryOptions( options ), {} };
+
+	b3World_CollideMover( worldId, origin, &mover, filter,
+		[]( b3ShapeId shapeId, const b3PlaneResult* planes, int planeCount, void* ctx ) -> bool
+		{
+			Context* c = static_cast<Context*>( ctx );
+			if ( c->options.skips( shapeId ) ) return true;
+			b3BodyId bodyId = b3Shape_GetBody( shapeId );
+			double bodyType = (double)b3Body_GetType( bodyId );
+			for ( int i = 0; i < planeCount; ++i )
+			{
+				const b3PlaneResult& pr = planes[i];
+				pushShapeAndBody( c->out, shapeId, bodyId );
+				c->out.insert( c->out.end(), { bodyType, (double)pr.plane.normal.x, (double)pr.plane.normal.y,
+											   (double)pr.plane.normal.z, (double)pr.plane.offset, (double)pr.point.x,
+											   (double)pr.point.y, (double)pr.point.z } );
+			}
+			return true;
+		},
+		&context );
+	return toF64( context.out );
+}
+
+float castMoverFiltered( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3Vec3 translation, b3QueryFilter filter, val options )
+{
+	QueryOptions q = readQueryOptions( options );
+	return b3World_CastMover( worldId, origin, &mover, translation, filter,
+		[]( b3ShapeId shapeId, void* ctx ) -> bool { return static_cast<QueryOptions*>( ctx )->skips( shapeId ) == false; }, &q );
+}
+
+// Closest-hit cast state: 14 numbers when hit, shape id(3), body id(3), point(3), normal(3), fraction, spare 0.
+constexpr int kClosestHitStride = 14;
+
+struct ClosestHitContext
+{
+	QueryOptions options;
+	bool hit = false;
+	b3ShapeId shapeId = {};
+	b3Pos point = {};
+	b3Vec3 normal = {};
+	float fraction = 1.0f;
+};
+
+float closestHitCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* ctx )
+{
+	ClosestHitContext* c = static_cast<ClosestHitContext*>( ctx );
+	if ( c->options.skips( shapeId ) ) return -1.0f;
+	c->hit = true;
+	c->shapeId = shapeId;
+	c->point = point;
+	c->normal = normal;
+	c->fraction = fraction;
+	// clip the cast so only closer hits are reported from here on
+	return fraction;
+}
+
+val packClosestHit( const ClosestHitContext& c )
+{
+	std::vector<double> out;
+	if ( c.hit )
+	{
+		out.reserve( kClosestHitStride );
+		pushShapeAndBody( out, c.shapeId, b3Shape_GetBody( c.shapeId ) );
+		out.insert( out.end(), { (double)c.point.x, (double)c.point.y, (double)c.point.z, (double)c.normal.x, (double)c.normal.y,
+								 (double)c.normal.z, (double)c.fraction, 0.0 } );
+	}
+	return toF64( out );
+}
+
+val castRayClosestFiltered( b3WorldId worldId, b3Vec3 origin, b3Vec3 translation, b3QueryFilter filter, val options )
+{
+	ClosestHitContext c;
+	c.options = readQueryOptions( options );
+	b3World_CastRay( worldId, origin, translation, filter, closestHitCallback, &c );
+	return packClosestHit( c );
+}
+
+val castShapeClosestFiltered( b3WorldId worldId, b3Vec3 origin, val points, float radius, b3Vec3 translation, b3QueryFilter filter,
+							  val options )
+{
+	std::vector<float> f = convertJSArrayToNumberVector<float>( points );
+	b3ShapeProxy proxy{ reinterpret_cast<const b3Vec3*>( f.data() ), (int)( f.size() / 3 ), radius };
+	ClosestHitContext c;
+	c.options = readQueryOptions( options );
+	b3World_CastShape( worldId, origin, &proxy, translation, filter, closestHitCallback, &c );
+	return packClosestHit( c );
+}
+
+// --- shape hull swap ---
+// Bakes transform/scale into a fresh hull (as b3CreateTransformedHullShape does), swaps
+// it into the shape (the world keeps its own copy), and optionally recomputes the body
+// mass. Returns false, leaving the shape unchanged, if the transformed hull is degenerate.
+bool setShapeBakedHull( b3ShapeId shapeId, const b3HullData* hull, b3Transform transform, b3Vec3 scale, bool updateBodyMass )
+{
+	b3HullData* baked = b3CloneAndTransformHull( hull, transform, scale );
+	if ( baked == nullptr ) return false;
+	b3Shape_SetHull( shapeId, baked );
+	b3DestroyHull( baked );
+	if ( updateBodyMass ) b3Body_ApplyMassFromShapes( b3Shape_GetBody( shapeId ) );
+	return true;
+}
+
 // Reusable, wasm-backed vehicle readout. load(vehicleId) packs the vehicle state
 // and every wheel's state and world transform in one boundary crossing, so a
 // frame's visuals and HUD allocate nothing. Strides are in namespace layout; the
@@ -1622,7 +1989,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.value( "b3_wheelJoint", b3_wheelJoint )
 		.value( "b3_moverJoint", b3_moverJoint )
 		.value( "b3_pogoJoint", b3_pogoJoint )
-		.value( "b3_vehicleWheelJoint", b3_vehicleWheelJoint );
+		.value( "b3_vehicleWheelJoint", b3_vehicleWheelJoint )
+		.value( "b3_cylindricalJoint", b3_cylindricalJoint );
 
 	// Math value types are mathcat-shaped plain arrays (see file header).
 	// b3Vec3 -> [x,y,z], b3Quat -> [x,y,z,w], b3AABB -> [minX,minY,minZ,maxX,maxY,maxZ].
@@ -1856,6 +2224,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "invokeContactCreation", &b3ShapeDef::invokeContactCreation )
 		.field( "updateBodyMass", &b3ShapeDef::updateBodyMass )
 		.field( "enableSpeculativeContact", &b3ShapeDef::enableSpeculativeContact )
+		.field( "meshRestOffset", &b3ShapeDef::meshRestOffset )
 		.field( "internalValue", &b3ShapeDef::internalValue );
 
 	function( "b3DefaultWorldDef()", &b3DefaultWorldDef );
@@ -1873,9 +2242,18 @@ EMSCRIPTEN_BINDINGS( box3d )
 		def.userDebugShapeContext = nullptr;
 		return b3CreateWorld( &def );
 	} );
-	function( "b3DestroyWorld(worldId)", &b3DestroyWorld );
+	function( "b3DestroyWorld(worldId)", +[]( b3WorldId worldId ) {
+		if ( b3World_IsValid( worldId ) ) g_constantForces[worldId.index1 - 1].clear();
+		b3DestroyWorld( worldId );
+	} );
 	function( "b3World_IsValid(worldId)", &b3World_IsValid );
-	function( "b3World_Step(worldId, timeStep, subStepCount)", &b3World_Step );
+	// Re-applies the constant forces (b3Body_SetConstantForce/Torque) before stepping.
+	function( "b3World_Step(worldId, timeStep, subStepCount)", +[]( b3WorldId worldId, float timeStep, int subStepCount ) {
+		if ( b3World_IsValid( worldId ) ) applyConstantForces( worldId );
+		b3World_Step( worldId, timeStep, subStepCount );
+	} );
+	// Install native friction/restitution mixing callbacks (b3MixingRule values).
+	function( "b3World_SetMixingRules(worldId, frictionRule, restitutionRule)", &setMixingRules );
 	function( "b3World_SetGravity(worldId, gravity)", &b3World_SetGravity );
 	out_function( "b3World_GetGravity(out, worldId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3WorldId worldId ) { writeVec3( out, b3World_GetGravity( worldId ) ); } );
 
@@ -1910,7 +2288,10 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3World_GetMaxCapacity(worldId)", &b3World_GetMaxCapacity );
 
 	function( "b3CreateBody(worldId, bodyDef)", +[]( b3WorldId worldId, b3BodyDef def ) { return b3CreateBody( worldId, &def ); } );
-	function( "b3DestroyBody(bodyId)", &b3DestroyBody );
+	function( "b3DestroyBody(bodyId)", +[]( b3BodyId bodyId ) {
+		clearConstantForces( bodyId );
+		b3DestroyBody( bodyId );
+	} );
 	function( "b3Body_IsValid(id)", &b3Body_IsValid );
 	function( "b3Body_GetType(bodyId)", &b3Body_GetType );
 	out_function( "b3Body_GetPosition(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId id ) { writeVec3( out, b3Body_GetPosition( id ) ); } );
@@ -1918,6 +2299,10 @@ EMSCRIPTEN_BINDINGS( box3d )
 	// Transform reads as two out params — position (Vec3) then rotation (Quat).
 	out_function( "b3Body_GetTransform(outPosition, outRotation, bodyId)", out_desc::Vec3, out_desc::Quat, out_desc::Pass,
 		+[]( uintptr_t outPos, uintptr_t outRot, b3BodyId id ) { b3Transform t = b3Body_GetTransform( id ); writeVec3( outPos, t.p ); writeQuat( outRot, t.q ); } );
+	// One call for many bodies: ids is an Int32Array of (index1, world0, generation)
+	// triples; returns a copied Float64Array, 7 per body (px py pz qx qy qz qw), NaN
+	// for an invalid id.
+	ret_function( "b3Body_GetTransformsPacked(ids): Float64Array", &getBodyTransformsPacked );
 	function( "b3Body_SetTransform(bodyId, position, rotation)", &b3Body_SetTransform );
 	out_function( "b3Body_GetLinearVelocity(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId id ) { writeVec3( out, b3Body_GetLinearVelocity( id ) ); } );
 	out_function( "b3Body_GetAngularVelocity(out, bodyId)", out_desc::Vec3, out_desc::Pass, +[]( uintptr_t out, b3BodyId id ) { writeVec3( out, b3Body_GetAngularVelocity( id ) ); } );
@@ -2163,7 +2548,10 @@ EMSCRIPTEN_BINDINGS( box3d )
 
 	value_object<b3PlaneResult>( "b3PlaneResult" )
 		.field( "plane", &b3PlaneResult::plane )
-		.field( "point", &b3PlaneResult::point );
+		.field( "point", &b3PlaneResult::point )
+		.field( "triangleIndex", &b3PlaneResult::triangleIndex )
+		.field( "childIndex", &b3PlaneResult::childIndex )
+		.field( "materialIndex", &b3PlaneResult::materialIndex );
 	function( "b3World_CastMover(worldId, origin, mover, translation, filter, callback)",
 		+[]( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3Vec3 translation, b3QueryFilter filter, val cb ) -> float
 		{
@@ -2172,6 +2560,14 @@ EMSCRIPTEN_BINDINGS( box3d )
 				{ val r = ( *static_cast<val*>( ctx ) )( shapeId ); return r.isUndefined() ? true : r.as<bool>(); },
 				&cb );
 		} );
+	// Natively filtered variants: b3QueryOptions skips ignored bodies/shapes and sensors inside the
+	// query, with no JS callback per candidate.
+	ret_function( "b3World_CollideMoverPacked(worldId, origin, mover, filter, options): Float64Array", &collideMoverPacked );
+	function( "b3World_CastMoverFiltered(worldId, origin, mover, translation, filter, options)", &castMoverFiltered );
+	ret_function( "b3World_CastRayClosestFiltered(worldId, origin, translation, filter, options): Float64Array",
+		&castRayClosestFiltered );
+	ret_function( "b3World_CastShapeClosestFiltered(worldId, origin, points, radius, translation, filter, options): Float64Array",
+		&castShapeClosestFiltered );
 	function( "b3World_CollideMover(worldId, origin, mover, filter, callback)", +[]( b3WorldId worldId, b3Vec3 origin, b3Capsule mover, b3QueryFilter filter, val cb )
 	{
 		b3World_CollideMover( worldId, origin, &mover, filter,
@@ -2384,13 +2780,15 @@ EMSCRIPTEN_BINDINGS( box3d )
 		b3CollideHulls( &m, 4, a, b, xf, &cache );
 		return localManifoldToVal( m );
 	}, allow_raw_pointers() );
+	// Triangle-vs-convex manifolds: the normal points from the triangle to the other shape.
 	function( "b3CollideTriangleAndCapsule(v1, v2, v3, capsuleB)", +[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, b3Capsule b ) -> val
 	{
 		b3Vec3 tri[3] = { v1, v2, v3 }; b3SimplexCache cache = {}; b3LocalManifoldPoint pts[4] = {}; b3LocalManifold m = {}; m.points = pts;
 		b3CollideTriangleAndCapsule( &m, 4, tri, &b, &cache );
 		return localManifoldToVal( m );
 	} );
-	function( "b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)", +[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, int triangleFlags, b3HullData* b, bool enableSpeculative ) -> val
+	function( "b3CollideTriangleAndHull(v1, v2, v3, triangleFlags, hullB, enableSpeculative)",
+		+[]( b3Vec3 v1, b3Vec3 v2, b3Vec3 v3, int triangleFlags, b3HullData* b, bool enableSpeculative ) -> val
 	{
 		b3SATCache cache = {}; b3LocalManifoldPoint pts[4] = {}; b3LocalManifold m = {}; m.points = pts;
 		b3CollideTriangleAndHull( &m, 4, v1, v2, v3, triangleFlags, b, &cache, enableSpeculative );
@@ -2587,6 +2985,13 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Body_ApplyLinearImpulse(bodyId, impulse, point, wake)", &b3Body_ApplyLinearImpulse );
 	function( "b3Body_ApplyLinearImpulseToCenter(bodyId, impulse, wake)", &b3Body_ApplyLinearImpulseToCenter );
 	function( "b3Body_ApplyAngularImpulse(bodyId, impulse, wake)", &b3Body_ApplyAngularImpulse );
+	// Persistent forces: kept in a bindings-side table and re-applied (wake=false) by
+	// b3World_Step before every step until changed, cleared, or the body is destroyed.
+	// force/torque are world-space; point is in body-local coordinates, null = center
+	// of mass. Setting a non-zero value wakes the body once.
+	function( "b3Body_SetConstantForce(bodyId, force, point)", &setConstantForce );
+	function( "b3Body_SetConstantTorque(bodyId, torque)", &setConstantTorque );
+	function( "b3Body_ClearConstantForces(bodyId)", &clearConstantForces );
 
 	function( "b3Body_GetMass(bodyId)", &b3Body_GetMass );
 	function( "b3Body_GetInverseMass(bodyId)", &b3Body_GetInverseMass );
@@ -2657,6 +3062,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Shape_SetSurfaceMaterial(shapeId, surfaceMaterial)", &b3Shape_SetSurfaceMaterial );
 	function( "b3Shape_SetMeshMaterial(shapeId, surfaceMaterial, index)", &b3Shape_SetMeshMaterial );
 	function( "b3Shape_GetSurfaceMaterial(shapeId)", &b3Shape_GetSurfaceMaterial );
+	function( "b3Shape_SetMeshRestOffset(shapeId, restOffset)", &b3Shape_SetMeshRestOffset );
+	function( "b3Shape_GetMeshRestOffset(shapeId)", &b3Shape_GetMeshRestOffset );
 	function( "b3Shape_GetFilter(shapeId)", &b3Shape_GetFilter );
 	function( "b3Shape_SetFilter(shapeId, filter, invokeContacts)", &b3Shape_SetFilter );
 
@@ -2681,6 +3088,15 @@ EMSCRIPTEN_BINDINGS( box3d )
 	} );
 	function( "b3Shape_SetSphere(shapeId, sphere)", +[]( b3ShapeId shapeId, b3Sphere sphere ) { b3Shape_SetSphere( shapeId, &sphere ); } );
 	function( "b3Shape_SetCapsule(shapeId, capsule)", +[]( b3ShapeId shapeId, b3Capsule capsule ) { b3Shape_SetCapsule( shapeId, &capsule ); } );
+	// 1:1 with C: swap the shape's geometry for a copy of hull. Mass is unchanged.
+	function( "b3Shape_SetHull(shapeId, hull)", +[]( b3ShapeId shapeId, b3HullData* hull ) { b3Shape_SetHull( shapeId, hull ); },
+		allow_raw_pointers() );
+	// Convenience: hull baked with transform/scale (no temporary hull for JS to free), optional mass
+	// update. Returns false, leaving the shape unchanged, if the transformed hull is degenerate.
+	function( "b3Shape_SetBakedHull(shapeId, hull, transform, scale, updateBodyMass)", &setShapeBakedHull, allow_raw_pointers() );
+	function( "b3Shape_Enable(shapeId)", &b3Shape_Enable );
+	function( "b3Shape_Disable(shapeId)", &b3Shape_Disable );
+	function( "b3Shape_IsEnabled(shapeId)", &b3Shape_IsEnabled );
 
 	out_function( "b3Shape_GetAABB(out, shapeId)", out_desc::AABB, out_desc::Pass, +[]( uintptr_t out, b3ShapeId shapeId ) { writeAABB( out, b3Shape_GetAABB( shapeId ) ); } );
 	out_function( "b3Shape_GetClosestPoint(out, shapeId, target)", out_desc::Vec3, out_desc::Pass, out_desc::Pass, +[]( uintptr_t out, b3ShapeId shapeId, b3Vec3 target ) { writeVec3( out, b3Shape_GetClosestPoint( shapeId, target ) ); } );
@@ -2713,7 +3129,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "maxLength", &b3DistanceJointDef::maxLength )
 		.field( "enableMotor", &b3DistanceJointDef::enableMotor )
 		.field( "maxMotorForce", &b3DistanceJointDef::maxMotorForce )
-		.field( "motorSpeed", &b3DistanceJointDef::motorSpeed );
+		.field( "motorSpeed", &b3DistanceJointDef::motorSpeed )
+		.field( "springStiffness", &b3DistanceJointDef::springStiffness )
+		.field( "springDamping", &b3DistanceJointDef::springDamping );
 
 	value_object<b3RevoluteJointDef>( "b3RevoluteJointDef" )
 		.field( "base", &b3RevoluteJointDef::base )
@@ -2741,6 +3159,29 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "maxMotorForce", &b3PrismaticJointDef::maxMotorForce )
 		.field( "motorSpeed", &b3PrismaticJointDef::motorSpeed );
 
+	value_object<b3CylindricalJointDef>( "b3CylindricalJointDef" )
+		.field( "base", &b3CylindricalJointDef::base )
+		.field( "localSlideAxisA", &b3CylindricalJointDef::localSlideAxisA )
+		.field( "enableSpring", &b3CylindricalJointDef::enableSpring )
+		.field( "hertz", &b3CylindricalJointDef::hertz )
+		.field( "dampingRatio", &b3CylindricalJointDef::dampingRatio )
+		.field( "targetTranslation", &b3CylindricalJointDef::targetTranslation )
+		.field( "enableLimit", &b3CylindricalJointDef::enableLimit )
+		.field( "lowerTranslation", &b3CylindricalJointDef::lowerTranslation )
+		.field( "upperTranslation", &b3CylindricalJointDef::upperTranslation )
+		.field( "enableMotor", &b3CylindricalJointDef::enableMotor )
+		.field( "maxMotorForce", &b3CylindricalJointDef::maxMotorForce )
+		.field( "motorSpeed", &b3CylindricalJointDef::motorSpeed )
+		.field( "enableAngularSpring", &b3CylindricalJointDef::enableAngularSpring )
+		.field( "angularHertz", &b3CylindricalJointDef::angularHertz )
+		.field( "angularDampingRatio", &b3CylindricalJointDef::angularDampingRatio )
+		.field( "targetAngle", &b3CylindricalJointDef::targetAngle )
+		.field( "enableAngularLimit", &b3CylindricalJointDef::enableAngularLimit )
+		.field( "lowerAngle", &b3CylindricalJointDef::lowerAngle )
+		.field( "upperAngle", &b3CylindricalJointDef::upperAngle )
+		.field( "enableAngularMotor", &b3CylindricalJointDef::enableAngularMotor )
+		.field( "maxMotorTorque", &b3CylindricalJointDef::maxMotorTorque )
+		.field( "angularMotorSpeed", &b3CylindricalJointDef::angularMotorSpeed );
 	value_object<b3MoverJointDef>( "b3MoverJointDef" )
 		.field( "base", &b3MoverJointDef::base )
 		.field( "linearVelocity", &b3MoverJointDef::linearVelocity )
@@ -2824,6 +3265,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3DefaultDistanceJointDef()", &b3DefaultDistanceJointDef );
 	function( "b3DefaultRevoluteJointDef()", &b3DefaultRevoluteJointDef );
 	function( "b3DefaultPrismaticJointDef()", &b3DefaultPrismaticJointDef );
+	function( "b3DefaultCylindricalJointDef()", &b3DefaultCylindricalJointDef );
 	function( "b3DefaultWheelJointDef()", &b3DefaultWheelJointDef );
 	function( "b3DefaultMoverJointDef()", &b3DefaultMoverJointDef );
 	function( "b3DefaultPogoJointDef()", &b3DefaultPogoJointDef );
@@ -2836,6 +3278,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3CreateDistanceJoint(worldId, def)", +[]( b3WorldId w, b3DistanceJointDef d ) { return b3CreateDistanceJoint( w, &d ); } );
 	function( "b3CreateRevoluteJoint(worldId, def)", +[]( b3WorldId w, b3RevoluteJointDef d ) { return b3CreateRevoluteJoint( w, &d ); } );
 	function( "b3CreatePrismaticJoint(worldId, def)", +[]( b3WorldId w, b3PrismaticJointDef d ) { return b3CreatePrismaticJoint( w, &d ); } );
+	function( "b3CreateCylindricalJoint(worldId, def)", +[]( b3WorldId w, b3CylindricalJointDef d ) { return b3CreateCylindricalJoint( w, &d ); } );
 	function( "b3CreateWheelJoint(worldId, def)", +[]( b3WorldId w, b3WheelJointDef d ) { return b3CreateWheelJoint( w, &d ); } );
 	function( "b3CreateMoverJoint(worldId, def)", +[]( b3WorldId w, b3MoverJointDef d ) { return b3CreateMoverJoint( w, &d ); } );
 	function( "b3CreatePogoJoint(worldId, def)", +[]( b3WorldId w, b3PogoJointDef d ) { return b3CreatePogoJoint( w, &d ); } );
@@ -2898,6 +3341,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3DistanceJoint_SetSpringDampingRatio(jointId, dampingRatio)", &b3DistanceJoint_SetSpringDampingRatio );
 	function( "b3DistanceJoint_GetSpringHertz(jointId)", &b3DistanceJoint_GetSpringHertz );
 	function( "b3DistanceJoint_GetSpringDampingRatio(jointId)", &b3DistanceJoint_GetSpringDampingRatio );
+	function( "b3DistanceJoint_SetSpringStiffness(jointId, stiffness, damping)", &b3DistanceJoint_SetSpringStiffness );
+	function( "b3DistanceJoint_GetSpringStiffness(jointId)", &b3DistanceJoint_GetSpringStiffness );
+	function( "b3DistanceJoint_GetSpringDamping(jointId)", &b3DistanceJoint_GetSpringDamping );
 	function( "b3DistanceJoint_EnableLimit(jointId, enableLimit)", &b3DistanceJoint_EnableLimit );
 	function( "b3DistanceJoint_IsLimitEnabled(jointId)", &b3DistanceJoint_IsLimitEnabled );
 	function( "b3DistanceJoint_SetLengthRange(jointId, minLength, maxLength)", &b3DistanceJoint_SetLengthRange );
@@ -2957,6 +3403,52 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3PrismaticJoint_GetMotorForce(jointId)", &b3PrismaticJoint_GetMotorForce );
 	function( "b3PrismaticJoint_GetTranslation(jointId)", &b3PrismaticJoint_GetTranslation );
 	function( "b3PrismaticJoint_GetSpeed(jointId)", &b3PrismaticJoint_GetSpeed );
+
+	// cylindrical joint
+	function( "b3CylindricalJoint_EnableSpring(jointId, enableSpring)", &b3CylindricalJoint_EnableSpring );
+	function( "b3CylindricalJoint_IsSpringEnabled(jointId)", &b3CylindricalJoint_IsSpringEnabled );
+	function( "b3CylindricalJoint_SetSpringHertz(jointId, hertz)", &b3CylindricalJoint_SetSpringHertz );
+	function( "b3CylindricalJoint_GetSpringHertz(jointId)", &b3CylindricalJoint_GetSpringHertz );
+	function( "b3CylindricalJoint_SetSpringDampingRatio(jointId, dampingRatio)", &b3CylindricalJoint_SetSpringDampingRatio );
+	function( "b3CylindricalJoint_GetSpringDampingRatio(jointId)", &b3CylindricalJoint_GetSpringDampingRatio );
+	function( "b3CylindricalJoint_SetTargetTranslation(jointId, targetTranslation)", &b3CylindricalJoint_SetTargetTranslation );
+	function( "b3CylindricalJoint_GetTargetTranslation(jointId)", &b3CylindricalJoint_GetTargetTranslation );
+	function( "b3CylindricalJoint_EnableLimit(jointId, enableLimit)", &b3CylindricalJoint_EnableLimit );
+	function( "b3CylindricalJoint_IsLimitEnabled(jointId)", &b3CylindricalJoint_IsLimitEnabled );
+	function( "b3CylindricalJoint_GetLowerLimit(jointId)", &b3CylindricalJoint_GetLowerLimit );
+	function( "b3CylindricalJoint_GetUpperLimit(jointId)", &b3CylindricalJoint_GetUpperLimit );
+	function( "b3CylindricalJoint_SetLimits(jointId, lower, upper)", &b3CylindricalJoint_SetLimits );
+	function( "b3CylindricalJoint_EnableMotor(jointId, enableMotor)", &b3CylindricalJoint_EnableMotor );
+	function( "b3CylindricalJoint_IsMotorEnabled(jointId)", &b3CylindricalJoint_IsMotorEnabled );
+	function( "b3CylindricalJoint_SetMotorSpeed(jointId, motorSpeed)", &b3CylindricalJoint_SetMotorSpeed );
+	function( "b3CylindricalJoint_GetMotorSpeed(jointId)", &b3CylindricalJoint_GetMotorSpeed );
+	function( "b3CylindricalJoint_SetMaxMotorForce(jointId, force)", &b3CylindricalJoint_SetMaxMotorForce );
+	function( "b3CylindricalJoint_GetMaxMotorForce(jointId)", &b3CylindricalJoint_GetMaxMotorForce );
+	function( "b3CylindricalJoint_GetMotorForce(jointId)", &b3CylindricalJoint_GetMotorForce );
+	function( "b3CylindricalJoint_EnableAngularSpring(jointId, enableSpring)", &b3CylindricalJoint_EnableAngularSpring );
+	function( "b3CylindricalJoint_IsAngularSpringEnabled(jointId)", &b3CylindricalJoint_IsAngularSpringEnabled );
+	function( "b3CylindricalJoint_SetAngularSpringHertz(jointId, hertz)", &b3CylindricalJoint_SetAngularSpringHertz );
+	function( "b3CylindricalJoint_GetAngularSpringHertz(jointId)", &b3CylindricalJoint_GetAngularSpringHertz );
+	function( "b3CylindricalJoint_SetAngularSpringDampingRatio(jointId, dampingRatio)", &b3CylindricalJoint_SetAngularSpringDampingRatio );
+	function( "b3CylindricalJoint_GetAngularSpringDampingRatio(jointId)", &b3CylindricalJoint_GetAngularSpringDampingRatio );
+	function( "b3CylindricalJoint_SetTargetAngle(jointId, targetAngle)", &b3CylindricalJoint_SetTargetAngle );
+	function( "b3CylindricalJoint_GetTargetAngle(jointId)", &b3CylindricalJoint_GetTargetAngle );
+	function( "b3CylindricalJoint_EnableAngularLimit(jointId, enableLimit)", &b3CylindricalJoint_EnableAngularLimit );
+	function( "b3CylindricalJoint_IsAngularLimitEnabled(jointId)", &b3CylindricalJoint_IsAngularLimitEnabled );
+	function( "b3CylindricalJoint_GetLowerAngle(jointId)", &b3CylindricalJoint_GetLowerAngle );
+	function( "b3CylindricalJoint_GetUpperAngle(jointId)", &b3CylindricalJoint_GetUpperAngle );
+	function( "b3CylindricalJoint_SetAngularLimits(jointId, lower, upper)", &b3CylindricalJoint_SetAngularLimits );
+	function( "b3CylindricalJoint_EnableAngularMotor(jointId, enableMotor)", &b3CylindricalJoint_EnableAngularMotor );
+	function( "b3CylindricalJoint_IsAngularMotorEnabled(jointId)", &b3CylindricalJoint_IsAngularMotorEnabled );
+	function( "b3CylindricalJoint_SetAngularMotorSpeed(jointId, motorSpeed)", &b3CylindricalJoint_SetAngularMotorSpeed );
+	function( "b3CylindricalJoint_GetAngularMotorSpeed(jointId)", &b3CylindricalJoint_GetAngularMotorSpeed );
+	function( "b3CylindricalJoint_SetMaxMotorTorque(jointId, torque)", &b3CylindricalJoint_SetMaxMotorTorque );
+	function( "b3CylindricalJoint_GetMaxMotorTorque(jointId)", &b3CylindricalJoint_GetMaxMotorTorque );
+	function( "b3CylindricalJoint_GetMotorTorque(jointId)", &b3CylindricalJoint_GetMotorTorque );
+	function( "b3CylindricalJoint_GetTranslation(jointId)", &b3CylindricalJoint_GetTranslation );
+	function( "b3CylindricalJoint_GetSpeed(jointId)", &b3CylindricalJoint_GetSpeed );
+	function( "b3CylindricalJoint_GetAngle(jointId)", &b3CylindricalJoint_GetAngle );
+	function( "b3CylindricalJoint_GetAngularSpeed(jointId)", &b3CylindricalJoint_GetAngularSpeed );
 
 	// revolute joint
 	function( "b3RevoluteJoint_EnableSpring(jointId, enableSpring)", &b3RevoluteJoint_EnableSpring );
@@ -3500,7 +3992,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "maxTiltAngle", &b3VehicleAssists::maxTiltAngle )
 		.field( "stickyTire", &b3VehicleAssists::stickyTire )
 		.field( "stickySpeed", &b3VehicleAssists::stickySpeed )
-		.field( "stickyTime", &b3VehicleAssists::stickyTime );
+		.field( "stickyTime", &b3VehicleAssists::stickyTime )
+		.field( "brakeReverse", &b3VehicleAssists::brakeReverse );
 
 	registerFixedArray<std::array<b3VehicleWheelDef, B3_MAX_VEHICLE_WHEELS>>( "b3VehicleWheels", std::make_index_sequence<B3_MAX_VEHICLE_WHEELS>{} );
 
