@@ -348,11 +348,13 @@ export const vehicleCars = {
 		comHeight: 0.16,
 		comForward: 0.08,
 		layout: [0.8, -0.05, 1.25, -1.25],
-		wheelRadius: 0.33,
-		wheelInertia: 0.9,
-		front: { width: 0.21, brake: 2300, frequency: 1.5 },
-		rear: { width: 0.21, brake: 1500, frequency: 1.6 },
-		handbrake: 4000,
+		// Tall gravel tires. The final drive, brakes and wheel inertia scale with the radius
+		// (0.33 m before), so the gearing and stopping force stay the same.
+		wheelRadius: 0.37,
+		wheelInertia: 1.13,
+		front: { width: 0.235, brake: 2580, frequency: 1.5 },
+		rear: { width: 0.235, brake: 1680, frequency: 1.6 },
+		handbrake: 4480,
 		suspension: {
 			minLength: 0.12,
 			maxLength: 0.45,
@@ -378,7 +380,7 @@ export const vehicleCars = {
 			inertia: 0.12,
 		},
 		gears: [3.3, 2.3, 1.75, 1.4, 1.15, 0.98],
-		finalDrive: 4.4,
+		finalDrive: 4.93,
 		shiftUpRpm: 6500,
 		shiftDownRpm: 3600,
 		shiftTime: 0.08,

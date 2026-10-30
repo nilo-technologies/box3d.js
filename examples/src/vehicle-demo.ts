@@ -651,8 +651,12 @@ export async function runVehicleDemo(
 		new THREE.MeshBasicMaterial({
 			color: 0x0b0b0b,
 			transparent: true,
-			opacity: 0.55,
+			opacity: 0.7,
 			depthWrite: false,
+			// Drawn over the race tracks' road strip, which sits a few centimetres up
+			polygonOffset: true,
+			polygonOffsetFactor: -4,
+			polygonOffsetUnits: -4,
 		}),
 		maxMarks,
 	);
@@ -685,10 +689,7 @@ export async function runVehicleDemo(
 		const length = last.distanceTo(point);
 		if (length < 0.25) return;
 		dir.subVectors(point, last).normalize();
-		markPos
-			.addVectors(point, last)
-			.multiplyScalar(0.5)
-			.addScaledVector(n, 0.02);
+		markPos.addVectors(point, last).multiplyScalar(0.5).addScaledVector(n, 0.1);
 		markQuat.setFromUnitVectors(up, n);
 		const localDir = dir.clone().applyQuaternion(markQuat.clone().invert());
 		tangentQuat.setFromAxisAngle(up, Math.atan2(localDir.x, localDir.z));

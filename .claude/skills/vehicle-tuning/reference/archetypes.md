@@ -25,7 +25,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | center of mass z, before the FWD layer's +0.15 | 0 to +0.08 | +0.05 to +0.1 | -0.2 to -0.3 (mid engine) | +0.08 to +0.12 (about 60/40 front once the FWD layer adds its +0.15) |
 | half track, wheelbase (m) | 0.8, 2.55 | 0.8, 2.5 | 0.86, 2.7 | 0.77, 2.6 |
 | wheel `position` | [±0.8, -0.02, +1.3 / -1.25] | [±0.8, -0.05, +1.25 / -1.25] | [±0.86, 0, +1.4 / -1.3] | [±0.77, -0.04, +1.3 / -1.3] |
-| wheel radius (m) | 0.33 | 0.32-0.33 (0.32 keeps 6th under 215 km/h) | 0.35 | 0.32 |
+| wheel radius (m) | 0.33 | 0.37 (tall gravel tires; scale the final drive, brakes and wheel inertia with the radius) | 0.35 | 0.32 |
 | spring frequency F/R (Hz) | 2.0 / 2.2 | 1.5 / 1.6 | 2.5 / 2.7 | 1.9 / 2.1 |
 | travel min/max (m) | 0.17 / 0.33 | 0.12 / 0.45 | 0.18 / 0.30 | 0.17 / 0.34 |
 | tire peak slip, lateral peak angle | 0.1, 7° | 0.18, 11° | 0.09, 6.5° | 0.1, 7° |
@@ -35,13 +35,13 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | torque (N·m) at rpm | 400-480 at 5000 | 380-420 at 4000 | 650-770 at 6000 | 380-420 at 3000 (turbo) |
 | max rpm | 7000-7500 | 7500 | 8500 | 6500-7000 |
 | gear ratios | 3.6, 2.2, 1.55, 1.2, 0.98, 0.82 | 3.3, 2.3, 1.75, 1.4, 1.15, 0.98 | 3.2, 2.3, 1.75, 1.4, 1.15, 0.95, 0.78 | 3.46, 2.05, 1.37, 1.03, 0.85, 0.78 |
-| final drive | 3.6 | 4.4 | 3.4 | 3.9 |
+| final drive | 3.6 | 4.93 (4.4 at 0.33 m) | 3.4 | 3.9 |
 | shift up / down (rpm) | 6200 / 3200 | 6500 / 3600 | 7150 / 4200 | 0.9 × `maxRpm` - 270 / 2800 |
 | top speed is set by | drag | gearing (6th at the limiter ≈ 210 km/h) | drag | drag |
 | engine inertia | 0.2 | 0.12 | 0.15 | 0.15-0.2 |
 | anti-roll F/R (N/m) | 16000 / 13000 | 16000 / 12000 | 30000 / 26000 | 20000 / 14000 |
-| brakes F/R (N·m) | 2600 / 1500 | 2300 / 1500 | 2400 / 2200 | 1800 / 1200 |
-| handbrake (N·m) | 2500 | 4000 (hydraulic) | 2000-2200 | 2500 |
+| brakes F/R (N·m) | 2600 / 1500 | 2580 / 1680 | 2400 / 2200 | 1800 / 1200 |
+| handbrake (N·m) | 2500 | 4480 (hydraulic) | 2000-2200 | 2500 |
 | steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
 | own TC / ABS | off / on | off / off | on / on | on / on |

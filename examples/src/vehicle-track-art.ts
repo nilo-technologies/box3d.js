@@ -1,14 +1,12 @@
 // Minimal topographic look for the vehicle examples: warm paper tones, terrain shaded by height
-// with contour lines every 2 m, a soft sky gradient, dark roads with thin white edges and coral
+// and slope with contour lines every 2 m, a flat background, dark roads with thin white edges and coral
 // accents. On the race tracks the road is its own ribbon mesh along the track's spline, so its
 // edges and lines are crisp instead of following the 2 m terrain grid.
 
 import * as THREE from 'three';
-import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { RaceTrack } from './vehicle-tracks';
 
 export const topo = {
-	sky: [0xeee8dc, 0xf7f4ec] as const,
 	fog: 0xf1ece2,
 	/** Ground from low to high */
 	ground: [0xe9e1cf, 0xf4efe3] as const,
@@ -16,13 +14,15 @@ export const topo = {
 	solid: 0xddd2bb,
 	contour: 0xc4b391,
 	contourSpacing: 2,
-	asphalt: 0x3c3c3c,
+	asphalt: 0x5a5a5a,
 	gravel: 0x8c7a5b,
 	line: 0xffffff,
 	accent: 0xe07a5f,
 };
 
-/** Sky gradient, fog and soft lights. The scene's default lights go dark. */
+const sunPosition = new THREE.Vector3(200, 75, 120);
+
+/** Flat background, fog and a low sun. The scene's default lights go dark. */
 export function applyTopoAtmosphere(
 	scene: THREE.Scene,
 	fogNear = 150,
@@ -32,23 +32,13 @@ export function applyTopoAtmosphere(
 		if (o instanceof THREE.AmbientLight || o instanceof THREE.DirectionalLight)
 			o.intensity = 0;
 	});
-	const canvas = document.createElement('canvas');
-	canvas.width = 2;
-	canvas.height = 256;
-	const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-	const gradient = ctx.createLinearGradient(0, 0, 0, 256);
-	const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-	gradient.addColorStop(0, hex(topo.sky[0]));
-	gradient.addColorStop(1, hex(topo.sky[1]));
-	ctx.fillStyle = gradient;
-	ctx.fillRect(0, 0, 2, 256);
-	const sky = new THREE.CanvasTexture(canvas);
-	sky.colorSpace = THREE.SRGBColorSpace;
-	scene.background = sky;
+	// No sky: one flat tone that the fog fades the land into
+	scene.background = new THREE.Color(topo.fog);
 	scene.fog = new THREE.Fog(topo.fog, fogNear, fogFar);
-	scene.add(new THREE.HemisphereLight(topo.sky[0], topo.ground[0], 0.8));
-	const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-	sun.position.set(120, 200, 80);
+	// A low sun rakes across the ground so bumps and slopes cast clear shading
+	scene.add(new THREE.HemisphereLight(topo.fog, topo.ground[0], 0.55));
+	const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+	sun.position.copy(sunPosition);
 	scene.add(sun);
 }
 
@@ -64,15 +54,18 @@ export function topoMaterial(
 		shader.uniforms.contourColor = { value: new THREE.Color(topo.contour) };
 		shader.uniforms.contourSpacing = { value: topo.contourSpacing };
 		shader.vertexShader = shader.vertexShader
-			.replace('#include <common>', '#include <common>\nvarying float vHeight;')
+			.replace(
+				'#include <common>',
+				'#include <common>\nvarying float vHeight;\nvarying float vUp;',
+			)
 			.replace(
 				'#include <begin_vertex>',
-				'#include <begin_vertex>\nvHeight = (modelMatrix * vec4(position, 1.0)).y;',
+				'#include <begin_vertex>\nvHeight = (modelMatrix * vec4(position, 1.0)).y;\nvUp = normalize(mat3(modelMatrix) * objectNormal).y;',
 			);
 		shader.fragmentShader = shader.fragmentShader
 			.replace(
 				'#include <common>',
-				'#include <common>\nvarying float vHeight;\nuniform vec3 contourColor;\nuniform float contourSpacing;',
+				'#include <common>\nvarying float vHeight;\nvarying float vUp;\nuniform vec3 contourColor;\nuniform float contourSpacing;',
 			)
 			.replace(
 				'#include <dithering_fragment>',
@@ -82,7 +75,9 @@ export function topoMaterial(
 	// fwidth is 0 on perfectly flat ground, and smoothstep(0, 0, x) is undefined
 	float w = max(fwidth(f), 1e-4);
 	float line = 1.0 - smoothstep(0.0, 1.5 * w, abs(fract(f - 0.5) - 0.5));
-	gl_FragColor.rgb = mix(gl_FragColor.rgb, contourColor, line * 0.8);`,
+	gl_FragColor.rgb = mix(gl_FragColor.rgb, contourColor, line * 0.8);
+	// Hillshade: steeper ground a little darker, so slopes read even in flat light
+	gl_FragColor.rgb *= 1.0 - 0.35 * smoothstep(0.02, 0.5, 1.0 - vUp);`,
 			);
 	};
 	// The shader edit is the same for every topo material, so they can share one program
@@ -165,6 +160,78 @@ function ribbon(
 	return geometry;
 }
 
+/**
+ * A bump's visible surface: the same shape as its convex hull (the upper outline of the profile
+ * across the road, ramping down to the base beyond each edge), as a fine grid with smooth normals
+ */
+function bumpGeometry(points: number[], half: number): THREE.BufferGeometry {
+	// The profile along the road from the hull's top points at the road edge
+	const profile: [number, number][] = [];
+	for (let k = 0; k < points.length; k += 3) {
+		if (Math.abs(points[k] - half) < 1e-4 && points[k + 1] >= 0) {
+			profile.push([points[k + 2], points[k + 1]]);
+		}
+	}
+	profile.sort((a, b) => a[0] - b[0]);
+	// Its upper convex hull, which is what the physics hull follows
+	const hull: [number, number][] = [];
+	for (const p of profile) {
+		while (hull.length >= 2) {
+			const [a, b] = [hull[hull.length - 2], hull[hull.length - 1]];
+			if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0)
+				hull.pop();
+			else break;
+		}
+		hull.push(p);
+	}
+	// Densify so the shading interpolates smoothly along it
+	const along: [number, number][] = [];
+	for (let i = 0; i < hull.length - 1; i++) {
+		for (let k = 0; k < 4; k++) {
+			const t = k / 4;
+			along.push([
+				hull[i][0] + (hull[i + 1][0] - hull[i][0]) * t,
+				hull[i][1] + (hull[i + 1][1] - hull[i][1]) * t,
+			]);
+		}
+	}
+	along.push(hull[hull.length - 1]);
+	const ramp = 2.5;
+	const across = [
+		-half - ramp,
+		-half - ramp / 2,
+		-half,
+		0,
+		half,
+		half + ramp / 2,
+		half + ramp,
+	];
+	const positions: number[] = [];
+	for (const [u, h] of along) {
+		for (const w of across) {
+			const edge = Math.max(0, Math.abs(w) - half) / ramp;
+			positions.push(w, -0.05 + (h + 0.05) * (1 - edge), u);
+		}
+	}
+	const indices: number[] = [];
+	const m = across.length;
+	for (let i = 0; i < along.length - 1; i++) {
+		for (let j = 0; j < m - 1; j++) {
+			const a = i * m + j;
+			// Wound counter-clockwise seen from above, so the faces and normals point up
+			indices.push(a, a + m, a + 1, a + 1, a + m, a + m + 1);
+		}
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute(
+		'position',
+		new THREE.Float32BufferAttribute(positions, 3),
+	);
+	geometry.setIndex(indices);
+	geometry.computeVertexNormals();
+	return geometry;
+}
+
 /** The race track's terrain, road, start line, bumps and start gate */
 export function addRaceTrackArt(
 	scene: THREE.Scene,
@@ -219,24 +286,40 @@ export function addRaceTrackArt(
 	};
 	group.add(new THREE.Mesh(ribbon(track, -half, half, 0.08, nearStart), line));
 
-	// Bumps in the accent colour
+	// Bumps in the accent colour, lifted with the road so even the small ones show, with smooth
+	// normals so the low sun shades their shape
 	const bumpMaterial = new THREE.MeshStandardMaterial({
 		color: topo.accent,
 		roughness: 0.85,
+		polygonOffset: true,
+		polygonOffsetFactor: -3,
+		polygonOffsetUnits: -3,
 	});
-	for (const bump of track.bumps) {
-		const points: THREE.Vector3[] = [];
-		for (let k = 0; k < bump.points.length; k += 3) {
-			points.push(
-				new THREE.Vector3(
-					bump.points[k],
-					bump.points[k + 1],
-					bump.points[k + 2],
-				),
+	// Even the big hump slopes only about 10 degrees, which plain lighting barely shows, so the
+	// shading is exaggerated: faces tilted toward the sun brighten and faces tilted away darken
+	bumpMaterial.onBeforeCompile = (shader) => {
+		shader.vertexShader = shader.vertexShader
+			.replace('#include <common>', '#include <common>\nvarying vec3 vSlope;')
+			.replace(
+				'#include <begin_vertex>',
+				'#include <begin_vertex>\nvSlope = normalize(mat3(modelMatrix) * objectNormal);',
 			);
-		}
-		const mesh = new THREE.Mesh(new ConvexGeometry(points), bumpMaterial);
-		mesh.position.set(...bump.position);
+		shader.fragmentShader = shader.fragmentShader
+			.replace('#include <common>', '#include <common>\nvarying vec3 vSlope;')
+			.replace(
+				'#include <dithering_fragment>',
+				`#include <dithering_fragment>
+	float tilt = dot(normalize(vSlope).xz, normalize(vec2(${sunPosition.x}, ${sunPosition.z})));
+	gl_FragColor.rgb *= clamp(1.0 + 4.0 * tilt, 0.45, 1.6);`,
+			);
+	};
+	for (const bump of track.bumps) {
+		const mesh = new THREE.Mesh(bumpGeometry(bump.points, half), bumpMaterial);
+		mesh.position.set(
+			bump.position[0],
+			bump.position[1] + 0.05,
+			bump.position[2],
+		);
 		mesh.rotation.y = bump.yaw;
 		group.add(mesh);
 	}
