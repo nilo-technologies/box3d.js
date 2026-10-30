@@ -3,7 +3,8 @@
 // input path: a held button puts its code in the same key set the keyboard fills, a tap goes
 // through the same press handler as a key press, and the pad gives an analog steer that the
 // demo reads like the gamepad stick. Each control follows its own finger, so steering and gas
-// work at the same time, and a finger can slide between the pedal buttons.
+// work at the same time, and a finger can slide between the pedal buttons. The buttons are
+// native buttons and the pad is a slider, so they also work focused with the keyboard.
 //
 // Shown on coarse pointer screens, or after the first touch on any other. ?touch=1 forces the
 // controls on (to try them with a mouse) and ?touch=0 keeps them off. Layout is in example.css.
@@ -46,13 +47,13 @@ export function createTouchControls(
 	root.className = 'touch-controls';
 	root.hidden = true;
 	root.innerHTML =
-		'<div class="touch-steer" aria-label="steer">' +
-		'<span class="touch-arrow">◀&#xFE0E;</span><span class="touch-knob"></span><span class="touch-arrow">▶&#xFE0E;</span></div>' +
+		'<div class="touch-steer" role="slider" tabindex="0" aria-label="steer" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" aria-valuetext="straight">' +
+		'<span class="touch-arrow" aria-hidden="true">◀&#xFE0E;</span><span class="touch-knob"></span><span class="touch-arrow" aria-hidden="true">▶&#xFE0E;</span></div>' +
 		'<div class="touch-pedals">' +
-		'<div class="touch-button touch-reset" data-tap="KeyR" aria-label="flip upright">↻<small>flip</small></div>' +
-		`<div class="touch-button touch-handbrake" data-hold="${touchCodes.handbrake}" aria-label="handbrake">HB<small>hand</small></div>` +
-		`<div class="touch-button touch-brake" data-hold="${touchCodes.brake}" aria-label="brake and reverse">▼<small>brake</small></div>` +
-		`<div class="touch-button touch-gas" data-hold="${touchCodes.gas}" aria-label="gas">▲<small>gas</small></div>` +
+		'<button type="button" class="touch-button touch-reset" data-tap="KeyR" aria-label="flip upright">↻<small>flip</small></button>' +
+		`<button type="button" class="touch-button touch-handbrake" data-hold="${touchCodes.handbrake}" aria-label="handbrake">HB<small>hand</small></button>` +
+		`<button type="button" class="touch-button touch-brake" data-hold="${touchCodes.brake}" aria-label="brake and reverse">▼<small>brake</small></button>` +
+		`<button type="button" class="touch-button touch-gas" data-hold="${touchCodes.gas}" aria-label="gas">▲<small>gas</small></button>` +
 		'</div>';
 	const pad = root.querySelector('.touch-steer') as HTMLElement;
 	const knob = root.querySelector('.touch-knob') as HTMLElement;
@@ -63,8 +64,23 @@ export function createTouchControls(
 	let steerPointer: number | null = null;
 	/** Pointer id to the hold code under that finger, or null between buttons */
 	const pedalPointers = new Map<number, string | null>();
+	/** Hold codes of buttons held down with Enter or Space while focused */
+	const keyboardHeld = new Set<string>();
 
 	// ---- Steering pad: the steer follows where the finger is across the pad
+	function setSteer(steer: number): void {
+		state.steer = steer;
+		knob.style.left = `${50 + steer * 40}%`;
+		const percent = Math.round(Math.abs(steer) * 100);
+		pad.setAttribute('aria-valuenow', steer.toFixed(2));
+		pad.setAttribute(
+			'aria-valuetext',
+			percent === 0
+				? 'straight'
+				: `${steer < 0 ? 'left' : 'right'} ${percent}%`,
+		);
+	}
+
 	function updateSteer(e: PointerEvent): void {
 		const rect = pad.getBoundingClientRect();
 		const half = rect.width / 2;
@@ -73,15 +89,13 @@ export function createTouchControls(
 			Math.max((Math.abs(x) - DEAD_ZONE) / (FULL_LOCK - DEAD_ZONE), 0),
 			1,
 		);
-		state.steer = Math.sign(x) * magnitude;
-		knob.style.left = `${50 + state.steer * 40}%`;
+		setSteer(Math.sign(x) * magnitude);
 	}
 
 	function releaseSteer(): void {
 		steerPointer = null;
 		state.steering = false;
-		state.steer = 0;
-		knob.style.left = '50%';
+		setSteer(0);
 		pad.classList.remove('on');
 	}
 
@@ -102,6 +116,20 @@ export function createTouchControls(
 			if ((e as PointerEvent).pointerId === steerPointer) releaseSteer();
 		});
 	}
+	// Focused, the pad is a slider: the arrow keys steer full lock while held. The keys also
+	// reach the demo's own arrow key steering, which gives the same steer.
+	const arrowSteer = { ArrowLeft: -1, ArrowRight: 1 } as Record<string, number>;
+	pad.addEventListener('keydown', (e) => {
+		if (!(e.code in arrowSteer) || steerPointer !== null) return;
+		state.steering = true;
+		setSteer(arrowSteer[e.code]);
+	});
+	pad.addEventListener('keyup', (e) => {
+		if (e.code in arrowSteer && steerPointer === null) releaseSteer();
+	});
+	pad.addEventListener('blur', () => {
+		if (steerPointer === null) releaseSteer();
+	});
 
 	// ---- Pedal buttons: the cluster captures each finger and hit tests it as it moves
 	function holdCodeAt(e: PointerEvent): string | null {
@@ -113,7 +141,7 @@ export function createTouchControls(
 	}
 
 	function syncHeld(): void {
-		const held = new Set(pedalPointers.values());
+		const held = new Set([...pedalPointers.values(), ...keyboardHeld]);
 		for (const button of holdButtons) {
 			const code = button.dataset.hold as string;
 			const on = held.has(code);
@@ -149,10 +177,42 @@ export function createTouchControls(
 		});
 	}
 
+	// Keyboard: a focused button works with Enter or Space, held for as long as the key is.
+	// These keys stop here so Space does not also pull the demo's handbrake.
+	const activateKeys = new Set(['Enter', 'NumpadEnter', 'Space']);
+	pedals.addEventListener('keydown', (e) => {
+		const button = e.target as HTMLElement;
+		if (!activateKeys.has(e.code) || !button.matches('button')) return;
+		e.stopPropagation();
+		const hold = button.dataset.hold;
+		if (!hold) return; // the tap button flips on the click that follows
+		e.preventDefault();
+		if (e.repeat) return;
+		keyboardHeld.add(hold);
+		syncHeld();
+	});
+	pedals.addEventListener('keyup', (e) => {
+		const hold = (e.target as HTMLElement).dataset.hold;
+		if (!activateKeys.has(e.code) || !hold) return;
+		e.preventDefault();
+		keyboardHeld.delete(hold);
+		syncHeld();
+	});
+	pedals.addEventListener('focusout', (e) => {
+		const hold = (e.target as HTMLElement).dataset.hold;
+		if (hold && keyboardHeld.delete(hold)) syncHeld();
+	});
+	// A click from a pointer has a detail of 1 or more and already flipped on pointerdown
+	pedals.addEventListener('click', (e) => {
+		const tap = (e.target as HTMLElement).closest<HTMLElement>('[data-tap]');
+		if (tap?.dataset.tap && e.detail === 0) onPress(tap.dataset.tap);
+	});
+
 	// Let go of everything when the page loses focus, a finger can lift unseen
 	function releaseAll(): void {
 		releaseSteer();
 		pedalPointers.clear();
+		keyboardHeld.clear();
 		syncHeld();
 	}
 	window.addEventListener('blur', releaseAll);

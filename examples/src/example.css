@@ -33,7 +33,15 @@ body {
 	--touch-button: 68px;
 	--touch-gap: 10px;
 	--touch-tap: 34px;
-	--touch-pad-width: clamp(140px, calc(100vw - 196px), 300px);
+	/* What the pedal cluster and the three gutters leave, so the pad never runs under it */
+	--touch-pad-room: calc(
+		100vw -
+		2 *
+		var(--touch-button) -
+		var(--touch-gap) -
+		50px
+	);
+	--touch-pad-width: min(300px, var(--touch-pad-room));
 	--touch-pad-height: calc(2 * var(--touch-button) + var(--touch-gap));
 	/* Top of the pedal cluster, the tallest control: the panel and HUD stay above it */
 	--touch-top: calc(
@@ -56,7 +64,7 @@ body {
    load panel sits on the pad */
 @media (orientation: landscape) {
 	.vehicle-touch {
-		--touch-pad-width: clamp(140px, 30vw, 300px);
+		--touch-pad-width: min(300px, 30vw, var(--touch-pad-room));
 		--vehicle-hud-bottom: var(--touch-gutter);
 		--vehicle-loads-scale: 0.5;
 		--vehicle-loads-bottom: calc(
@@ -140,6 +148,12 @@ body {
 	font-size: 22px;
 }
 
+.touch-steer:focus-visible,
+.touch-button:focus-visible {
+	outline: 2px solid #4d96ff;
+	outline-offset: 2px;
+}
+
 .touch-steer.on {
 	border-color: rgba(77, 150, 255, 0.9);
 }
@@ -173,6 +187,11 @@ body {
 }
 
 .touch-button {
+	appearance: none;
+	margin: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
