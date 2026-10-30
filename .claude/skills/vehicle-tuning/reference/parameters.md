@@ -52,7 +52,7 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 
 Forced induction, all zero (naturally aspirated) by default. The torque curve is multiplied by 1 + boost. Each stage has a shaft spool and a delivered pressure, both 0 to 1 of its `gain`, updated once per step before the engine solve. The pressure is the spool capped by what the pedal asks for: it fills at once and dumps through the blow-off valve with a 0.1 s time constant when the pedal closes, while the shaft spins down with `bleedTime`.
 
-The pedal is a torque request: `min(pedal × (1 + gains), 1 + boost)` times the curve, where `gains` is the sum of `stages[i].gain`. The first `1 / (1 + gains)` of the pedal needs no boost; past it the boost target rises to 1 at full pedal. Without a turbo this is the old `pedal × curve`. `examples/src/vehicle-presets.js` has nine ready types in `turboTypes`, plus `none`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
+The pedal is a torque request: `min(pedal × (1 + gains), 1 + boost)` times the curve, where `gains` is the sum of `stages[i].gain`. The first `1 / (1 + gains)` of the pedal needs no boost; past it the boost target rises to 1 at full pedal. Without a turbo this is the old `pedal × curve`. `src/vehicles.js` (`box3d.js/vehicles`) has nine ready types in `turboTypes`, plus `none`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
 
 | Field | Default | Notes |
 | --- | --- | --- |

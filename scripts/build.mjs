@@ -210,6 +210,9 @@ copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts
 // Hand-written DynamicMover port (box3d's samples/dynamic_mover.cpp).
 copyFileSync( join( root, 'src', 'character.js' ), join( root, 'dist', 'character.mjs' ) );
 copyFileSync( join( root, 'src', 'character.d.ts' ), join( root, 'dist', 'character.d.ts' ) );
+// Hand-written vehicle presets (b3VehicleDef tunings).
+copyFileSync( join( root, 'src', 'vehicles.js' ), join( root, 'dist', 'vehicles.mjs' ) );
+copyFileSync( join( root, 'src', 'vehicles.d.ts' ), join( root, 'dist', 'vehicles.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 

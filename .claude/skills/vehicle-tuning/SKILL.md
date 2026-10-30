@@ -1,6 +1,6 @@
 ---
 name: vehicle-tuning
-description: Build or tune a box3d.js vehicle (b3VehicleDef) to a brief such as "75% realistic FWD hot hatch" or "arcade RWD supercar", and prove it with the vehicle metrics script. Use when adding or changing a car preset in examples/src/vehicle-presets.js, when a car drives wrong (spins, flips, understeers, won't shift, brakes long), or when asked how realistic or arcade a car feels.
+description: Build or tune a box3d.js vehicle (b3VehicleDef) to a brief such as "75% realistic FWD hot hatch" or "arcade RWD supercar", and prove it with the vehicle metrics script. Use when adding or changing a car preset in src/vehicles.js (box3d.js/vehicles), when a car drives wrong (spins, flips, understeers, won't shift, brakes long), or when asked how realistic or arcade a car feels.
 ---
 
 # Vehicle tuning

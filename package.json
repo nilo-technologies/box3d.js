@@ -27,6 +27,10 @@
     "./character": {
       "types": "./dist/character.d.ts",
       "import": "./dist/character.mjs"
+    },
+    "./vehicles": {
+      "types": "./dist/vehicles.d.ts",
+      "import": "./dist/vehicles.mjs"
     }
   },
   "files": [

@@ -18,7 +18,7 @@ import { pathToFileURL } from 'node:url';
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const { vehiclePresets } = await import(
-	new URL('examples/src/vehicle-presets.js', root).href
+	new URL('src/vehicles.js', root).href
 );
 const { buildRaceTrack, createRaceTrackBodies } = await import(
 	new URL('examples/src/vehicle-tracks.js', root).href
