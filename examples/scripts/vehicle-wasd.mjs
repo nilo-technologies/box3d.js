@@ -18,8 +18,10 @@
 // For each preset it sweeps the pace from 0.8 g up in 0.1 g steps with three driver styles (how
 // far ahead they look and how big an error they let go before steering) and reports the mean of
 // the highest clean pace, and the first failure for each style: a spin, a slide (peak sideslip
-// over 15 degrees) or a plough (the car runs wide with the tires barely sliding). Higher clean
-// paces mean corners are easier to take; above them an arcade car should slide, not plough.
+// over 15 degrees), a plough (the car runs wide with the tires barely sliding) or did not finish
+// (stuck or out of time without a spin). A preset with no clean pace from 0.8 g is reported so
+// and left out of the sum. Higher clean paces mean corners are easier to take; above them an
+// arcade car should slide, not plough.
 // Single laps are chaotic, a key held one frame longer takes another line, so compare the means
 // and treat differences under 0.1 g as noise.
 
@@ -174,12 +176,17 @@ export function driveLap(preset, pace, style = driverStyles[1], options = {}) {
 	};
 }
 
-const failureMode = (r) => (r.spins > 0 || !r.completed ? 'spin' : r.maxSlip > 15 ? 'slide' : 'plough');
+// A lap that never finishes without a spin (stuck off the road, or out of time) is its own failure
+const failureMode = (r) =>
+	r.spins > 0 ? 'spin' : !r.completed ? 'did not finish' : r.maxSlip > 15 ? 'slide' : 'plough';
 
-/** The highest clean pace for each driver style, and how each fails above it */
+/**
+ * The highest clean pace for each driver style (null when even the slowest pace fails), and how
+ * each fails above it. meanClean is null unless every style found a clean pace.
+ */
 export function sweep(preset, options = {}) {
 	const styles = driverStyles.map((style) => {
-		let clean = 0.7;
+		let clean = null;
 		let failure = null;
 		for (let tenths = 8; tenths <= 24 && !failure; tenths++) {
 			const r = driveLap(preset, tenths / 10, style, options);
@@ -188,7 +195,9 @@ export function sweep(preset, options = {}) {
 		}
 		return { clean, failure };
 	});
-	const meanClean = styles.reduce((sum, s) => sum + s.clean, 0) / styles.length;
+	const meanClean = styles.every((s) => s.clean !== null)
+		? styles.reduce((sum, s) => sum + s.clean, 0) / styles.length
+		: null;
 	return { meanClean, styles };
 }
 
@@ -234,9 +243,14 @@ if (isMain) {
 		rows.push({ preset: name, ...r });
 		if (!args.json) {
 			const failures = r.styles.map((s) => (s.failure ? `${s.failure.mode} ${s.failure.maxSlip.toFixed(0)} deg` : 'none')).join(', ');
-			console.log(`${name.padEnd(16)} clean to ${r.meanClean.toFixed(2)} g [${r.styles.map((s) => s.clean.toFixed(1)).join(' ')}] | above it: ${failures}`);
+			const clean = r.meanClean === null ? 'not clean at 0.8 g' : `clean to ${r.meanClean.toFixed(2)} g`;
+			console.log(`${name.padEnd(16)} ${clean} [${r.styles.map((s) => (s.clean === null ? '-' : s.clean.toFixed(1))).join(' ')}] | above it: ${failures}`);
 		}
 	}
 	if (args.json) console.log(JSON.stringify(rows, null, 2));
-	else if (!args.pace) console.log(`sum of clean paces ${rows.reduce((sum, r) => sum + r.meanClean, 0).toFixed(2)} over ${rows.length} presets`);
+	else if (!args.pace) {
+		const clean = rows.filter((r) => r.meanClean !== null);
+		const missing = rows.length - clean.length;
+		console.log(`sum of clean paces ${clean.reduce((sum, r) => sum + r.meanClean, 0).toFixed(2)} over ${clean.length} presets${missing ? ` (${missing} not clean at 0.8 g, left out)` : ''}`);
+	}
 }

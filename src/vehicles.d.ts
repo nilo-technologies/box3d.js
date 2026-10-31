@@ -54,6 +54,8 @@ export interface VehicleAxle {
 	brake: number;
 	/** Ride frequency (Hz) */
 	frequency: number;
+	/** Tire values for this axle that differ from the car's `tire` */
+	tire?: Partial<VehicleTire>;
 }
 
 /** A car at 100% realism, the first preset layer */
