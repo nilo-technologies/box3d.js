@@ -1353,7 +1353,7 @@ console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`
 
 ### Presets
 
-`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node.
+`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node. The presets are tuned for keyboard players driving through `createSteeringLimiter`, a driver aid applied to the steer input that caps the steer angle near the front tires' grip limit (tighter while braking); without it, full lock at speed can spin the less realistic cars.
 
 ```ts
 // box3d.js/vehicles has ready tuned cars. A preset tunes a b3DefaultVehicleDef() and gives the
@@ -1375,6 +1375,15 @@ const rally = b3.b3CreateVehicle(world, rallyDef);
 const superDef = buildVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
 superDef.assists.abs = true;
 applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
+
+// The presets are tuned to be driven through the steering limiter, a driver aid for keyboard
+// input: it caps the steer angle near the front tires' grip limit, tighter while braking
+const limitSteer = createSteeringLimiter(b3);
+const rallySteering = b3.b3Vehicle_GetSteering(rally);
+const keys = { forward: 1, brake: 0, steer: 1, handbrake: 0 }; // W and D held
+const rallyWheels = rallyDef.wheels.slice(0, rallyDef.wheelCount);
+const steer = limitSteer(rallyChassis, rallySteering, rallyWheels, keys.steer, keys.brake);
+b3.b3Vehicle_SetInput(rally, { ...keys, steer });
 ```
 
 The vehicle example has a tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets it drives come from `box3d.js/vehicles`.

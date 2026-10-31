@@ -328,7 +328,7 @@ Springs can also be given in physical units (stiffness and damping), which keeps
 
 ### Presets
 
-`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node.
+`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node. The presets are tuned for keyboard players driving through `createSteeringLimiter`, a driver aid applied to the steer input that caps the steer angle near the front tires' grip limit (tighter while braking); without it, full lock at speed can spin the less realistic cars.
 
 <Snippet source="./vehicle.ts" select="presets" />
 

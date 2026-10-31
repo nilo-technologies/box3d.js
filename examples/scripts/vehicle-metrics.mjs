@@ -26,7 +26,7 @@ const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const presetsModule = await import(
 	new URL('src/vehicles.js', root).href
 );
-const { vehiclePresets, realismLevels, turboTypes, applyTurbo } = presetsModule;
+const { vehiclePresets, realismLevels, turboTypes, applyTurbo, createSteeringLimiter } = presetsModule;
 
 // ---------------------------------------------------------------------------
 // Targets
@@ -88,7 +88,8 @@ export const realismTargets = {
 };
 
 // Keyboard moves a forgiving car (50% realism and below) must survive: the peak sideslip in each
-// stays under this many degrees, with no steering limiter or other help from the caller
+// stays under this many degrees. The steer input goes through createSteeringLimiter, the driver aid
+// the presets ship with, as it does for a keyboard player in the examples.
 export const forgivingSlip = 25;
 
 export function targetRanges({ archetype, realism, drive }) {
@@ -467,6 +468,8 @@ const keyboardMoves = {
 	flick: [100, (t) => input(1, 0, t < 1.2 ? 1 : t < 2.4 ? -1 : 0), 5],
 };
 
+const limitSteer = createSteeringLimiter(b3);
+
 function testKeyboard(preset) {
 	const out = {};
 	for (const [name, [kmhStart, script, seconds]] of Object.entries(keyboardMoves)) {
@@ -483,8 +486,12 @@ function testKeyboard(preset) {
 			step(car);
 		}
 		let slip = 0;
+		const steering = b3.b3Vehicle_GetSteering(car.vehicle);
+		const wheels = car.def.wheels.slice(0, car.def.wheelCount);
 		for (let i = 0; i < seconds / dt; i++) {
-			b3.b3Vehicle_SetInput(car.vehicle, script(i * dt));
+			const keys = script(i * dt);
+			keys.steer = limitSteer(car.chassis, steering, wheels, keys.steer, keys.brake);
+			b3.b3Vehicle_SetInput(car.vehicle, keys);
 			step(car);
 			slip = Math.max(slip, sideslip(car.chassis));
 		}

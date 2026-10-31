@@ -30,7 +30,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | travel min/max (m) | 0.17 / 0.33 | 0.12 / 0.45 | 0.18 / 0.30 | 0.17 / 0.34 |
 | tire peak slip, lateral peak angle | 0.1, 7° | 0.18, 11° | 0.09, 6.5° | 0.1, 7° |
 | tire slide slip, lateral slide angle | 0.4, 18° | 0.6, 28° (gravel: broad, late) | 0.35, 16° | 0.4, 18° |
-| tire μ (lat peak / lat slide) | 1.10 / 0.94 | 1.00 / 0.90 | 1.25 / 1.00 | 1.02 / 0.90 |
+| tire μ (lat peak / lat slide) | 1.10 / 1.02, rear ×1.05 | 1.00 / 0.90 | 1.25 / 1.00 | 1.02 / 0.90 |
 | longitudinal peak / slide | 1.15 / 0.95 | 1.05 / 0.92 | 1.30 / 1.00 | 1.08 / 0.92 |
 | torque (N·m) at rpm | 400-480 at 5000 | 380-420 at 4000 | 650-770 at 6000 | 380-420 at 3000 (turbo) |
 | max rpm | 7000-7500 | 7500 | 8500 | 6500-7000 |
@@ -42,14 +42,14 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | anti-roll F/R (N/m) | 16000 / 13000 | 16000 / 12000 | 30000 / 26000 | 20000 / 14000 |
 | brakes F/R (N·m) | 2600 / 900 | 2580 / 1680 | 2400 / 2200 | 1800 / 1200 |
 | handbrake (N·m) | 2500 | 4480 (hydraulic) | 2000-2200 | 2500 |
-| steering lock, speedReference | 34°, 11 | 38°, 12 | 32°, 13 | 35°, 11 |
+| steering lock, speedReference | 34°, 14 | 38°, 12 | 32°, 13 | 35°, 11 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
-| own TC / ABS | off / on | off / off | on / on | on / on |
+| own TC / ABS | on / on | off / off | on / on | on / on |
 | LSDs F/R/center, AWD front share (car fields that the drivetrain layer applies, see drivetrains.md) | 1.0 (open) / 1.5 / 1.3, 0.4 | 1.3 / 1.6 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
 
 ## Character notes
 
-- **Sports**: balanced, progressive. Roll you can see (about 2°/g). Without TC at 100% it can spin in a full lock step steer at 120 km/h: that is the realistic result. Launch control keeps a flat out launch from spinning the rears (with it off, they spin to about 80 km/h).
+- **Sports**: balanced, progressive. Roll you can see (about 2°/g). It has stability and traction control, as a Cayman or M2 does: with a keyboard throttle and no TC the rear stepped out on every corner exit. The rear tires grip 5% more sideways than the fronts and the slide friction sits close to the peak, so a keyboard driver through the steering limiter turns in hard without spinning (findings #37). Launch control keeps a flat out launch from spinning the rears (with it off, they spin to about 80 km/h).
 - **Rally**: soft and tall, long travel, gravel tires (late, broad peak, low slide drop), hydraulic handbrake, short gearing. On tarmac it brakes long (no ABS, gravel tires) and rolls the most. Its taller body needs more `selfRighting` at the arcade levels.
 - **Super**: stiff, low, sticky, mid engine (rear heavy), real downforce. Gear the top gear so drag, not the limiter, sets the top speed, and keep `shiftUpRpm` well under the limiter. Size the front brake near the front tires' peak torque (about 1.15x) or ABS braking can lock the fronts.
 - **Hatch**: front heavy (60/40 as FWD), softer than a sports car, torque low in the rev range (turbo), modest tires. FWD understeers: balance it with a stiff rear bar. Its power is close to what the top speed floor needs, so keep drag at the low end and torque at the high end, and mass and `maxRpm` mid range or better: the heavy, low revving corner of the ranges reaches only 234 km/h against a 232 floor and brakes within 0.3 m of the limit. These hatch values come from the first blind test of this skill, not from a committed preset.

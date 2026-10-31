@@ -260,7 +260,7 @@ function applyCar(def, car) {
 			wheel.suspension.frequency = axleSettings.frequency;
 			wheel.suspension.compressionDamping = car.suspension.compressionDamping;
 			wheel.suspension.reboundDamping = car.suspension.reboundDamping;
-			setTire(wheel, car.tire);
+			setTire(wheel, axleSettings.tire ? { ...car.tire, ...axleSettings.tire } : car.tire);
 		},
 	);
 	Object.assign(def.engine, car.engine);
@@ -300,7 +300,14 @@ export const vehicleCars = {
 		// About 26% of the braking on the rear, near the ideal split at full braking. More rear brake
 		// locks the inside rear when braking in a turn, and ABS does not catch it while cornering.
 		front: { width: 0.245, brake: 2600, frequency: 2.0 },
-		rear: { width: 0.275, brake: 900, frequency: 2.2 },
+		// The wider rear tires grip 5% more sideways. With the steering limiter holding the fronts
+		// near their best grip, a rear no grippier than the front lets go first and the car spins.
+		rear: {
+			width: 0.275,
+			brake: 900,
+			frequency: 2.2,
+			tire: { latPeak: 1.155, latSlide: 1.071 },
+		},
 		handbrake: 2500,
 		suspension: {
 			minLength: 0.17,
@@ -318,7 +325,7 @@ export const vehicleCars = {
 			latPeakAngle: 7,
 			latPeak: 1.1,
 			latSlideAngle: 18,
-			latSlide: 0.94,
+			latSlide: 1.02,
 			rolling: 0.013,
 		},
 		engine: {
@@ -339,13 +346,15 @@ export const vehicleCars = {
 		antiRoll: [16000, 13000],
 		steering: {
 			maxAngle: 34,
-			speedReference: 11,
+			speedReference: 14,
 			steerSpeed: 4,
 			returnSpeed: 6,
 		},
 		downforce: 0.25,
 		drag: 0.4,
-		tractionControl: false,
+		// Stability and traction control, as the real cars have. A keyboard throttle is all or nothing,
+		// and without it the rear steps out on every corner exit.
+		tractionControl: true,
 		abs: true,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
 		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4 },
@@ -519,10 +528,10 @@ export const drivetrainLayers = {
  *
  * The less realistic levels are forgiving for a keyboard player, who only ever uses full lock,
  * full brake and full throttle. Every level below 100% has more grip on all four tires, which keeps
- * the car's balance (and its handbrake drifts). From 25% down `speedReferenceScale` also gives
- * more steering at speed, so full lock uses the extra grip; at 50% and above more steering lets
- * the front swing the rear out when going lock to lock. `counterSteer` stays low: it acts in every
- * corner, not only in slides, so a high value takes lock away and the car turns less.
+ * the car's balance (and its handbrake drifts). `rearGrip` multiplies the rear tires' side grip
+ * on top: just under 1 from 25% down, so a corner taken too fast slides the rear instead of
+ * running wide, as an arcade car should. `counterSteer` stays low: it acts in every corner,
+ * not only in slides, so a high value takes lock away and the car turns less.
  * `rollInfluence` stays low too: lifting the cornering forces toward the center of mass takes load
  * off the outside rear wheel, which then locks under braking in a turn and spins the car.
  */
@@ -532,7 +541,7 @@ export const realismLevels = {
 		tireGrip: 1.0,
 		rollInfluence: 0,
 		counterSteer: 0,
-		speedReferenceScale: 1,
+		rearGrip: 1,
 		driftGripScale: 1,
 		downforceScale: 1,
 		comDrop: 0,
@@ -548,7 +557,7 @@ export const realismLevels = {
 		tireGrip: 1.15,
 		rollInfluence: 0.1,
 		counterSteer: 0.15,
-		speedReferenceScale: 1,
+		rearGrip: 1,
 		driftGripScale: 0.85,
 		downforceScale: 1.5,
 		comDrop: 0.05,
@@ -564,7 +573,7 @@ export const realismLevels = {
 		tireGrip: 1.3,
 		rollInfluence: 0.15,
 		counterSteer: 0.2,
-		speedReferenceScale: 1,
+		rearGrip: 1,
 		driftGripScale: 0.7,
 		downforceScale: 2.5,
 		comDrop: 0.1,
@@ -580,7 +589,7 @@ export const realismLevels = {
 		tireGrip: 1.45,
 		rollInfluence: 0.2,
 		counterSteer: 0.2,
-		speedReferenceScale: 1.15,
+		rearGrip: 0.985,
 		driftGripScale: 0.55,
 		downforceScale: 4,
 		comDrop: 0.17,
@@ -596,7 +605,7 @@ export const realismLevels = {
 		tireGrip: 1.6,
 		rollInfluence: 0.25,
 		counterSteer: 0.2,
-		speedReferenceScale: 1.15,
+		rearGrip: 0.975,
 		driftGripScale: 0.4,
 		downforceScale: 6,
 		comDrop: 0.25,
@@ -621,9 +630,12 @@ function applyRealism(def, level) {
 		const wheel = def.wheels[i];
 		for (const key of tireFrictionKeys) wheel.tire[key] *= level.tireGrip;
 		// Front brakes are capped by ABS at the tires' peak anyway; the rears set the balance
-		if (wheel.steerFactor === 0) wheel.maxBrakeTorque *= level.tireGrip;
+		if (wheel.steerFactor === 0) {
+			wheel.maxBrakeTorque *= level.tireGrip;
+			wheel.tire.lateralPeakFriction *= level.rearGrip;
+			wheel.tire.lateralSlideFriction *= level.rearGrip;
+		}
 	}
-	def.steering.speedReference *= level.speedReferenceScale;
 	const [x, y, z] = def.chassis.centerOfMassOffset;
 	def.chassis.centerOfMassOffset = [x, y - level.comDrop, z];
 	const a = def.assists;
@@ -829,6 +841,76 @@ export const vehiclePresets = {
 	},
 	...matrixPresets,
 };
+
+// Steering limit: a driver aid applied to the input before it reaches the vehicle. A keyboard
+// gives only full lock or nothing, and the speed falloff in b3VehicleSteering is one curve for
+// every speed and grip, so full lock at speed would turn the front wheels well past the angle
+// where their tires grip best: the fronts plough, the rears follow, and the car slides or spins.
+// This caps the steer angle at `peakScale` times the front tires' peak slip angle, measured from
+// the direction the front axle travels. It only ever takes steering away, never adds or reverses
+// it. The presets are tuned to be driven with it: their speed falloff leaves more lock at speed
+// than full lock without it could take. A cap right at the peak (peakScale 1) holds the fronts
+// where they grip best but cannot rotate the car, so a corner taken too fast ploughs wide; 1.5
+// lets the car turn in harder and slide when overdone. Braking, the cap returns to the peak.
+const STEER_LIMIT_MIN_SPEED = 3;
+
+/**
+ * Returns limitSteer(chassis, steering, wheels, steer, braking): the steer input (1 full right,
+ * -1 full left) with the grip limit applied. `steering` is b3Vehicle_GetSteering(vehicle) and
+ * `wheels` the vehicle's wheel defs. While braking (0 to 1) the cap moves to `brakingPeakScale`:
+ * under braking the weight is on the front and extra lock past the peak spins the car, while off
+ * the brake it helps the car turn in. Cars face +z with +x to their left, as the presets do.
+ */
+export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 1 } = {}) {
+	const center = [0, 0, 0];
+	const point = [0, 0, 0];
+	const velocity = [0, 0, 0];
+	const forward = [0, 0, 0];
+	const left = [0, 0, 0];
+	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+	return function limitSteer(chassis, steering, wheels, steer, braking = 0) {
+		if (steer === 0) return 0;
+		const scale = peakScale + (brakingPeakScale - peakScale) * Math.min(Math.max(braking, 0), 1);
+
+		// The front axle center and the smallest peak slip angle among the steered wheels
+		let count = 0;
+		let peakAngle = Number.POSITIVE_INFINITY;
+		center[0] = center[1] = center[2] = 0;
+		for (const wheel of wheels) {
+			if (wheel.steerFactor === 0) continue;
+			center[0] += wheel.position[0];
+			center[1] += wheel.position[1];
+			center[2] += wheel.position[2];
+			peakAngle = Math.min(peakAngle, wheel.tire.lateralPeakAngle * scale);
+			count++;
+		}
+		if (count === 0) return steer;
+		center[0] /= count;
+		center[1] /= count;
+		center[2] /= count;
+
+		b3.b3Body_GetWorldPoint(point, chassis, center);
+		b3.b3Body_GetWorldPointVelocity(velocity, chassis, point);
+		b3.b3Body_GetWorldVector(forward, chassis, [0, 0, 1]);
+		b3.b3Body_GetWorldVector(left, chassis, [1, 0, 0]);
+		const vForward = dot(velocity, forward);
+		if (vForward < STEER_LIMIT_MIN_SPEED) return steer;
+
+		// The steer angle the vehicle would aim for (positive is left), with its speed falloff
+		const x = steering.speedReference > 0 ? vForward / steering.speedReference : 0;
+		const maxAngle = steering.maxAngle / (1 + x * x);
+		if (maxAngle <= 0) return steer;
+		let angle = -steer * maxAngle;
+
+		// The direction the front axle travels, measured as the vehicle measures slip angle:
+		// atan2(lateral, |forward| + 1 m/s). The tire's peak angle is defined on that measure.
+		const travel = Math.atan2(dot(velocity, left), vForward + 1);
+		if (angle > 0) angle = Math.min(angle, Math.max(travel + peakAngle, 0));
+		else angle = Math.max(angle, Math.min(travel - peakAngle, 0));
+		return -angle / maxAngle;
+	};
+}
 
 export function createPresetVehicleDef(b3, name) {
 	return vehiclePresets[name].apply(b3.b3DefaultVehicleDef());

@@ -5,7 +5,7 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | Field | 100 | 75 | 50 | 25 | 0 (arcade) | How to apply |
 | --- | --- | --- | --- | --- | --- | --- |
 | tire grip | 1.0 | 1.15 | 1.3 | 1.45 | 1.6 | multiply all four friction values (`longitudinalPeakFriction`, `longitudinalSlideFriction`, `lateralPeakFriction`, `lateralSlideFriction`) on every wheel, and the rear wheels' `maxBrakeTorque` |
-| steering falloff | ×1 | ×1 | ×1 | ×1.15 | ×1.15 | multiply `steering.speedReference` |
+| rear grip | 1 | 1 | 1 | 0.985 | 0.975 | multiply the rear wheels' `lateralPeakFriction` and `lateralSlideFriction` again (on top of tire grip) |
 | `rollInfluence` | 0 | 0.1 | 0.15 | 0.2 | 0.25 | set |
 | `counterSteer` | 0 | 0.15 | 0.2 | 0.2 | 0.2 | set |
 | `driftGripScale` | 1 | 0.85 | 0.7 | 0.55 | 0.4 | set |
@@ -43,7 +43,7 @@ The metrics script turns an archetype range [lo, hi] (from archetypes.md) into t
 | lateral g | lo × grip to hi × grip × 1.08 |
 | step steer roll | archetype roll range × the level's roll factors in the table above: 100% is [lo, hi], 75% is [0.6 lo, 0.85 hi], 50% is [0, 0.65 hi] and so on. Below 75% there is no lower bound. |
 | handbrake | heading change 45-360°, peak yaw rate 60-400°/s |
-| keyboard moves | peak sideslip under 25° (`forgivingSlip`) at 50% and below |
+| keyboard moves | peak sideslip under 25° (`forgivingSlip`) at 50% and below, steer input through `createSteeringLimiter` |
 | turning at speed (`stepTurnG`) | at least lateral g lo × grip × the level's share above, averaged over 0.5-2.5 s of the step steer |
 | ride height | chassis 0.3-1.2 m above the ground after settling |
 | launch line | under 2 m off the line by 100 km/h |
@@ -54,7 +54,7 @@ Across a car's levels, lateral g must not fall, braking must not get longer, rol
 
 ## Why these values
 
-- **Forgiving steering from 75% down**: a keyboard player only has full lock, full brake and full throttle, so the levels must survive those. Every level below 100% has more grip on all four tires, which keeps the car's balance and so its handbrake drifts (a rear only grip bias stabilised the car too, but cut handbrake rotation by up to 20%, findings #33). From 25% down the steering falloff row gives more lock at speed, so full lock uses the extra grip (the arcade sports car turns at 1.84-1.94 g at 120 km/h); at 50% the same extra lock let the RWD car spin going lock to lock. `counterSteer` stays at 0.2: it acts in every corner, not only in slides, and at 0.6 the arcade car turned at 0.8 g at full lock and 120 km/h (findings #31). `rollInfluence` stays low because it takes load off the outside rear wheel, which then locks when braking in a turn (findings #30).
+- **Forgiving steering from 75% down**: a keyboard player only has full lock, full brake and full throttle, so the levels must survive those. Every level below 100% has more grip on all four tires, which keeps the car's balance and so its handbrake drifts (a rear only grip bias stabilised the car too, but cut handbrake rotation by up to 20%, findings #33). The car layers carry the steering at speed (`speedReference`) and the front to rear tire balance, tuned with the WASD driver (findings #36-38); a realism row multiplier on the steering falloff spun the arcade cars once the steering limiter was in the keyboard moves. The rear grip row takes a little rear grip away from 25% down, so a corner taken too fast slides the rear instead of running wide, as an arcade car should (0.97 at arcade failed one perturbed flick at 26°). `counterSteer` stays at 0.2: it acts in every corner, not only in slides, and at 0.6 the arcade car turned at 0.8 g at full lock and 120 km/h (findings #31). `rollInfluence` stays low because it takes load off the outside rear wheel, which then locks when braking in a turn (findings #30).
 - **Rear brakes scale with the grip** so the brake balance stays the same share of the rear grip at every level. Front brakes are capped by ABS (or lock without it), so they stay as the car layer sets them.
 - **selfRighting 8 at 25%**: with less `rollInfluence` the 25% sports car rolled more, and one perturbed variant tipped over slowly onto two wheels after landing a jump on the rough ground; 6 did not catch it.
 - **Grip 1.6 at arcade** (was 1.45): with more steering at speed, 1.55 still let the arcade RWD sports car spin in the flick (51°); 1.6 holds it under 12° in every perturbed variant. Lateral g is 1.78 g on the sports car.

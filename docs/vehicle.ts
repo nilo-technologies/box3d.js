@@ -1,6 +1,12 @@
 import Box3D from 'box3d.js/inline';
 import type { Box3DModule } from 'box3d.js';
-import { applyTurbo, buildVehiclePreset, createPresetVehicleDef, vehiclePresets } from 'box3d.js/vehicles';
+import {
+	applyTurbo,
+	buildVehiclePreset,
+	createPresetVehicleDef,
+	createSteeringLimiter,
+	vehiclePresets,
+} from 'box3d.js/vehicles';
 
 const b3: Box3DModule = await Box3D();
 const worldDef = b3.b3DefaultWorldDef();
@@ -115,4 +121,13 @@ const rally = b3.b3CreateVehicle(world, rallyDef);
 const superDef = buildVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
 superDef.assists.abs = true;
 applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
+
+// The presets are tuned to be driven through the steering limiter, a driver aid for keyboard
+// input: it caps the steer angle near the front tires' grip limit, tighter while braking
+const limitSteer = createSteeringLimiter(b3);
+const rallySteering = b3.b3Vehicle_GetSteering(rally);
+const keys = { forward: 1, brake: 0, steer: 1, handbrake: 0 }; // W and D held
+const rallyWheels = rallyDef.wheels.slice(0, rallyDef.wheelCount);
+const steer = limitSteer(rallyChassis, rallySteering, rallyWheels, keys.steer, keys.brake);
+b3.b3Vehicle_SetInput(rally, { ...keys, steer });
 /* SNIPPET_END: presets */

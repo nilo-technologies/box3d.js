@@ -1141,12 +1141,15 @@ export async function runVehicleDemo(
 			while (accumulator >= STEP && steps < 4) {
 				prevPos.copy(currPos);
 				prevQuat.copy(currQuat);
+				// The brake pedal, or S in the automatic mode where it brakes while moving forward
+				const braking = Math.max(input.brake, -input.forward, 0);
 				const steer = car.settings.aids.steeringLimit
 					? limitSteer(
 							car.chassis,
 							car.live.steering,
 							car.live.wheels,
 							input.steer,
+							braking,
 						)
 					: input.steer;
 				b3.b3Vehicle_SetInput(car.vehicle, { ...input, steer });
