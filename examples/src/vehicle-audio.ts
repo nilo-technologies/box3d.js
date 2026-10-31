@@ -119,6 +119,12 @@ export type EngineBuild = {
 	crossover?: number;
 	/** A chambered muffler's chamber length (m) */
 	chamber?: number;
+	/** A 4-2-1 header's secondary pipe length (m): alternate firings' runners pair up */
+	secondary?: number;
+	/** Level of the intake tract's honk: the suction pulses ringing a pipe, not rushing air */
+	honk?: number;
+	/** Rpm where a high lift cam takes over, with sharper, stronger pulses and more intake */
+	cam?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -182,6 +188,16 @@ export const engineVoices = {
 		title: 'Inline four (buzzy hatchback)',
 		cylinders: 4,
 		firing: evenFiring([1, 0.94, 1.04, 0.97]),
+		// Rounded blowdown pulses, cylinders that wander slowly, a 4-2-1 header, a chambered
+		// muffler, an intake that honks, and a high lift cam from 5600 rpm
+		build: {
+			blowdown: true,
+			drift: 0.15,
+			secondary: 0.4,
+			chamber: 0.3,
+			honk: 1,
+			cam: 5600,
+		},
 		attack: 0.25,
 		decay: 2.6,
 		noise: 0.35,
@@ -196,8 +212,8 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.6,
 		crackle: 0.04,
-		level: 15.5,
-		// Four short equal headers into one collector
+		level: 12.5,
+		// Four short equal headers, paired by the build's 4-2-1 secondaries into one collector
 		pipes: {
 			runners: headers(4, 0.55),
 			mid: 1.6,

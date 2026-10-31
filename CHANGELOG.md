@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The inline four voice is rebuilt with six build options: the V8's `blowdown`, `drift` (0.15) and `chamber` (0.3 m), and three new ones. The other voices sound exactly as before.
+  - `secondary` (0.4 m): a 4-2-1 header. Each bank's runners pair up, alternate firings together (cylinders 1 and 4, 2 and 3), into secondary pipes that meet the mid pipe at the collector: two junctions on the way out instead of one. At high revs the paired pipes ring the firing note, a fuller howl.
+  - `honk` (1): the intake tract is a pipe, the runner and the airbox snorkel, closed at the valve and open at the mouth, and each suction pulse rings it. The intake honks, a tone, on top of the rushing air.
+  - `cam` (5600 rpm): a second, high lift cam takes over across 300 rpm, as VTEC does. Above it the pulses are 30% shorter and 25% stronger and the intake 80% louder, so the top of each gear changes character.
+  - The top end is louder against the bottom than before. The level is 12.5 (was 15.5), so a drive through the gears is as loud as before overall, and the saturator doesn't clip.
+
 - The cross-plane V8 voice is rebuilt: it idles with a big cam's lope, and five new ways of making the sound shape its burble. The other voices sound exactly as before (they render sample for sample the same).
   - The idle lopes: the long valve overlap leaves some cylinders a diluted charge, so the idle swells and sags once every two turns, with the shaft speeding up and slowing down with it. It is the rotary's regular lope, at a gentler depth, and it fades out by 3200 rpm and on throttle. A voice's `lope` without `misfire` now means a cam lope at idle only.
   - A voice can have a `build` (`EngineBuild`), each option off unless set. The V8 uses all five:

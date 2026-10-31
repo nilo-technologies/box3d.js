@@ -214,6 +214,14 @@ const PRESENCE_RPM = [3000, 8000];
 //   H or X pipe joins them
 // - chamber: a chambered muffler, an expansion chamber this long (m) after the muffler whose
 //   ends reflect, instead of the muffler's low pass alone
+// - secondary: a 4-2-1 header. Each bank's runners pair up, alternate firings together (1 and
+//   4, 2 and 3 on an inline four), into secondary pipes this long (m), which then meet the mid
+//   pipe at the collector
+// - honk: the intake tract as a pipe, the runner and the airbox snorkel, closed at the valve
+//   and open at the mouth. Each suction pulse rings it, a tone rather than rushing air. The
+//   value is its level.
+// - cam: the rpm where a second, high lift cam takes over (as VTEC does). Above it the pulses
+//   are sharper and stronger and the intake breathes harder.
 /** Suction after a blowdown pulse: its depth against the peak, and its span in decay times */
 const BLOWDOWN_SUCTION = 0.12;
 const BLOWDOWN_SPAN = [2.5, 5];
@@ -223,6 +231,20 @@ const DRIFT_HOLD = 0.97;
 const CHAMBER_IN = 0.4;
 const CHAMBER_REFLECT = 0.6;
 const CHAMBER_OUT = 1.6;
+/** Admittance of a 4-2-1 header's secondary pipe, against a runner's */
+const SECONDARY_AREA = 1.5;
+/** Intake tract length (m), the speed of sound in the cold air in it, and how much of a wave
+ * the closed valve and the open mouth reflect */
+const TRACT_LENGTH = 0.75;
+const TRACT_AIR = 343;
+const TRACT_VALVE = 0.9;
+const TRACT_MOUTH = 0.8;
+/** The high cam: how much shorter its pulses are, how much stronger, and how much louder the
+ * intake, all at full changeover. It changes over across CAM_BLEND rpm. */
+const CAM_SHARPEN = 0.3;
+const CAM_PUNCH = 0.25;
+const CAM_INTAKE = 0.8;
+const CAM_BLEND = 300;
 
 class VehicleEngineProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
@@ -285,6 +307,9 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		// Crank degrees turned since the start, and each bank's last firing on it (interference)
 		this.crank = 0;
 		this.bankFired = [];
+		// The intake tract (honk), and the low pass on the wave at its open mouth
+		this.tract = new Pipe(TRACT_LENGTH);
+		this.tractLow = 0;
 		this.plenum = new Svf();
 		this.airbox = new Svf();
 		this.airbox.set(1100, 0.7);
@@ -355,6 +380,17 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				this.runners.push(runner);
 				this.banks[bank].runners.push(runner);
 			}
+			// A 4-2-1 header pairs each bank's runners, alternate firings together
+			for (const bank of this.banks) {
+				bank.secondaries = [];
+				if (!voice.build?.secondary) continue;
+				for (let g = 0; g < Math.min(2, bank.runners.length); g++)
+					bank.secondaries.push({
+						pipe: new Pipe(voice.build.secondary),
+						runners: bank.runners.filter((_, j) => j % 2 === g),
+						atEnd: 0,
+					});
+			}
 			// Each bank's tailpipe sits on its side of the stereo picture, at equal power
 			const width = voice.mix?.width ?? 0;
 			this.banks.forEach((bank, b) => {
@@ -366,6 +402,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			});
 		}
 		if (voice.intake) this.plenum.set(voice.intake.hz, 2.5);
+		this.tract.setSpeed(TRACT_AIR);
 		this.pulseScale = -1;
 		this.kPop = decayCoef(14);
 		this.kBangAttack = decayCoef(BANG_ATTACK);
@@ -422,7 +459,16 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const ampJitter = v.ampJitter * (0.4 + 0.6 * steady);
 		// An exhaust pulse lasts a fixed number of crank degrees, so above 2500 rpm it shortens with
 		// the rpm. Otherwise the pulses would overlap into a steady pressure at high revs.
-		const pulseScale = Math.min(1, 2500 / Math.max(rpm, 300));
+		// The high cam, past its changeover, makes them shorter still
+		const camOn = v.build?.cam
+			? smoothstep(
+					v.build.cam - CAM_BLEND / 2,
+					v.build.cam + CAM_BLEND / 2,
+					rpm,
+				)
+			: 0;
+		const pulseScale =
+			Math.min(1, 2500 / Math.max(rpm, 300)) * (1 - CAM_SHARPEN * camOn);
 		if (Math.abs(pulseScale - this.pulseScale) > 0.005) {
 			this.pulseScale = pulseScale;
 			this.kAttack = decayCoef(v.attack * pulseScale);
@@ -434,7 +480,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			2.2,
 		);
 		// Pulses are weaker off throttle, as the engine is pumping air rather than burning fuel
-		const load = 0.5 + 0.5 * throttle;
+		const load = (0.5 + 0.5 * throttle) * (1 + CAM_PUNCH * camOn);
 		const step = (rpm * 6) / sampleRate; // degrees of crank per sample
 		const [, , gain1] = v.formants[0];
 		const [, , gain2] = v.formants[1];
@@ -452,6 +498,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				bank.mid.setSpeed(c);
 				bank.tail.setSpeed(c);
 				bank.chamber.setSpeed(c);
+				for (const sec of bank.secondaries) sec.pipe.setSpeed(c);
 				bank.muffler.set(mufflerHz, 0.541);
 				bank.muffler2.set(mufflerHz, 1.307);
 			}
@@ -465,7 +512,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			? intake.level *
 				(v.mix?.intake ?? 1) *
 				(0.15 + 0.85 * throttle) *
-				(0.3 + 0.7 * Math.min(rpm / 6000, 1.2))
+				(0.3 + 0.7 * Math.min(rpm / 6000, 1.2)) *
+				(1 + CAM_INTAKE * camOn)
 			: 0;
 		const cycle = v.cycle ?? 720;
 		// The bursts belong to idle and light load: none above 3200 rpm or near full throttle,
@@ -655,6 +703,17 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				this.plenum.run(roar);
 				this.airbox.run(roar);
 				air = (this.plenum.band + 0.5 * this.airbox.low) * intakeLevel * gain;
+				if (build.honk) {
+					// The tract: the suction pulls at the valve end, and the open mouth reflects the
+					// lows back inverted and radiates the rest
+					const mouth = this.tract.atEnd(kPipe);
+					const valveEnd = this.tract.atStart(kPipe);
+					this.tract.ahead.write(TRACT_VALVE * valveEnd - suction);
+					this.tractLow += kOpen * (mouth - this.tractLow);
+					const reflected = -TRACT_MOUTH * this.tractLow;
+					this.tract.back.write(reflected);
+					air += build.honk * (mouth - reflected) * intakeLevel * gain;
+				}
 			}
 
 			if (!usePipes) {
@@ -699,15 +758,46 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				const tailAtEnd = bank.tail.atEnd(kPipe);
 				const tailAtMuffler = bank.tail.atStart(kPipe);
 
-				// Collector: the runners and the wider mid pipe meet at one pressure
-				const joint =
-					(2 * (arriving + MID_AREA * midAtCollector)) /
-					(runners.length + MID_AREA);
-				for (const r of runners) {
-					// At the valve end the closed valve reflects, and the cylinder pushes its pulse in
-					const atValve = r.pipe.atStart(kPipe);
-					r.pipe.back.write(joint - r.atCollector);
-					r.pipe.ahead.write(r.push * grit + p.valve * atValve);
+				let joint;
+				if (bank.secondaries.length > 0) {
+					// 4-2-1: each pair of runners meets its secondary pipe at one pressure, and the
+					// secondaries meet the mid pipe at the collector
+					let fromSecondaries = 0;
+					for (const sec of bank.secondaries) {
+						sec.atEnd = sec.pipe.atEnd(kPipe);
+						fromSecondaries += sec.atEnd;
+					}
+					joint =
+						(2 *
+							(SECONDARY_AREA * fromSecondaries + MID_AREA * midAtCollector)) /
+						(SECONDARY_AREA * bank.secondaries.length + MID_AREA);
+					for (const sec of bank.secondaries) {
+						const back = sec.pipe.atStart(kPipe);
+						let inflow = 0;
+						for (const r of sec.runners) inflow += r.atCollector;
+						const merge =
+							(2 * (inflow + SECONDARY_AREA * back)) /
+							(sec.runners.length + SECONDARY_AREA);
+						for (const r of sec.runners) {
+							const atValve = r.pipe.atStart(kPipe);
+							r.pipe.back.write(merge - r.atCollector);
+							r.pipe.ahead.write(r.push * grit + p.valve * atValve);
+						}
+						sec.pipe.ahead.write(merge - back);
+						sec.pipe.back.write(joint - sec.atEnd);
+					}
+				} else {
+					// Collector: the runners and the wider mid pipe meet at one pressure
+					joint =
+						(2 * (arriving + MID_AREA * midAtCollector)) /
+						(runners.length + MID_AREA);
+					for (const r of runners) {
+						// At the valve end the closed valve reflects, and the cylinder pushes its pulse
+						// in
+						const atValve = r.pipe.atStart(kPipe);
+						r.pipe.back.write(joint - r.atCollector);
+						r.pipe.ahead.write(r.push * grit + p.valve * atValve);
+					}
 				}
 				// Overrun pops are fuel lighting in the hot pipe past the collector. The write waits
 				// until every bank is done, in case a crossover mixes them.
