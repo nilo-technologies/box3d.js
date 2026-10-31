@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The examples gallery no longer covers the vehicle showcase's touch controls on phones. The Source link floated over the bottom left corner of the example, on top of the steering pad; it now sits at the end of the top bar on narrow screens and in the sidebar header on wide ones. The gallery is the visible height of the screen (`100dvh`, was `100vh`), so on a phone the bottom of the example, where the controls are, is no longer under the browser's address and tool bars.
+
 - The rotary engine voice sounds like a rotary. Before, it was a soft, noisy piston engine: long blurry pulses, an even idle and a lot of hiss.
   - Its firing follows the rotors: two rotors with three faces each, every face firing once per turn of its rotor, which is three turns of the shaft. The worklet takes a cycle length per voice (`cycle`, 720° by default, 1080° for the rotary). The faces differ a little in strength, which repeats every three turns as a growl under the note.
   - Each pulse starts firmly, as the apex seal uncovers the peripheral exhaust port quickly (0.35 ms rise, was 0.8 ms), and is fat, as the port stays open long. There is less combustion noise (0.6, was 0.9) and less saturation, so the rasp is in the note rather than in hiss.
