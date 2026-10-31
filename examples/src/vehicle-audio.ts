@@ -149,6 +149,14 @@ export type EngineBuild = {
 	quad?: number;
 	/** Rpm where variable intake runners switch the trumpets from long to short (needs itb) */
 	intakeSwitch?: number;
+	/** A diesel's breathing: full air at any throttle, and the fuel cut on the overrun */
+	unthrottled?: boolean;
+	/** A turbo's turbine after the collector, taking this share of each pulse's peak */
+	turbine?: number;
+	/** A particulate filter before the muffler, absorbing the mids and highs by this share */
+	filter?: number;
+	/** Strength of a diesel's knock: a sharp spike on the front of each pulse */
+	knockEdge?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -572,6 +580,20 @@ export const engineVoices = {
 		cylinders: 4,
 		// Sharp pressure rise from compression ignition: a hard knock with a bright clatter on top
 		firing: evenFiring([1, 0.92, 1.05, 0.95]),
+		// A turbo diesel: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// rounded blowdown, no throttle plate and the fuel cut on the overrun, a turbine and a
+		// particulate filter in the exhaust, and the knock on the front of each pulse
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			unthrottled: true,
+			turbine: 0.6,
+			filter: 0.6,
+			knockEdge: 0.7,
+		},
 		attack: 0.08,
 		decay: 1.4,
 		noise: 0.55,
@@ -586,7 +608,7 @@ export const engineVoices = {
 		mufflerOpen: 1,
 		drive: 1.2,
 		crackle: 0,
-		level: 8.4,
+		level: 11.6,
 		pipes: {
 			runners: headers(4, 0.5),
 			mid: 2.2,

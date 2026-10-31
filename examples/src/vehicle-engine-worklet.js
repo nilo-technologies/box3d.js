@@ -249,6 +249,16 @@ const PRESENCE_RPM = [3000, 8000];
 //   milliseconds, so the pipes' resonances move with every pulse instead of standing still.
 // - turbulence: noise from the flows mixing where the runners meet, as strong as the flow
 //   arriving, so it rides on the pulses and rings the exhaust's own resonances
+// - unthrottled: a diesel's breathing. No throttle plate, so the intake draws full air at any
+//   throttle, and the fuel alone sets the power, so off throttle the cylinders only pump air and
+//   the exhaust pulses nearly vanish
+// - turbine: a turbo's turbine right after the collector, taking this share of energy out of
+//   each pulse's peak and smoothing what passes, more as the load and the revs build boost
+// - filter: a particulate filter before the muffler, porous ceramic that absorbs the mids and
+//   highs by this share and reflects less
+// - knockEdge: a diesel's combustion knock on the front of each pulse, a short sharp spike of
+//   this strength against the pulse, loudest at light load. It runs through the exhaust with the
+//   pulse.
 // - quad: each bank's exhaust splits after the muffler into two tailpipes, the second this many
 //   times as long as the first, so two sets of tailpipe resonances layer
 // - intakeSwitch: the rpm where variable intake runners switch the throttle bodies' trumpets
@@ -302,6 +312,21 @@ const HOT_MID = 15;
 const MEGAPHONE_AREAS = [1.2, 1.8, 2.7, 4];
 /** Of the muffler's output, the share each of a quad exhaust's two tailpipes takes */
 const QUAD_SPLIT = 0.5;
+/** Unthrottled: the pulses' strength off throttle once the fuel is cut, against full, and the
+ * rpm span over which it cuts on the overrun (at idle the engine still burns idle fuel) */
+const UNTHROTTLED_CUT = 0.12;
+const FUEL_CUT_RPM = [1100, 1600];
+/** The turbine: how hard it squashes a pulse's peak, the low pass on what passes (Hz), and the
+ * share of its effect with no boost */
+const TURBINE_SQUASH = 1.5;
+const TURBINE_CUTOFF = 1200;
+const TURBINE_IDLE = 0.3;
+/** The particulate filter's low pass (Hz) and how much of the muffler's reflection it takes */
+const FILTER_CUTOFF = 700;
+const FILTER_ABSORB = 0.5;
+/** The knock edge: how long the spike lasts (ms), and how much weaker it is at full throttle */
+const KNOCK_EDGE_TIME = 0.15;
+const KNOCK_EDGE_LOAD = 0.55;
 /** Variable intake: the trumpets' long and short lengths (m), and the rpm span of the switch */
 const TRUMPET_LONG = 0.45;
 const TRUMPET_SHORT = 0.25;
@@ -422,6 +447,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				trumpet: old?.trumpet ?? new Pipe(TRUMPET_LENGTH),
 				trumpetLow: 0,
 				suck: 0,
+				// The knock edge on its current pulse
+				edge: 0,
 			};
 		});
 		this.meanLope = voice.lope
@@ -442,6 +469,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						? new Pipe(pipes.tail * voice.build.quad)
 						: null,
 					openLow2: 0,
+					turbineLow: 0,
+					filterLow: 0,
 					muffler: new Svf(),
 					muffler2: new Svf(),
 					presence: new Svf(),
@@ -580,8 +609,18 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			Math.max(Math.sqrt(3000 / Math.max(rpm, 300)), 0.7),
 			2.2,
 		);
-		// Pulses are weaker off throttle, as the engine is pumping air rather than burning fuel
-		const load = (0.5 + 0.5 * throttle) * (1 + CAM_PUNCH * camOn);
+		// Pulses are weaker off throttle, as the engine is pumping air rather than burning fuel. An
+		// unthrottled diesel cuts its fuel on the overrun, so coasting it barely pulses at all.
+		const offThrottle = v.build?.unthrottled
+			? 0.5 -
+				(0.5 - UNTHROTTLED_CUT) *
+					smoothstep(FUEL_CUT_RPM[0], FUEL_CUT_RPM[1], rpm)
+			: 0.5;
+		const load =
+			(v.build?.unthrottled
+				? offThrottle + (1 - offThrottle) * throttle
+				: 0.5 + 0.5 * throttle) *
+			(1 + CAM_PUNCH * camOn);
 		const step = (rpm * 6) / sampleRate; // degrees of crank per sample
 		const [, , gain1] = v.formants[0];
 		const [, , gain2] = v.formants[1];
@@ -613,6 +652,19 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const turbulence = v.build?.turbulence ?? 0;
 		const kOpen = onePole(OPEN_CUTOFF);
 		const kBypass = onePole(FLAP_CUTOFF);
+		const kTurbine = onePole(TURBINE_CUTOFF);
+		const kFilter = onePole(FILTER_CUTOFF);
+		const kEdge = decayCoef(KNOCK_EDGE_TIME);
+		// The turbine works harder as the boost builds with the load and the revs
+		const turbine = v.build?.turbine
+			? v.build.turbine *
+				(TURBINE_IDLE +
+					(1 - TURBINE_IDLE) * throttle * smoothstep(1200, 2500, rpm))
+			: 0;
+		const filter = v.build?.filter ?? 0;
+		const knockEdge = v.build?.knockEdge
+			? v.build.knockEdge * (1 - KNOCK_EDGE_LOAD * throttle)
+			: 0;
 		if (v.build?.intakeSwitch) {
 			// Variable intake: long trumpets low down, short ones up top
 			const shortOn = smoothstep(
@@ -649,7 +701,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const intakeLevel = intake
 			? intake.level *
 				(v.mix?.intake ?? 1) *
-				(0.15 + 0.85 * throttle) *
+				(v.build?.unthrottled ? 1 : 0.15 + 0.85 * throttle) *
 				(0.3 + 0.7 * Math.min(rpm / 6000, 1.2)) *
 				(1 + CAM_INTAKE * camOn)
 			: 0;
@@ -785,6 +837,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						this.banks[c.bank].hot +=
 							amp / Math.max(this.banks[c.bank].runners.length, 1);
 					}
+					if (knockEdge) c.edge += knockEdge * amp;
 					// The firing happened part way through this sample: start the pulse that far along
 					const late = -c.due / turn;
 					if (build.blowdown) {
@@ -819,8 +872,13 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					shape *= c.amp;
 					c.age = u >= 1 ? -1 : t + 1;
 				}
-				const pulse =
+				let pulse =
 					c.rasp > 0 ? shape * (1 + c.rasp * (Math.random() * 2 - 1)) : shape;
+				if (c.edge) {
+					// The knock's sharp spike on the front of the pulse
+					pulse += c.edge;
+					c.edge *= kEdge;
+				}
 				sum += pulse;
 				if (usePipes) this.runners[c.runner].push += pulse;
 				c.x *= this.kDecay;
@@ -981,6 +1039,12 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				// Turbulence where the flows mix, riding on the flow arriving
 				if (turbulence)
 					into += turbulence * (Math.random() * 2 - 1) * Math.abs(arriving);
+				if (turbine > 0) {
+					// The turbine takes energy out of each pulse's peak and smooths what passes
+					const taken = into / (1 + TURBINE_SQUASH * turbine * Math.abs(into));
+					bank.turbineLow += kTurbine * (taken - bank.turbineLow);
+					into = taken + turbine * (bank.turbineLow - taken);
+				}
 				if (cone.length > 0) {
 					// Megaphone: the wave widens section by section, each step reflecting a little,
 					// and the last meets the mid pipe
@@ -1002,10 +1066,22 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 
 				// Muffler: part of the wave reflects back up the mid pipe and the rest passes its low
 				// pass into the tailpipe. A wave coming back up the tailpipe mostly dies in it.
-				bank.muffler.run(midAtMuffler);
+				let toMuffler = midAtMuffler;
+				if (filter) {
+					// The particulate filter absorbs the mids and highs on the way in
+					bank.filterLow += kFilter * (midAtMuffler - bank.filterLow);
+					toMuffler = midAtMuffler + filter * (bank.filterLow - midAtMuffler);
+				}
+				bank.muffler.run(toMuffler);
 				bank.muffler2.run(bank.muffler.low);
-				// An open flap lets the wave past the muffler, so less of it reflects
-				bank.mid.back.write(p.reflect * (1 - 0.7 * flap) * midAtMuffler);
+				// An open flap lets the wave past the muffler, so less of it reflects, and a filter
+				// takes some of it
+				bank.mid.back.write(
+					p.reflect *
+						(1 - 0.7 * flap) *
+						(filter ? 1 - FILTER_ABSORB * filter : 1) *
+						midAtMuffler,
+				);
 				let muffled = bank.muffler2.low;
 				if (build.chamber) {
 					// Chambered: the wave rings between the chamber's ends on its way through

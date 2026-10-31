@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The diesel voice is rebuilt as a turbo diesel with nine build options. The other voices sound exactly as before.
+  - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`) and `blowdown`.
+  - `unthrottled`, new: a diesel has no throttle plate, so its intake draws full air at any throttle, and the fuel alone sets the power. At idle it still burns idle fuel, but on the overrun the fuel is cut (from 1100 to 1600 rpm), so coasting the exhaust pulses fall to 12% of full and the engine goes quiet but for its breathing.
+  - `turbine` (0.6), new: the turbo's turbine right after the collector squashes each pulse's peak and smooths what passes, more as the load and the revs build boost, so the note is rounder flat out.
+  - `filter` (0.6), new: a particulate filter before the muffler absorbs the mids and highs (a low pass at 700 Hz, blended in) and takes some of the muffler's reflection.
+  - `knockEdge` (0.7), new: the knock is a short, sharp spike on the front of each pulse, travelling with it through the exhaust, loudest at light load and 55% weaker at full throttle. Unlike a separate ring of the block, it adds almost nothing to the 1-4 kHz band at idle.
+  - The level is 11.6 (was 8.4), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
 - The V12 voice is rebuilt as a grand tourer's V12 with thirteen build options. The other voices sound exactly as before.
   - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`, as on the flat-plane V8 and the V10). Its harmonic-to-noise ratio at speed drops from 15-24 dB to 7-11 dB.
   - `secondary` (0.45 m): each bank of six splits into halves of three, as a Ferrari V12's 6-into-2-into-1 headers do. Also `itb` (0.5), `flap` (5500 rpm), `steepen` (0.4), `spacing` (1.1 m), `blowdown` and `megaphone` (0.4 m).
