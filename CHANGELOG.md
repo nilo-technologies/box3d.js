@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+- The V10 voice is rebuilt as a race-bred V10 with ten build options. The other voices sound exactly as before.
+  - The flat-plane V8's four that make it less of a machine: `combustion` (0.04), `heat` (0.25), `turbulence` (0.12) and `tolerance` (0.04). Its harmonic-to-noise ratio at speed drops from 19-24 dB to 10-12 dB.
+  - `itb` (0.5): a trumpet per cylinder, as on the Lexus LFA. `flap` (5000 rpm): a bypass flap past the muffler. `blowdown`: rounded pulses with a scavenging dip.
+  - `steepen` (0.5) and `spacing` (1.1 m), now in use: high pressure runs faster down the pipes, so pulse fronts sharpen toward a shock on a firm throttle, and each bank's tailpipe reaches the far ear later than the near one.
+  - `megaphone` (0.4 m), new: each bank's collector widens like a cone in four sections, from 1.2 to 4 times a runner's width, rather than meeting the mid pipe at a sharp junction. Each step reflects a little, so the suction wave back up the runners is soft and spread out. It strengthens the mids from about 4500 rpm.
+  - The level is 7 (was 8.7), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
 - The flat-plane V8 voice sounds less like a machine. Every firing used to be nearly the same and the pipes were fixed filters, so at speed its harmonic-to-noise ratio was 21-25 dB. With four new build options it is 12-16 dB, the range of the rotary and the boxer. The other voices sound exactly as before.
   - `combustion` (0.04): combustion varies from cycle to cycle at any revs and load, about 4% in strength and about 1.2° in timing. The voice's jitter still fades out with the revs on top of it.
   - `heat` (0.25): each pulse is a slug of hot gas, and sound runs faster in it. It warms its runner, then its bank's mid pipe, and cools within milliseconds, so the pipes' resonances move with every pulse.
   - `turbulence` (0.12): noise where the runners' flows mix at the collector, as strong as the flow arriving, so it rides on the pulses and rings the exhaust's own resonances. It stays out of the top octaves.
   - `tolerance` (0.04): each runner is up to 4 cm longer or shorter and each cylinder up to 6% stronger or weaker, fixed per index, so the same every run. It brings up the odd orders a real engine has (orders 1 and 3 go from about -47 dB to -28 dB under the firing order).
-  - The worklet also has `steepen` (shock steepening: high pressure runs faster, so pulse fronts sharpen) and `spacing` (each bank's tailpipe reaches the far ear later) as build options, unused by the voices for now.
+  - The worklet also has `steepen` (shock steepening: high pressure runs faster, so pulse fronts sharpen) and `spacing` (each bank's tailpipe reaches the far ear later) as build options.
   - The level is 8.5 (was 9.4), so a drive through the gears is as loud as before.
 
 - The inline six voice is rebuilt with six build options: `blowdown`, `drift` (0.15), `chamber` (0.35 m), `secondary` (0.5 m) and two new ones. The other voices sound exactly as before.

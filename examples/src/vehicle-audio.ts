@@ -143,6 +143,8 @@ export type EngineBuild = {
 	/** Manufacturing tolerance: runners up to this much (m) longer or shorter, cylinders up to
 	 * 1.5 times this share stronger or weaker, the same every run */
 	tolerance?: number;
+	/** A megaphone collector this long (m): a cone between the runners and the mid pipe */
+	megaphone?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -416,6 +418,21 @@ export const engineVoices = {
 		title: 'V10 (high-revving scream)',
 		cylinders: 10,
 		firing: evenFiring([1, 0.9, 1, 0.9, 1, 0.9, 1, 0.9, 1, 0.9]),
+		// A race-bred V10: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// a trumpet per cylinder, a bypass flap from 5000 rpm, pulses that steepen in the pipes,
+		// rounded blowdown, megaphone collectors and tailpipes 1.1 m apart
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			itb: 0.5,
+			flap: 5000,
+			steepen: 0.5,
+			spacing: 1.1,
+			blowdown: true,
+			megaphone: 0.4,
+		},
 		attack: 0.18,
 		decay: 1.8,
 		noise: 0.2,
@@ -430,7 +447,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.8,
 		crackle: 0.04,
-		level: 8.7,
+		level: 7,
 		pipes: {
 			runners: headers(10, 0.42, alternate(10)),
 			mid: 1.5,

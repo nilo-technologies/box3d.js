@@ -249,6 +249,9 @@ const PRESENCE_RPM = [3000, 8000];
 //   milliseconds, so the pipes' resonances move with every pulse instead of standing still.
 // - turbulence: noise from the flows mixing where the runners meet, as strong as the flow
 //   arriving, so it rides on the pulses and rings the exhaust's own resonances
+// - megaphone: a collector that widens like a cone this long (m) between the runners and the mid
+//   pipe, rather than a sharp junction. Each step in its width reflects a little, so it sends a
+//   soft, spread out suction wave back up the runners instead of one sharp one.
 // - tolerance: no two cylinders are made quite the same. Each runner is up to this many metres
 //   longer or shorter, and each cylinder burns up to 1.5 times this share stronger or weaker,
 //   the same every time the engine runs.
@@ -290,6 +293,9 @@ const AIR_SPEED = 343;
 /** How long a runner's and a mid pipe's slug of hot gas lasts (ms at 2500 rpm and below) */
 const HOT_RUNNER = 6;
 const HOT_MID = 15;
+/** The megaphone's sections and their widths (admittance against a runner), from the runners
+ * to the mid pipe */
+const MEGAPHONE_AREAS = [1.2, 1.8, 2.7, 4];
 /** A fixed number from -1 to 1 for each index, the same every run */
 const fixed = (i) => {
 	const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
@@ -453,6 +459,13 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			}
 			// A 4-2-1 header pairs each bank's runners, alternate firings together
 			for (const bank of this.banks) {
+				const megaphone = voice.build?.megaphone ?? 0;
+				bank.cone = megaphone
+					? MEGAPHONE_AREAS.map((area) => ({
+							area,
+							pipe: new Pipe(megaphone / MEGAPHONE_AREAS.length),
+						}))
+					: [];
 				bank.secondaries = [];
 				if (!voice.build?.secondary) continue;
 				for (let g = 0; g < Math.min(2, bank.runners.length); g++)
@@ -573,6 +586,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				bank.tail.setSpeed(c);
 				bank.chamber.setSpeed(c);
 				for (const sec of bank.secondaries) sec.pipe.setSpeed(c);
+				for (const section of bank.cone) section.pipe.setSpeed(c);
 				bank.muffler.set(mufflerHz, 0.541);
 				bank.muffler2.set(mufflerHz, 1.307);
 			}
@@ -888,6 +902,11 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				const tailAtEnd = bank.tail.atEnd(kPipe);
 				const tailAtMuffler = bank.tail.atStart(kPipe);
 
+				// What leaves the collector: the mid pipe, or a megaphone's first section
+				const cone = bank.cone;
+				const firstArea = cone.length > 0 ? cone[0].area : MID_AREA;
+				const firstBack =
+					cone.length > 0 ? cone[0].pipe.atStart(kPipe) : midAtCollector;
 				let joint;
 				if (bank.secondaries.length > 0) {
 					// 4-2-1: each pair of runners meets its secondary pipe at one pressure, and the
@@ -898,9 +917,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						fromSecondaries += sec.atEnd;
 					}
 					joint =
-						(2 *
-							(SECONDARY_AREA * fromSecondaries + MID_AREA * midAtCollector)) /
-						(SECONDARY_AREA * bank.secondaries.length + MID_AREA);
+						(2 * (SECONDARY_AREA * fromSecondaries + firstArea * firstBack)) /
+						(SECONDARY_AREA * bank.secondaries.length + firstArea);
 					for (const sec of bank.secondaries) {
 						const back = sec.pipe.atStart(kPipe);
 						let inflow = 0;
@@ -919,8 +937,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				} else {
 					// Collector: the runners and the wider mid pipe meet at one pressure
 					joint =
-						(2 * (arriving + MID_AREA * midAtCollector)) /
-						(runners.length + MID_AREA);
+						(2 * (arriving + firstArea * firstBack)) /
+						(runners.length + firstArea);
 					for (const r of runners) {
 						// At the valve end the closed valve reflects, and the cylinder pushes its pulse
 						// in
@@ -931,11 +949,28 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				}
 				// Overrun pops are fuel lighting in the hot pipe past the collector. The write waits
 				// until every bank is done, in case a crossover mixes them.
-				bank.midIn = joint - midAtCollector + 2 * pop;
+				let into = joint - firstBack + 2 * pop;
 				// Turbulence where the flows mix, riding on the flow arriving
 				if (turbulence)
-					bank.midIn +=
-						turbulence * (Math.random() * 2 - 1) * Math.abs(arriving);
+					into += turbulence * (Math.random() * 2 - 1) * Math.abs(arriving);
+				if (cone.length > 0) {
+					// Megaphone: the wave widens section by section, each step reflecting a little,
+					// and the last meets the mid pipe
+					cone[0].pipe.ahead.write(into);
+					for (let k = 1; k <= cone.length; k++) {
+						const from = cone[k - 1];
+						const ahead = from.pipe.atEnd(kPipe);
+						const area = k < cone.length ? cone[k].area : MID_AREA;
+						const back =
+							k < cone.length ? cone[k].pipe.atStart(kPipe) : midAtCollector;
+						const step =
+							(2 * (from.area * ahead + area * back)) / (from.area + area);
+						from.pipe.back.write(step - ahead);
+						if (k < cone.length) cone[k].pipe.ahead.write(step - back);
+						else into = step - back;
+					}
+				}
+				bank.midIn = into;
 
 				// Muffler: part of the wave reflects back up the mid pipe and the rest passes its low
 				// pass into the tailpipe. A wave coming back up the tailpipe mostly dies in it.
