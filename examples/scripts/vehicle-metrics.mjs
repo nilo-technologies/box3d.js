@@ -99,8 +99,10 @@ export function targetRanges({ archetype, realism, drive }) {
 	const [z0, z1] = a.zeroTo100[drive];
 	return {
 		// The archetype figures are launch control runs, as the test is: b3VehicleAssists
-		// launchControl is on by default. More grip can only help the launch.
-		zeroTo100: [z0 * (1 - 0.2 * arcade), z1],
+		// launchControl is on by default. More grip can only help the launch: a traction limited
+		// launch gets quicker with the level's tire grip, so the floor falls with it. grip^-0.6 gives
+		// the floors the old 1 - 0.2 * arcade did at the old grips (1.1 to 1.45).
+		zeroTo100: [z0 * r.grip ** -0.6, z1],
 		// Downforce loads the tires and adds rolling resistance
 		topSpeed: [a.topSpeed[0] * (1 - 0.05 * arcade), a.topSpeed[1]],
 		braking: [a.braking[0] / r.grip / 1.05, a.braking[1] / r.grip],
