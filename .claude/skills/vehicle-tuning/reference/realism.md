@@ -11,7 +11,7 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | `driftGripScale` | 1 | 0.85 | 0.7 | 0.55 | 0.4 | set |
 | downforce | ×1 | ×1.5 | ×2.5 | ×4 | ×6 | multiply the car's `downforce` |
 | center of mass drop | 0 | 0.05 | 0.1 | 0.17 | 0.25 | subtract from `centerOfMassOffset` y (m) |
-| `selfRighting` | 0 | 1 | 4 | 8 | 10 | set |
+| `selfRighting` | 0 | 1 | 6 | 8 | 10 | set |
 | `airControl` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
 | `airAngularDamping` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
 | `maxTiltAngle` | off | off | off | 70° | 55° | set (radians; 0 is off) |
@@ -59,5 +59,5 @@ Across a car's levels, lateral g must not fall, braking must not get longer, rol
 - **selfRighting 8 at 25%**: with less `rollInfluence` the 25% sports car rolled more, and one perturbed variant tipped over slowly onto two wheels after landing a jump on the rough ground; 6 did not catch it.
 - **Grip 1.6 at arcade** (was 1.45): with more steering at speed, 1.55 still let the arcade RWD sports car spin in the flick (51°); 1.6 holds it under 12° in every perturbed variant. Lateral g is 1.78 g on the sports car.
 - **driftGripScale 0.4 at arcade**: with counterSteer 0.7 and driftGripScale 0.45 the arcade cars rotated less under the handbrake than the 25% cars (141 vs 157°/s), because the counter steer caught the slide. 0.6/0.4 restored the ordering (170°/s); counterSteer is now 0.2 and the ordering holds with room to spare.
-- **selfRighting 4 at 50%**: 3 was enough for the low sports car but not the taller rally body on its roof. Taller or narrower bodies need more.
+- **selfRighting 6 at 50%**: 3 was enough for the low sports car but not the taller rally body on its roof, and 4, then 5, stopped being enough for the FWD rally car and the supercars once the other rows changed. Taller or narrower bodies need more.
 - **TC and ABS from 50% down**: below that the player should not have to manage wheelspin or lockups.

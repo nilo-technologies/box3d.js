@@ -493,6 +493,9 @@ function testKeyboard(preset) {
 			keys.steer = limitSteer(car.chassis, steering, wheels, keys.steer, keys.brake);
 			b3.b3Vehicle_SetInput(car.vehicle, keys);
 			step(car);
+			// Stopped: held brake selects reverse, and a car reversing reads as 180 degrees of
+			// sideslip, so the move ends when the car does
+			if (readState(car.vehicle).speed < 1) break;
 			slip = Math.max(slip, sideslip(car.chassis));
 		}
 		out[`${name}Slip`] = slip;

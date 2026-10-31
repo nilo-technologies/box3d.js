@@ -374,7 +374,15 @@ export const vehicleCars = {
 		wheelRadius: 0.37,
 		wheelInertia: 1.13,
 		front: { width: 0.235, brake: 2580, frequency: 1.5 },
-		rear: { width: 0.235, brake: 1680, frequency: 1.6 },
+		// The rear tires grip sooner (9 degrees against 11) and 5% more, and hold on past their peak,
+		// so a keyboard driver lifting or braking mid corner through the steering limiter does not
+		// swing the rear out
+		rear: {
+			width: 0.235,
+			brake: 1680,
+			frequency: 1.6,
+			tire: { latPeak: 1.05, latSlide: 1.05, latPeakAngle: 9 },
+		},
 		handbrake: 4480,
 		suspension: {
 			minLength: 0.12,
@@ -390,7 +398,7 @@ export const vehicleCars = {
 			latPeakAngle: 11,
 			latPeak: 1.0,
 			latSlideAngle: 28,
-			latSlide: 0.9,
+			latSlide: 0.96,
 			rolling: 0.018,
 		},
 		engine: {
@@ -408,7 +416,7 @@ export const vehicleCars = {
 		antiRoll: [16000, 12000],
 		steering: {
 			maxAngle: 38,
-			speedReference: 12,
+			speedReference: 15,
 			steerSpeed: 5,
 			returnSpeed: 7,
 		},
@@ -416,7 +424,9 @@ export const vehicleCars = {
 		drag: 0.45,
 		tractionControl: false,
 		abs: false,
-		drive: { frontLsd: 1.3, rearLsd: 1.6, centerLsd: 1.4, awdFront: 0.5 },
+		// A strongly locking rear differential spins the inside rear wheel up on power and swings the
+		// tail out (1.6 read 1.21 g in the lateral test on gravel tires); 1.1 drives straight and stays put
+		drive: { frontLsd: 1.3, rearLsd: 1.1, centerLsd: 1.4, awdFront: 0.5 },
 	},
 	super: {
 		title: 'Supercar',
@@ -433,7 +443,16 @@ export const vehicleCars = {
 		// About 1.15x what the front tires carry at peak grip. A much stronger brake overshoots the
 		// peak slip on a full brake step, and ABS cannot release a wheel once it is past the peak.
 		front: { width: 0.255, brake: 2400, frequency: 2.5 },
-		rear: { width: 0.325, brake: 2200, frequency: 2.7 },
+		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
+		// braking on the rear (2200 was 48% and spun the car braking into a turn). The wider rear tires
+		// grip 5% more sideways, so lifting mid corner through the steering limiter does not swing
+		// the tail out.
+		rear: {
+			width: 0.325,
+			brake: 1500,
+			frequency: 2.7,
+			tire: { latPeak: 1.3125, latSlide: 1.2075 },
+		},
 		handbrake: 2000,
 		suspension: {
 			minLength: 0.18,
@@ -451,7 +470,7 @@ export const vehicleCars = {
 			latPeakAngle: 6.5,
 			latPeak: 1.25,
 			latSlideAngle: 16,
-			latSlide: 1.0,
+			latSlide: 1.15,
 			rolling: 0.012,
 		},
 		engine: {
@@ -471,7 +490,7 @@ export const vehicleCars = {
 		antiRoll: [30000, 26000],
 		steering: {
 			maxAngle: 32,
-			speedReference: 13,
+			speedReference: 15,
 			steerSpeed: 4,
 			returnSpeed: 6,
 		},
@@ -577,7 +596,7 @@ export const realismLevels = {
 		driftGripScale: 0.7,
 		downforceScale: 2.5,
 		comDrop: 0.1,
-		selfRighting: 4,
+		selfRighting: 6,
 		airControl: 1.5,
 		airAngularDamping: 1.5,
 		maxTiltAngle: 0,
