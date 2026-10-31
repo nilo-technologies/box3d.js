@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The inline six voice is rebuilt with six build options: `blowdown`, `drift` (0.15), `chamber` (0.35 m), `secondary` (0.5 m) and two new ones. The other voices sound exactly as before.
+  - `secondary` on a six is a split manifold: firing order 1-5-3-6-2-4 alternates the front three and the rear three, so the pairing of alternate firings puts each half into a pipe of its own, and the two meet at the collector, as on a BMW six. It fills out the growl from 3000 to 4500 rpm.
+  - `itb` (0.5): individual throttle bodies. Each cylinder breathes through a short trumpet of its own (0.3 m), open to the air, and its suction pulse rings it: an intake howl that grows with the revs.
+  - `flap` (4000 rpm): an exhaust flap opens past the muffler on a firm throttle (from 30% to 70%) across 4000 ± 500 rpm, swinging over a quarter of a second. Through it the exhaust runs straight, with only a gentle low pass and less of the muffler's reflection. Idle and cruising are unchanged.
+  - The level is 14.9 (was 11.2), so a drive through the gears is as loud as before overall, and the saturator doesn't clip.
+
 - The inline four voice is rebuilt with six build options: the V8's `blowdown`, `drift` (0.15) and `chamber` (0.3 m), and three new ones. The other voices sound exactly as before.
   - `secondary` (0.4 m): a 4-2-1 header. Each bank's runners pair up, alternate firings together (cylinders 1 and 4, 2 and 3), into secondary pipes that meet the mid pipe at the collector: two junctions on the way out instead of one. At high revs the paired pipes ring the firing note, a fuller howl.
   - `honk` (1): the intake tract is a pipe, the runner and the airbox snorkel, closed at the valve and open at the mouth, and each suction pulse rings it. The intake honks, a tone, on top of the rushing air.

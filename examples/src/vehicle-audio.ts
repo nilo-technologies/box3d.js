@@ -125,6 +125,10 @@ export type EngineBuild = {
 	honk?: number;
 	/** Rpm where a high lift cam takes over, with sharper, stronger pulses and more intake */
 	cam?: number;
+	/** Level of individual throttle bodies: a trumpet per cylinder, each rung by its suction */
+	itb?: number;
+	/** Rpm where an exhaust flap opens past the muffler on a firm throttle */
+	flap?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -271,6 +275,16 @@ export const engineVoices = {
 		title: 'Inline six (smooth)',
 		cylinders: 6,
 		firing: evenFiring([1, 0.97, 1.02, 0.98, 1.01, 0.96]),
+		// Rounded blowdown pulses, cylinders that wander slowly, a split manifold, a chambered
+		// muffler, individual throttle bodies, and an exhaust flap that opens from 4000 rpm
+		build: {
+			blowdown: true,
+			drift: 0.15,
+			secondary: 0.5,
+			chamber: 0.35,
+			itb: 0.5,
+			flap: 4000,
+		},
 		attack: 0.25,
 		decay: 2.4,
 		noise: 0.25,
@@ -285,8 +299,9 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.3,
 		crackle: 0.03,
-		level: 11.2,
-		// Six long equal headers into one collector
+		level: 14.9,
+		// Six long equal headers. The build's secondaries split them, as firing order 1-5-3-6-2-4
+		// alternates them, into the front three and the rear three, which meet at the collector.
 		pipes: {
 			runners: headers(6, 0.7),
 			mid: 2,

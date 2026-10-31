@@ -222,6 +222,11 @@ const PRESENCE_RPM = [3000, 8000];
 //   value is its level.
 // - cam: the rpm where a second, high lift cam takes over (as VTEC does). Above it the pulses
 //   are sharper and stronger and the intake breathes harder.
+// - itb: individual throttle bodies. Each cylinder breathes through a short trumpet of its own,
+//   open to the air, and its suction pulse rings it: the howl of a race intake. The value is its
+//   level.
+// - flap: the rpm where an exhaust flap opens past the muffler on a firm throttle, so the
+//   exhaust runs straight through, with the muffler's low pass and reflection mostly gone
 /** Suction after a blowdown pulse: its depth against the peak, and its span in decay times */
 const BLOWDOWN_SUCTION = 0.12;
 const BLOWDOWN_SPAN = [2.5, 5];
@@ -245,6 +250,14 @@ const CAM_SHARPEN = 0.3;
 const CAM_PUNCH = 0.25;
 const CAM_INTAKE = 0.8;
 const CAM_BLEND = 300;
+/** Intake trumpet length (m) for individual throttle bodies */
+const TRUMPET_LENGTH = 0.3;
+/** The exhaust flap opens over this many rpm either side of its rpm, and from this throttle
+ * to the next; it takes FLAP_TIME s to swing. Through it, the straight pipe's low pass (Hz). */
+const FLAP_RPM = 500;
+const FLAP_THROTTLE = [0.3, 0.7];
+const FLAP_TIME = 0.25;
+const FLAP_CUTOFF = 4000;
 
 class VehicleEngineProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
@@ -310,6 +323,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		// The intake tract (honk), and the low pass on the wave at its open mouth
 		this.tract = new Pipe(TRACT_LENGTH);
 		this.tractLow = 0;
+		// How far the exhaust flap is open, 0 to 1
+		this.flapOpen = 0;
 		this.plenum = new Svf();
 		this.airbox = new Svf();
 		this.airbox.set(1100, 0.7);
@@ -348,6 +363,10 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				drift: old ? old.drift : 0,
 				age: -1,
 				amp: 0,
+				// Its intake trumpet (individual throttle bodies) and its suction pulse now
+				trumpet: old?.trumpet ?? new Pipe(TRUMPET_LENGTH),
+				trumpetLow: 0,
+				suck: 0,
 			};
 		});
 		this.meanLope = voice.lope
@@ -366,6 +385,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					muffler2: new Svf(),
 					presence: new Svf(),
 					openLow: 0,
+					bypassLow: 0,
 					chamber: new Pipe(voice.build?.chamber || 0.3),
 					midIn: 0,
 					dcIn: 0,
@@ -403,6 +423,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		}
 		if (voice.intake) this.plenum.set(voice.intake.hz, 2.5);
 		this.tract.setSpeed(TRACT_AIR);
+		for (const c of this.cylinders) c.trumpet.setSpeed(TRACT_AIR);
 		this.pulseScale = -1;
 		this.kPop = decayCoef(14);
 		this.kBangAttack = decayCoef(BANG_ATTACK);
@@ -505,6 +526,16 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		}
 		const kPipe = onePole(PIPE_CUTOFF);
 		const kOpen = onePole(OPEN_CUTOFF);
+		const kBypass = onePole(FLAP_CUTOFF);
+		// The flap swings toward open on a firm throttle above its rpm
+		const flapTarget = v.build?.flap
+			? smoothstep(v.build.flap - FLAP_RPM, v.build.flap + FLAP_RPM, rpm) *
+				smoothstep(FLAP_THROTTLE[0], FLAP_THROTTLE[1], throttle)
+			: 0;
+		this.flapOpen +=
+			(flapTarget - this.flapOpen) *
+			Math.min(out.length / sampleRate / FLAP_TIME, 1);
+		const flap = this.flapOpen;
 		// Intake: suction pulses longer than the exhaust's, through a throttle plate that lets
 		// more of them reach the airbox as it opens, and louder as more air flows
 		const intake = v.intake && v.intake.level > 0 ? v.intake : null;
@@ -678,7 +709,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				c.x *= this.kDecay;
 				c.y *= this.kAttack;
 				if (intake) {
-					suction += c.ix - c.iy;
+					c.suck = c.ix - c.iy;
+					suction += c.suck;
 					c.ix *= kIntakeDecay;
 					c.iy *= kIntakeAttack;
 				}
@@ -713,6 +745,20 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					const reflected = -TRACT_MOUTH * this.tractLow;
 					this.tract.back.write(reflected);
 					air += build.honk * (mouth - reflected) * intakeLevel * gain;
+				}
+				if (build.itb) {
+					// A trumpet per cylinder, each rung by its own suction pulse
+					let howl = 0;
+					for (const c of this.cylinders) {
+						const mouth = c.trumpet.atEnd(kPipe);
+						const valveEnd = c.trumpet.atStart(kPipe);
+						c.trumpet.ahead.write(TRACT_VALVE * valveEnd - c.suck);
+						c.trumpetLow += kOpen * (mouth - c.trumpetLow);
+						const reflected = -TRACT_MOUTH * c.trumpetLow;
+						c.trumpet.back.write(reflected);
+						howl += mouth - reflected;
+					}
+					air += build.itb * howl * intakeLevel * gain;
 				}
 			}
 
@@ -807,7 +853,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				// pass into the tailpipe. A wave coming back up the tailpipe mostly dies in it.
 				bank.muffler.run(midAtMuffler);
 				bank.muffler2.run(bank.muffler.low);
-				bank.mid.back.write(p.reflect * midAtMuffler);
+				// An open flap lets the wave past the muffler, so less of it reflects
+				bank.mid.back.write(p.reflect * (1 - 0.7 * flap) * midAtMuffler);
 				let muffled = bank.muffler2.low;
 				if (build.chamber) {
 					// Chambered: the wave rings between the chamber's ends on its way through
@@ -818,6 +865,11 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					);
 					bank.chamber.back.write(CHAMBER_REFLECT * chamberEnd);
 					muffled = CHAMBER_OUT * chamberEnd;
+				}
+				if (flap > 0) {
+					// Through the open flap: a straight pipe, dulled only a little
+					bank.bypassLow += kBypass * (midAtMuffler - bank.bypassLow);
+					muffled = (1 - flap) * muffled + flap * bank.bypassLow;
 				}
 				bank.tail.ahead.write(
 					(1 - 0.5 * p.reflect) * muffled + TAIL_REFLECT * tailAtMuffler,
