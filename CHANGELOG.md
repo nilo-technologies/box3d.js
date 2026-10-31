@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The cross-plane V8 voice is rebuilt: it idles with a big cam's lope, and five new ways of making the sound shape its burble. The other voices sound exactly as before (they render sample for sample the same).
+  - The idle lopes: the long valve overlap leaves some cylinders a diluted charge, so the idle swells and sags once every two turns, with the shaft speeding up and slowing down with it. It is the rotary's regular lope, at a gentler depth, and it fades out by 3200 rpm and on throttle. A voice's `lope` without `misfire` now means a cam lope at idle only.
+  - A voice can have a `build` (`EngineBuild`), each option off unless set. The V8 uses all five:
+    - `blowdown`: each exhaust pulse swells in as the valve opens and the cylinder blows down, then leaves a short suction dip as the gas rushing out scavenges the port, instead of a sharp step with an exponential decay.
+    - `interference` (0.25): in a bank's shared manifold, a pulse that closely follows the last one meets its back pressure and comes out weaker, and one after a long gap comes out stronger. On a cross-plane bank (90°, 180°, 270°, 180° gaps) this is the burble, worked out from the actual gaps as the engine runs.
+    - `drift` (0.15): each cylinder's strength wanders slowly from cycle to cycle, as its mixture and breathing do, on top of the per-firing randomness.
+    - `crossover` (0.3): part of each bank's exhaust crosses into the other bank's pipe, as an H or X pipe joins them.
+    - `chamber` (0.35 m): a chambered muffler. The wave rings between the ends of an expansion chamber on its way to the tailpipe, a bark in the mids, instead of only the muffler's low pass.
+  - The V8's level is 15.8 (was 11.6), so it is about as loud as before (within about 2 dB from idle to full throttle). Its saturator no longer clips at full throttle.
+
 - The rotary engine voice sounds like a rotary. Before, it was a soft, noisy piston engine: long blurry pulses, an even idle and a lot of hiss.
   - Its firing follows the rotors: two rotors with three faces each, every face firing once per turn of its rotor, which is three turns of the shaft. The worklet takes a cycle length per voice (`cycle`, 720° by default, 1080° for the rotary). The faces differ a little in strength, which repeats every three turns as a growl under the note.
   - Each pulse starts firmly, as the apex seal uncovers the peripheral exhaust port quickly (0.35 ms rise, was 0.8 ms), and is fat, as the port stays open long. There is less combustion noise (0.6, was 0.9) and less saturation, so the rasp is in the note rather than in hiss.

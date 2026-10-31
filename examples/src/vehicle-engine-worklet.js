@@ -14,6 +14,7 @@
 // - skips: now and then a firing drops out
 // - mixed: the lope with the odd skip
 // - even: none of it
+// A voice with a lope and no misfire (a V8 on a big cam) lopes at idle only.
 //
 // The pulses then go through one of two exhausts:
 // - Pipes (the default): a waveguide model of the exhaust system. Each pulse runs down its
@@ -200,6 +201,29 @@ const PRESENCE_DEPTH = 0.6;
 /** The dip starts at the first rpm and is at full depth by the second */
 const PRESENCE_RPM = [3000, 8000];
 
+// Build options (a voice's build), each a change to how the sound is made:
+// - blowdown: each pulse rises smoothly as the exhaust valve opens and the cylinder blows down,
+//   and the gas rushing out behind it leaves a short suction dip (scavenging), instead of a
+//   sharp step and an exponential decay
+// - interference: in a bank's shared manifold a pulse that follows the last one closely meets
+//   its back pressure and comes out weaker, and one after a long gap stronger. The value is the
+//   change at twice or half the even gap.
+// - drift: each cylinder's strength wanders slowly from cycle to cycle (its mixture and
+//   breathing), by about this share, rather than only at random each firing
+// - crossover: the share of each bank's wave that crosses into the other bank's mid pipe, as an
+//   H or X pipe joins them
+// - chamber: a chambered muffler, an expansion chamber this long (m) after the muffler whose
+//   ends reflect, instead of the muffler's low pass alone
+/** Suction after a blowdown pulse: its depth against the peak, and its span in decay times */
+const BLOWDOWN_SUCTION = 0.12;
+const BLOWDOWN_SPAN = [2.5, 5];
+/** How much of a cylinder's drift it keeps from one firing to its next */
+const DRIFT_HOLD = 0.97;
+/** Chamber ends: wave in from the narrow pipe, reflected inside, and out into the tailpipe */
+const CHAMBER_IN = 0.4;
+const CHAMBER_REFLECT = 0.6;
+const CHAMBER_OUT = 1.6;
+
 class VehicleEngineProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
 		return [
@@ -258,6 +282,9 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		// The lope's kicks to the shaft speed, as a share of it, and the average face's weakness
 		this.wobble = 0;
 		this.meanLope = 0;
+		// Crank degrees turned since the start, and each bank's last firing on it (interference)
+		this.crank = 0;
+		this.bankFired = [];
 		this.plenum = new Svf();
 		this.airbox = new Svf();
 		this.airbox.set(1100, 0.7);
@@ -290,6 +317,12 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				lope: voice.lope?.[i] ?? 0,
 				// Combustion roughness on its current pulse, from the lope
 				rasp: 0,
+				// Its bank, its slow drift in strength, and a blowdown pulse's age (samples, -1
+				// for none) and strength
+				bank: pipes ? (pipes.runners[pipes.port?.[i] ?? i]?.[1] ?? 0) : 0,
+				drift: old ? old.drift : 0,
+				age: -1,
+				amp: 0,
 			};
 		});
 		this.meanLope = voice.lope
@@ -308,12 +341,15 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					muffler2: new Svf(),
 					presence: new Svf(),
 					openLow: 0,
+					chamber: new Pipe(voice.build?.chamber || 0.3),
+					midIn: 0,
 					dcIn: 0,
 					dcOut: 0,
 					left: 1,
 					right: 1,
 				});
 			}
+			this.bankFired = this.banks.map(() => -1e9);
 			for (const [length, bank] of pipes.runners) {
 				const runner = { pipe: new Pipe(length), push: 0, atCollector: 0 };
 				this.runners.push(runner);
@@ -415,6 +451,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			for (const bank of this.banks) {
 				bank.mid.setSpeed(c);
 				bank.tail.setSpeed(c);
+				bank.chamber.setSpeed(c);
 				bank.muffler.set(mufflerHz, 0.541);
 				bank.muffler2.set(mufflerHz, 1.307);
 			}
@@ -448,14 +485,26 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				smoothstep(0.1, 0.25, throttle) *
 				(1 - smoothstep(0.5, 0.85, throttle))
 			: 0;
-		// How strongly the lope's pattern comes through: fully at idle, partly off it
+		// How strongly the lope's pattern comes through: fully at idle, partly off it. A voice with
+		// a lope and no misfire (a V8 on a big cam) only lopes at idle.
 		const lopeIn = uneven
 			? Math.max(idling, COAST_LOPE * coasting, CRUISE_LOPE * cruising)
-			: 0;
+			: v.lope
+				? idling
+				: 0;
 		const loping = lopeIn > 0 && (style === 'lope' || style === 'mixed');
 		const kWobble = Math.exp(-1 / (WOBBLE_SETTLE * sampleRate));
 		const kIntakeAttack = decayCoef(0.5 * pulseScale);
 		const kIntakeDecay = decayCoef(3.5 * pulseScale);
+		const build = v.build ?? {};
+		const msToSamples = 0.001 * sampleRate;
+		const riseTime = 1.5 * v.attack * pulseScale * msToSamples;
+		const decayTime = v.decay * pulseScale * msToSamples;
+		const suctionStart = BLOWDOWN_SPAN[0] * decayTime;
+		const suctionLength = (BLOWDOWN_SPAN[1] - BLOWDOWN_SPAN[0]) * decayTime;
+		// The even gap between a bank's firings
+		const evenGap =
+			(cycle * this.banks.length) / Math.max(this.cylinders.length, 1);
 
 		for (let s = 0; s < out.length; s++) {
 			// The shaft runs a little faster or slower than the rpm as the lope kicks it
@@ -463,6 +512,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			this.wobble *= kWobble;
 			this.theta += turn;
 			if (this.theta >= cycle) this.theta -= cycle;
+			this.crank += turn;
 
 			let sum = 0;
 			let suction = 0;
@@ -524,10 +574,31 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 							this.residual += misfire * (0.5 + Math.random());
 						}
 					}
+					if (build.drift) {
+						// A slow random walk, about unit size
+						const step =
+							(Math.random() + Math.random() + Math.random() - 1.5) * 2;
+						c.drift =
+							DRIFT_HOLD * c.drift + Math.sqrt(1 - DRIFT_HOLD ** 2) * step;
+						amp *= Math.max(1 + build.drift * c.drift, 0.2);
+					}
+					if (build.interference && this.bankFired.length > 0) {
+						// The crank angle the firing happened at, and the gap since the bank's last
+						const at = this.crank + c.due;
+						const gap = at - this.bankFired[c.bank];
+						this.bankFired[c.bank] = at;
+						const t = Math.min(Math.max(Math.log2(gap / evenGap), -1), 1);
+						amp *= 1 + build.interference * t;
+					}
 					// The firing happened part way through this sample: start the pulse that far along
 					const late = -c.due / turn;
-					c.x += amp * this.kDecay ** late;
-					c.y += amp * this.kAttack ** late;
+					if (build.blowdown) {
+						c.age = late;
+						c.amp = amp;
+					} else {
+						c.x += amp * this.kDecay ** late;
+						c.y += amp * this.kAttack ** late;
+					}
 					// Next cycle, with a new timing offset. Counting down a whole cycle means a firing
 					// can never repeat within one, whatever the jitter.
 					// A weak face of the lope fires late, behind the beat
@@ -540,10 +611,20 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					// partway down the intake stroke
 					c.intakeDue = c.due - (cycle - 450);
 				}
+				let shape = c.x - c.y;
+				if (c.age >= 0) {
+					// Blowdown: a smooth rise and a decay, then the scavenging suction
+					const t = c.age;
+					const rise = 1 - Math.exp(-t / riseTime);
+					shape = rise * rise * Math.exp(-t / decayTime);
+					const u = (t - suctionStart) / suctionLength;
+					if (u > 0 && u < 1)
+						shape -= BLOWDOWN_SUCTION * 0.5 * (1 - Math.cos(2 * Math.PI * u));
+					shape *= c.amp;
+					c.age = u >= 1 ? -1 : t + 1;
+				}
 				const pulse =
-					c.rasp > 0
-						? (c.x - c.y) * (1 + c.rasp * (Math.random() * 2 - 1))
-						: c.x - c.y;
+					c.rasp > 0 ? shape * (1 + c.rasp * (Math.random() * 2 - 1)) : shape;
 				sum += pulse;
 				if (usePipes) this.runners[c.runner].push += pulse;
 				c.x *= this.kDecay;
@@ -628,17 +709,28 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					r.pipe.back.write(joint - r.atCollector);
 					r.pipe.ahead.write(r.push * grit + p.valve * atValve);
 				}
-				// Overrun pops are fuel lighting in the hot pipe past the collector
-				bank.mid.ahead.write(joint - midAtCollector + 2 * pop);
+				// Overrun pops are fuel lighting in the hot pipe past the collector. The write waits
+				// until every bank is done, in case a crossover mixes them.
+				bank.midIn = joint - midAtCollector + 2 * pop;
 
 				// Muffler: part of the wave reflects back up the mid pipe and the rest passes its low
 				// pass into the tailpipe. A wave coming back up the tailpipe mostly dies in it.
 				bank.muffler.run(midAtMuffler);
 				bank.muffler2.run(bank.muffler.low);
 				bank.mid.back.write(p.reflect * midAtMuffler);
+				let muffled = bank.muffler2.low;
+				if (build.chamber) {
+					// Chambered: the wave rings between the chamber's ends on its way through
+					const chamberEnd = bank.chamber.atEnd(kPipe);
+					const chamberStart = bank.chamber.atStart(kPipe);
+					bank.chamber.ahead.write(
+						CHAMBER_IN * muffled + CHAMBER_REFLECT * chamberStart,
+					);
+					bank.chamber.back.write(CHAMBER_REFLECT * chamberEnd);
+					muffled = CHAMBER_OUT * chamberEnd;
+				}
 				bank.tail.ahead.write(
-					(1 - 0.5 * p.reflect) * bank.muffler2.low +
-						TAIL_REFLECT * tailAtMuffler,
+					(1 - 0.5 * p.reflect) * muffled + TAIL_REFLECT * tailAtMuffler,
 				);
 
 				// Open end: the lows reflect back inverted, and the gas flowing out radiates. The flow
@@ -664,6 +756,12 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				left += voiced * bank.left;
 				rightSum += voiced * bank.right;
 			}
+			const cross = this.banks.length === 2 ? (build.crossover ?? 0) : 0;
+			const [b0, b1] = this.banks;
+			if (cross > 0) {
+				b0.mid.ahead.write((1 - cross) * b0.midIn + cross * b1.midIn);
+				b1.mid.ahead.write((1 - cross) * b1.midIn + cross * b0.midIn);
+			} else for (const bank of this.banks) bank.mid.ahead.write(bank.midIn);
 			if (right) {
 				out[s] = left;
 				right[s] = rightSum;

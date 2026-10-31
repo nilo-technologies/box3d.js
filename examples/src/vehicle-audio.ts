@@ -63,7 +63,10 @@ export type EngineVoiceConfig = {
 	misfire?: number;
 	/** The uneven idle's style, for a voice with misfire */
 	brap?: BrapStyle;
-	/** For the lope: how much weaker each firing burns at idle, in firing order, 0 to 1 */
+	/**
+	 * For the lope: how much weaker each firing burns at idle, in firing order, 0 to 1. Without
+	 * misfire it is a big cam's lope, at idle only.
+	 */
 	lope?: number[];
 	/** How much of the high-rev dip around 3.2 kHz the voice takes, 1 all of it */
 	presence?: number;
@@ -98,9 +101,25 @@ export type EngineVoiceConfig = {
 	intake?: { hz: number; level: number };
 	/** How the listener hears it: the intake's level and how far apart the tailpipes sit (0 to 1) */
 	mix?: { intake: number; width: number };
+	/** How the sound is built, beyond the basic pulses and pipes. Leave out for none of it. */
+	build?: EngineBuild;
 };
 
 export type EngineExhaust = 'pipes' | 'resonances';
+
+/** Build options for a voice, see vehicle-engine-worklet.js. Each is off when left out. */
+export type EngineBuild = {
+	/** Pulses that swell in as the valve opens, then leave a scavenging suction dip */
+	blowdown?: boolean;
+	/** How much a bank's back pressure weakens a pulse that closely follows the last one */
+	interference?: number;
+	/** How far each cylinder's strength wanders, slowly, from cycle to cycle */
+	drift?: number;
+	/** The share of each bank's exhaust that crosses to the other bank (an H or X pipe) */
+	crossover?: number;
+	/** A chambered muffler's chamber length (m) */
+	chamber?: number;
+};
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
 export type BrapStyle = 'even' | 'lope' | 'bursts' | 'skips' | 'mixed';
@@ -269,6 +288,18 @@ export const engineVoices = {
 		// Firing order 1-8-4-3-6-5-7-2: the banks go L R R L R L L R, so each bank's exhaust
 		// pulses are uneven, which is the burble. The right bank is a little quieter here.
 		firing: evenFiring([1, 0.72, 0.72, 1, 0.72, 1, 1, 0.72]),
+		// A big cam: at idle the long valve overlap leaves some cylinders a diluted charge, a
+		// lumpy idle that swells and sags once every two turns
+		lope: [0, 0.08, 0.25, 0.45, 0.55, 0.4, 0.2, 0.05],
+		// Rounded blowdown pulses, each bank's uneven gaps fighting its manifold's back pressure,
+		// cylinders that wander slowly, a crossover between the banks and a chambered muffler
+		build: {
+			blowdown: true,
+			interference: 0.25,
+			drift: 0.15,
+			crossover: 0.3,
+			chamber: 0.35,
+		},
 		attack: 0.4,
 		decay: 4.5,
 		noise: 0.3,
@@ -283,7 +314,7 @@ export const engineVoices = {
 		mufflerOpen: 3,
 		drive: 2.2,
 		crackle: 0.06,
-		level: 11.6,
+		level: 15.8,
 		// A system per bank, so each bank's uneven pulses come out of its own tailpipe
 		pipes: {
 			runners: headers(8, 0.6, [0, 1, 1, 0, 1, 0, 0, 1]),
@@ -855,6 +886,7 @@ export function engineVoiceConfig(
 		cycle: voice.cycle,
 		brap: p.brap,
 		lope: voice.lope,
+		build: voice.build,
 		presence: voice.presence,
 		misfire: voice.misfire && Math.min(voice.misfire * p.roughness, 0.6),
 		attack: voice.attack,
