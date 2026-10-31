@@ -505,7 +505,7 @@ let engineKey = '';
 /** Rebuilds the engine when the voice, the cylinder count or the turbo changes, and frames it */
 function syncEngine(): void {
 	const voice = engineVoice();
-	const induction = voice === 'electric' ? 'none' : inductions[settings.turbo];
+	const induction = inductions[settings.turbo];
 	const key = `${voice} ${voice === 'classic' ? settings.cylinders : ''} ${induction}`;
 	if (key === engineKey) return;
 	engineKey = key;

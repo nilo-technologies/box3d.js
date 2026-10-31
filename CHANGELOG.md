@@ -2,10 +2,11 @@
 
 ## Unreleased
 
+- The electric motor engine voice is removed: its entry in `engineVoices` (`electric`), the `whine` field of `EngineVoiceConfig`, the sines in the engine worklet and its 3D motor in the sound lab. `assignSoundParams` turns a saved or pasted choice of a voice that no longer exists into `'auto'`. The electric-assisted turbo (`turboTypes.electric`) is a turbo, not this voice, and stays.
 - The boxer four and the rotary take build options too, on top of the sound they had. Their character is unchanged: the boxer's unequal header rumble, and the rotary's lope at idle (its idle harmonic-to-noise ratio stays at about 2 dB).
   - Boxer, as a turbo boxer: the four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`), `blowdown`, `chamber` (0.3 m), `turbine` (0.6), `honk` (0.5), `steepen` (0.5) and `megaphone` (0.4 m). Its level is 22.4 (was 16.4).
   - Rotary, as a twin-turbo rotary: the same four, `blowdown`, `turbine` (0.6), `honk` (0.5), `steepen` (0.5), `megaphone` (0.4 m) and `flap` (4500 rpm). Its level is 9.6 (was 6.8).
-  - Both are as loud as before over a drive through the gears, and their saturators don't clip. Every pulse voice now has a build; the electric motor is unchanged.
+  - Both are as loud as before over a drive through the gears, and their saturators don't clip. Every voice now has a build.
 
 - The diesel voice is rebuilt as a turbo diesel with nine build options. The other voices sound exactly as before.
   - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`) and `blowdown`.

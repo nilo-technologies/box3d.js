@@ -46,7 +46,6 @@
 // The voice arrives as a message (see EngineVoiceConfig in vehicle-audio.ts), the rpm, the
 // throttle and the crackle level as AudioParams. vehicle-audio.ts decides when the exhaust
 // crackles (after a hard pull, on some lifts) and sets overrun for the length of the burst.
-// An electric voice is a few sines at fixed orders of the rpm instead.
 
 /** Topology-preserving state variable filter (Simper). band is normalized to a peak of 1. */
 class Svf {
@@ -408,7 +407,6 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		this.plenum = new Svf();
 		this.airbox = new Svf();
 		this.airbox.set(1100, 0.7);
-		this.phases = [];
 		this.port.onmessage = (event) => this.configure(event.data);
 	}
 
@@ -539,7 +537,6 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		this.kBangDecay = decayCoef(BANG_DECAY);
 		this.formant1.set(voice.formants[0][0], voice.formants[0][1]);
 		this.formant2.set(voice.formants[1][0], voice.formants[1][1]);
-		this.phases = (voice.whine ?? []).map((_, i) => this.phases[i] ?? 0);
 	}
 
 	process(_inputs, outputs, parameters) {
@@ -555,23 +552,6 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const rpm = parameters.rpm[0];
 		const throttle = parameters.throttle[0];
 		const overrun = parameters.overrun[0];
-
-		if (v.whine) {
-			// Electric: sines at fixed orders of the motor speed, a little louder under load
-			const level = (0.35 + 0.65 * throttle) * v.level;
-			for (let s = 0; s < out.length; s++) {
-				let y = 0;
-				for (let i = 0; i < v.whine.length; i++) {
-					const [order, gain] = v.whine[i];
-					this.phases[i] += (2 * Math.PI * order * rpm) / 60 / sampleRate;
-					if (this.phases[i] > 2 * Math.PI) this.phases[i] -= 2 * Math.PI;
-					y += gain * Math.sin(this.phases[i]);
-				}
-				out[s] = (y + v.noise * 0.02 * (Math.random() * 2 - 1)) * level;
-			}
-			right?.set(out);
-			return true;
-		}
 
 		const mufflerHz = v.muffler * (1 + v.mufflerOpen * throttle);
 		this.muffler.set(mufflerHz, 0.541);

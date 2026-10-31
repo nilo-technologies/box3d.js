@@ -8,8 +8,7 @@
 //
 // The engine has several voices. Classic is a pair of soft oscillators. The others are built
 // from exhaust pulses, one per cylinder firing, in vehicle-engine-worklet.js: inline four,
-// boxer four, inline six, cross-plane and flat-plane V8, V10, V12, rotary, diesel, plus an
-// electric whine. The pulses run through a model of each voice's exhaust pipes (its headers,
+// boxer four, inline six, cross-plane and flat-plane V8, V10, V12, rotary and diesel. The pulses run through a model of each voice's exhaust pipes (its headers,
 // collector, muffler and tailpipe, one system per bank on a V), and an intake layer adds
 // induction roar. Character knobs (pipe size, brightness, rumble, roughness, grit, drive,
 // crackle, intake) scale a voice around its own design, so any setting still sounds like an
@@ -91,11 +90,9 @@ export type EngineVoiceConfig = {
 	crackle: number;
 	/** Output level, set so every voice is about as loud as classic at 4000 rpm, part throttle */
 	level: number;
-	/** Electric only: [order of rpm / 60, level] sines instead of pulses */
-	whine?: [number, number][];
 	/** The exhaust the pulses go through: the pipes, or the two resonances above */
 	exhaust?: EngineExhaust;
-	/** The exhaust system the pipes model plays. The electric voice has none. */
+	/** The exhaust system the pipes model plays */
 	pipes?: EnginePipes;
 	/** Intake roar: the plenum's resonance (Hz) and the level, 0 for none */
 	intake?: { hz: number; level: number };
@@ -650,33 +647,6 @@ export const engineVoices = {
 		},
 		intake: { hz: 180, level: 0.54 },
 	},
-	electric: {
-		title: 'Electric motor (whine)',
-		cylinders: 0,
-		firing: [],
-		attack: 1,
-		decay: 1,
-		noise: 1,
-		jitter: 0,
-		ampJitter: 0,
-		formants: [
-			[1000, 1, 0],
-			[1000, 1, 0],
-		],
-		dry: 0,
-		muffler: 8000,
-		mufflerOpen: 0,
-		drive: 1,
-		crackle: 0,
-		level: 1.8,
-		// The motor's electrical order and the gear mesh above it
-		whine: [
-			[6, 0.5],
-			[12, 0.25],
-			[27, 0.12],
-			[48, 0.06],
-		],
-	},
 } satisfies Record<string, EngineVoice>;
 
 export type EngineVoiceName = 'classic' | keyof typeof engineVoices;
@@ -951,7 +921,8 @@ export function cloneSoundParams(
 
 /**
  * Copies every known field of a partial params object (for example parsed JSON) onto target,
- * ignoring unknown keys and values of the wrong type
+ * ignoring unknown keys and values of the wrong type. An engine voice that no longer exists
+ * (a saved 'electric') becomes 'auto'.
  */
 export function assignSoundParams(
 	target: VehicleSoundParams,
@@ -972,6 +943,9 @@ export function assignSoundParams(
 			}
 		} else if (typeof value === typeof current) to[key] = value;
 	}
+	const voice = target.engine.voice;
+	if (voice !== 'auto' && voice !== 'classic' && !(voice in engineVoices))
+		target.engine.voice = 'auto';
 }
 
 /**
@@ -1058,7 +1032,6 @@ export function engineVoiceConfig(
 		drive: voice.drive * p.drive,
 		crackle: Math.min(voice.crackle * p.crackle, 1),
 		level: voice.level,
-		whine: voice.whine,
 	};
 }
 
