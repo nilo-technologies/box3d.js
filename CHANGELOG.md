@@ -68,6 +68,7 @@
     - `crossover` (0.3): part of each bank's exhaust crosses into the other bank's pipe, as an H or X pipe joins them.
     - `chamber` (0.35 m): a chambered muffler. The wave rings between the ends of an expansion chamber on its way to the tailpipe, a bark in the mids, instead of only the muffler's low pass.
   - The V8's level is 15.8 (was 11.6), so it is about as loud as before (within about 2 dB from idle to full throttle). Its saturator no longer clips at full throttle.
+- The examples gallery no longer covers the vehicle showcase's touch controls on phones. The Source link floated over the bottom left corner of the example, on top of the steering pad; it now sits at the end of the top bar on narrow screens and in the sidebar header on wide ones. The gallery is the visible height of the screen (`100dvh`, was `100vh`), so on a phone the bottom of the example, where the controls are, is no longer under the browser's address and tool bars.
 
 - The rotary engine voice sounds like a rotary. Before, it was a soft, noisy piston engine: long blurry pulses, an even idle and a lot of hiss.
   - Its firing follows the rotors: two rotors with three faces each, every face firing once per turn of its rotor, which is three turns of the shaft. The worklet takes a cycle length per voice (`cycle`, 720° by default, 1080° for the rotary). The faces differ a little in strength, which repeats every three turns as a growl under the note.
