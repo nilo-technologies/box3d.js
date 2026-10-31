@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+- The small single, big single and twin-scroll turbos each have a running sound of their own, the other turbo types reuse the small turbo's for now, and a supercharger whines. The turbo's whistle and whoosh moved from fixed Web Audio filters into an AudioWorklet (`examples/src/vehicle-turbo-worklet.js`), which plays them as before (level within 0.2 dB) and builds each type's sound from `turboSounds` in `vehicle-audio.ts`. `audio.setTurbo(type)` tells the audio the car's turbo type (box3d.js/vehicles `VehicleTurboName`); the showcase calls it when it builds or swaps a car, and the sound lab when the turbo changes. Until the worklet loads the turbo is silent.
+  - Small single turbo: the whistle and the whoosh, plus a chuff near surge (`surge`): on a part throttle with boost built up, the flow through the compressor pulses a few times a second.
+  - Big single turbo: the small turbo's sound with a bigger compressor wheel (`wheel`: the whistle at 0.6 of the pitch, airier) on a heavy shaft (`inertia`: 2.5 s), so the whistle sweeps up slowly as it spools and sings long after a lift.
+  - Twin-scroll turbo: the small turbo's sound with the exhaust pulses kicking the turbine (`pulses`), so the whistle and the air throb with the firing, through two scrolls in turns (`scrolls`), one a little weaker, a slower beat on the throb.
+  - Supercharger: a whine and no air rush or surge. It is belt driven (`belt`), so its pitch is locked to the engine, 0.197 Hz per rpm (about 1.2 kHz at 6200 rpm, as a Hellcat's twin-screw), a series of harmonics of the rotors' lobe passing rate (`lobes`), and its bypass valve (`bypass`) drops and dulls the whine off and on a part throttle.
+  - The parallel and sequential twins, the VGT, the electric-assisted turbo and the anti-lag turbo play the small turbo's sound for now.
+  - The worklet also has `blades` (sidebands from a wheel's uneven blades) and `charge` (a charge pipe that rings when the throttle shuts) as `TurboBuild` options, unused by the types for now.
+- The sound lab's 3D engine can run at the real speed: the Engine model folder's speed goes up to 1x (was 0.25x). Near the real speed a frame can turn the crank through a whole firing cycle, so every cylinder flashes on such a frame instead of firings being missed.
+- The wind sound is removed from the vehicle sound: the `wind` group of `VehicleSoundParams` (and the Wind folder in the sound panel) is gone. Saved or pasted settings that still have it load without it.
+- The electric motor engine voice is removed: its entry in `engineVoices` (`electric`), the `whine` field of `EngineVoiceConfig`, the sines in the engine worklet and its 3D motor in the sound lab. `assignSoundParams` turns a saved or pasted choice of a voice that no longer exists into `'auto'`. The electric-assisted turbo (`turboTypes.electric`) is a turbo, not this voice, and stays.
+- The boxer four and the rotary take build options too, on top of the sound they had. Their character is unchanged: the boxer's unequal header rumble, and the rotary's lope at idle (its idle harmonic-to-noise ratio stays at about 2 dB).
+  - Boxer, as a turbo boxer: the four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`), `blowdown`, `chamber` (0.3 m), `turbine` (0.6), `honk` (0.5), `steepen` (0.5) and `megaphone` (0.4 m). Its level is 22.4 (was 16.4).
+  - Rotary, as a twin-turbo rotary: the same four, `blowdown`, `turbine` (0.6), `honk` (0.5), `steepen` (0.5), `megaphone` (0.4 m) and `flap` (4500 rpm). Its level is 9.6 (was 6.8).
+  - Both are as loud as before over a drive through the gears, and their saturators don't clip. Every voice now has a build.
+
+- The diesel voice is rebuilt as a turbo diesel with nine build options. The other voices sound exactly as before.
+  - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`) and `blowdown`.
+  - `unthrottled`, new: a diesel has no throttle plate, so its intake draws full air at any throttle, and the fuel alone sets the power. At idle it still burns idle fuel, but on the overrun the fuel is cut (from 1100 to 1600 rpm), so coasting the exhaust pulses fall to 12% of full and the engine goes quiet but for its breathing.
+  - `turbine` (0.6), new: the turbo's turbine right after the collector squashes each pulse's peak and smooths what passes, more as the load and the revs build boost, so the note is rounder flat out.
+  - `filter` (0.6), new: a particulate filter before the muffler absorbs the mids and highs (a low pass at 700 Hz, blended in) and takes some of the muffler's reflection.
+  - `knockEdge` (0.7), new: the knock is a short, sharp spike on the front of each pulse, travelling with it through the exhaust, loudest at light load and 55% weaker at full throttle. Unlike a separate ring of the block, it adds almost nothing to the 1-4 kHz band at idle.
+  - The level is 11.6 (was 8.4), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
+- The V12 voice is rebuilt as a grand tourer's V12 with thirteen build options. The other voices sound exactly as before.
+  - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`, as on the flat-plane V8 and the V10). Its harmonic-to-noise ratio at speed drops from 15-24 dB to 7-11 dB.
+  - `secondary` (0.45 m): each bank of six splits into halves of three, as a Ferrari V12's 6-into-2-into-1 headers do. Also `itb` (0.5), `flap` (5500 rpm), `steepen` (0.4), `spacing` (1.1 m), `blowdown` and `megaphone` (0.4 m).
+  - `quad` (1.3), new: each bank's exhaust splits after the muffler into two tailpipes, the second 1.3 times as long, each taking half the flow, so two sets of tailpipe resonances layer.
+  - `intakeSwitch` (5000 rpm), new: variable intake runners switch the throttle bodies' trumpets from long (0.45 m) to short (0.25 m) across 600 rpm, so the intake retunes partway up each gear.
+  - The level is 10.7 (was 9), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
+- The V10 voice is rebuilt as a race-bred V10 with ten build options. The other voices sound exactly as before.
+  - The four options the flat-plane V8 introduced to make it less of a machine: `combustion` (0.04), `heat` (0.25), `turbulence` (0.12) and `tolerance` (0.04). Its harmonic-to-noise ratio at speed drops from 19-24 dB to 10-12 dB.
+  - `itb` (0.5): a trumpet per cylinder, as on the Lexus LFA. `flap` (5000 rpm): a bypass flap past the muffler. `blowdown`: rounded pulses with a scavenging dip.
+  - `steepen` (0.5) and `spacing` (1.1 m), now in use: high pressure runs faster down the pipes, so pulse fronts sharpen toward a shock on a firm throttle, and each bank's tailpipe reaches the far ear later than the near one.
+  - `megaphone` (0.4 m), new: each bank's collector widens like a cone in four sections, from 1.2 to 4 times a runner's width, rather than meeting the mid pipe at a sharp junction. Each step reflects a little, so the suction wave back up the runners is soft and spread out. It strengthens the mids from about 4500 rpm.
+  - The level is 7 (was 8.7), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
+- The flat-plane V8 voice sounds less like a machine. Every firing used to be nearly the same and the pipes were fixed filters, so at speed its harmonic-to-noise ratio was 21-25 dB. With four new build options it is 12-16 dB, the range of the rotary and the boxer. The other voices sound exactly as before.
+  - `combustion` (0.04): combustion varies from cycle to cycle at any revs and load, about 4% in strength and about 1.2° in timing. The voice's jitter still fades out with the revs on top of it.
+  - `heat` (0.25): each pulse is a slug of hot gas, and sound runs faster in it. It warms its runner, then its bank's mid pipe, and cools within milliseconds, so the pipes' resonances move with every pulse.
+  - `turbulence` (0.12): noise where the runners' flows mix at the collector, as strong as the flow arriving, so it rides on the pulses and rings the exhaust's own resonances. It stays out of the top octaves.
+  - `tolerance` (0.04): each runner is up to 4 cm longer or shorter and each cylinder up to 6% stronger or weaker, fixed per index, so the same every run. It brings up the odd orders a real engine has (orders 1 and 3 go from about -47 dB to -28 dB under the firing order).
+  - The worklet also has `steepen` (shock steepening: high pressure runs faster, so pulse fronts sharpen) and `spacing` (each bank's tailpipe reaches the far ear later) as build options.
+  - The level is 8.5 (was 9.4), so a drive through the gears is as loud as before.
+
+- The inline six voice is rebuilt with six build options: `blowdown`, `drift` (0.15), `chamber` (0.35 m), `secondary` (0.5 m) and two new ones. The other voices sound exactly as before.
+  - `secondary` on a six is a split manifold: firing order 1-5-3-6-2-4 alternates the front three and the rear three, so the pairing of alternate firings puts each half into a pipe of its own, and the two meet at the collector, as on a BMW six. It fills out the growl from 3000 to 4500 rpm.
+  - `itb` (0.5): individual throttle bodies. Each cylinder breathes through a short trumpet of its own (0.3 m), open to the air, and its suction pulse rings it: an intake howl that grows with the revs.
+  - `flap` (4000 rpm): an exhaust flap opens past the muffler on a firm throttle (from 30% to 70%) across 4000 ± 500 rpm, swinging over a quarter of a second. Through it the exhaust runs straight, with only a gentle low pass and less of the muffler's reflection. Idle and cruising are unchanged.
+  - The level is 14.9 (was 11.2), so a drive through the gears is as loud as before overall, and the saturator doesn't clip.
+
+- The inline four voice is rebuilt with six build options: the V8's `blowdown`, `drift` (0.15) and `chamber` (0.3 m), and three new ones. The other voices sound exactly as before.
+  - `secondary` (0.4 m): a 4-2-1 header. Each bank's runners pair up, alternate firings together (cylinders 1 and 4, 2 and 3), into secondary pipes that meet the mid pipe at the collector: two junctions on the way out instead of one. At high revs the paired pipes ring the firing note, a fuller howl.
+  - `honk` (1): the intake tract is a pipe, the runner and the airbox snorkel, closed at the valve and open at the mouth, and each suction pulse rings it. The intake honks, a tone, on top of the rushing air.
+  - `cam` (5600 rpm): a second, high lift cam takes over across 300 rpm, as VTEC does. Above it the pulses are 30% shorter and 25% stronger and the intake 80% louder, so the top of each gear changes character.
+  - The top end is louder against the bottom than before. The level is 12.5 (was 15.5), so a drive through the gears is as loud as before overall, and the saturator doesn't clip.
+
+- The cross-plane V8 voice is rebuilt: it idles with a big cam's lope, and five new ways of making the sound shape its burble. The other voices sound exactly as before (they render sample for sample the same).
+  - The idle lopes: the long valve overlap leaves some cylinders a diluted charge, so the idle swells and sags once every two turns, with the shaft speeding up and slowing down with it. It is the rotary's regular lope, at a gentler depth, and it fades out by 3200 rpm and on throttle. A voice's `lope` without `misfire` now means a cam lope at idle only.
+  - A voice can have a `build` (`EngineBuild`), each option off unless set. The V8 uses all five:
+    - `blowdown`: each exhaust pulse swells in as the valve opens and the cylinder blows down, then leaves a short suction dip as the gas rushing out scavenges the port, instead of a sharp step with an exponential decay.
+    - `interference` (0.25): in a bank's shared manifold, a pulse that closely follows the last one meets its back pressure and comes out weaker, and one after a long gap comes out stronger. On a cross-plane bank (90°, 180°, 270°, 180° gaps) this is the burble, worked out from the actual gaps as the engine runs.
+    - `drift` (0.15): each cylinder's strength wanders slowly from cycle to cycle, as its mixture and breathing do, on top of the per-firing randomness.
+    - `crossover` (0.3): part of each bank's exhaust crosses into the other bank's pipe, as an H or X pipe joins them.
+    - `chamber` (0.35 m): a chambered muffler. The wave rings between the ends of an expansion chamber on its way to the tailpipe, a bark in the mids, instead of only the muffler's low pass.
+  - The V8's level is 15.8 (was 11.6), so it is about as loud as before (within about 2 dB from idle to full throttle). Its saturator no longer clips at full throttle.
 - The examples gallery no longer covers the vehicle showcase's touch controls on phones. The Source link floated over the bottom left corner of the example, on top of the steering pad; it now sits at the end of the top bar on narrow screens and in the sidebar header on wide ones. The gallery is the visible height of the screen (`100dvh`, was `100vh`), so on a phone the bottom of the example, where the controls are, is no longer under the browser's address and tool bars.
 
 - The rotary engine voice sounds like a rotary. Before, it was a soft, noisy piston engine: long blurry pulses, an even idle and a lot of hiss.

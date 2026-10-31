@@ -1,6 +1,6 @@
 // A see-through 3D engine for the sound lab (example-vehicle-sound.ts), animated from the same
 // rpm, throttle and boost that drive the sound. Each engine voice gets its own layout: inline,
-// V or boxer pistons on a crank, a twin-rotor rotary or an electric motor. The cylinders fire in
+// V or boxer pistons on a crank, or a twin-rotor rotary. The cylinders fire in
 // the voice's firing order and at its firing angles, so a cross-plane V8 flashes unevenly
 // between its banks, a boxer's unequal headers pulse in pairs, and each rotor face of a rotary
 // fires in turn over three turns of the shaft. Each firing lights its
@@ -10,7 +10,7 @@
 // a flutter from the compressor inlet, the tailpipe spits flame during overrun crackle, and the
 // engine rocks on its mounts with the torque and shudders on the rev limiter.
 //
-// The crank turns at slowMotion times the real speed: at the real speed it would only flicker.
+// The crank turns at slowMotion times the real speed. At the real speed (1) it mostly flickers.
 
 import * as THREE from 'three';
 import {
@@ -66,7 +66,7 @@ export type EngineModel = {
 
 type Layout = {
 	title: string;
-	kind: 'piston' | 'rotary' | 'electric';
+	kind: 'piston' | 'rotary';
 	/** Tilt of each bank's bores from vertical (degrees), toward +z */
 	banks: number[];
 	/** Cylinder numbers in firing order, matching the voice's firing list */
@@ -131,13 +131,6 @@ const layouts: Record<keyof typeof engineVoices, Layout> = {
 		place: () => [0, 0],
 	},
 	diesel: inline('Inline four diesel', [1, 3, 4, 2]),
-	electric: {
-		title: 'Electric motor',
-		kind: 'electric',
-		banks: [],
-		order: [],
-		place: () => [0, 0],
-	},
 };
 
 /** The classic voice has only a cylinder count: an inline up to six, a V above */
@@ -193,12 +186,6 @@ function materials() {
 			color: 0xb0222c,
 			metalness: 0.35,
 			roughness: 0.35,
-		}),
-		copper: new THREE.MeshStandardMaterial({
-			color: 0xb8733a,
-			metalness: 0.8,
-			roughness: 0.35,
-			emissive: 0x000000,
 		}),
 		glass: new THREE.MeshStandardMaterial({
 			color: 0x9fc4ff,
@@ -380,7 +367,6 @@ export function createEngineModel(
 	let turbos: Turbo[] = [];
 	let flames: Flame[] = [];
 	let hot: THREE.MeshStandardMaterial[] = [];
-	let windings: THREE.MeshStandardMaterial | null = null;
 	let valve: THREE.Vector3 | null = null;
 	let firingsPerTurn = 3;
 	/** Length of the firing cycle (degrees of the crank or eccentric shaft) */
@@ -629,50 +615,6 @@ export function createEngineModel(
 			);
 		}
 		return { ports, length: 1.2 };
-	}
-
-	// ---- Electric motor
-
-	function buildElectric() {
-		mesh(
-			new THREE.CylinderGeometry(0.95, 0.95, 2.2, 40, 1, true).rotateZ(
-				Math.PI / 2,
-			),
-			mat.glass,
-			body,
-		);
-		windings = new THREE.MeshStandardMaterial({
-			color: 0xb8733a,
-			metalness: 0.8,
-			roughness: 0.35,
-			emissive: 0x000000,
-		});
-		for (const x of [-0.9, 0.9]) {
-			mesh(
-				new THREE.TorusGeometry(0.72, 0.14, 12, 40).rotateY(Math.PI / 2),
-				windings,
-				body,
-				x,
-			);
-		}
-		const rotor = new THREE.Group();
-		mesh(xCylinder(0.55, 1.7, 32), mat.dark, rotor);
-		for (let i = 0; i < 8; i++) {
-			const bar = mesh(
-				new THREE.BoxGeometry(1.72, 0.08, 0.16),
-				mat.copper,
-				rotor,
-			);
-			const a = (i / 8) * Math.PI * 2;
-			bar.position.set(0, 0.55 * Math.cos(a), 0.55 * Math.sin(a));
-			bar.rotation.x = a;
-		}
-		body.add(rotor);
-		spinners.push({ object: rotor, rate: 1 });
-		mesh(xCylinder(0.1, 3.2), mat.steel, body);
-		mesh(xCylinder(1, 0.12, 40), mat.dark, body, -1.16);
-		mesh(xCylinder(1, 0.12, 40), mat.dark, body, 1.16);
-		firingsPerTurn = 0;
 	}
 
 	/** Pulley at the front, flywheel at the back, both turning with the crank */
@@ -1040,7 +982,6 @@ export function createEngineModel(
 		turbos = [];
 		flames = [];
 		hot = [];
-		windings = null;
 		valve = null;
 		combustion = new THREE.PointLight(0xff9a40, 0, 6, 1.5);
 		combustion.position.set(0, 1.2, 0);
@@ -1058,54 +999,49 @@ export function createEngineModel(
 				: ((engineVoices[voice] as EngineVoice).cycle ?? 720);
 		firingsPerTurn = firing.length / (cycle / 360);
 
-		if (layout.kind === 'electric') {
-			buildElectric();
-			title = layout.title;
-		} else {
-			const { ports, length } =
-				layout.kind === 'rotary'
-					? buildRotary(firing)
-					: buildPistons(layout, firing);
-			// Units map to ports in order, two firings per port on a rotary
-			unitPort = units.map((_, k) =>
-				layout.kind === 'rotary' ? (k < units.length / 2 ? 0 : 1) : k,
-			);
-			// The exhaust splits into groups, each with its own turbo (if any) and tailpipe: one per
-			// bank on a V or a boxer, and front and rear halves on an inline twin turbo. A single
-			// turbo boxer joins both banks under the engine.
-			const all = ports.map((_, i) => i);
-			const twin = induction === 'twin' || induction === 'sequential';
-			const single = induction === 'single';
-			const boxer = layout.banks[0] === 90;
-			let groups = [all];
-			if (layout.banks.length > 1 && !(boxer && single)) {
-				groups = [
-					all.filter((i) => ports[i].exhaust.z > 0),
-					all.filter((i) => ports[i].exhaust.z <= 0),
-				];
-			} else if (layout.banks.length <= 1 && twin) {
-				const byX = [...all].sort((a, b) => ports[a].x - ports[b].x);
-				const half = Math.ceil(byX.length / 2);
-				groups = [byX.slice(0, half), byX.slice(half)];
-			}
-			buildBreathing(
-				ports,
-				length,
-				induction,
-				groups.filter((g) => g.length > 0),
-			);
-			const what =
-				induction === 'none'
-					? ''
-					: induction === 'supercharger'
-						? ', supercharged'
-						: turbos.length > 1
-							? induction === 'sequential'
-								? ', sequential twin turbo'
-								: ', twin turbo'
-							: ', turbo';
-			title = layout.title + what;
+		const { ports, length } =
+			layout.kind === 'rotary'
+				? buildRotary(firing)
+				: buildPistons(layout, firing);
+		// Units map to ports in order, two firings per port on a rotary
+		unitPort = units.map((_, k) =>
+			layout.kind === 'rotary' ? (k < units.length / 2 ? 0 : 1) : k,
+		);
+		// The exhaust splits into groups, each with its own turbo (if any) and tailpipe: one per
+		// bank on a V or a boxer, and front and rear halves on an inline twin turbo. A single
+		// turbo boxer joins both banks under the engine.
+		const all = ports.map((_, i) => i);
+		const twin = induction === 'twin' || induction === 'sequential';
+		const single = induction === 'single';
+		const boxer = layout.banks[0] === 90;
+		let groups = [all];
+		if (layout.banks.length > 1 && !(boxer && single)) {
+			groups = [
+				all.filter((i) => ports[i].exhaust.z > 0),
+				all.filter((i) => ports[i].exhaust.z <= 0),
+			];
+		} else if (layout.banks.length <= 1 && twin) {
+			const byX = [...all].sort((a, b) => ports[a].x - ports[b].x);
+			const half = Math.ceil(byX.length / 2);
+			groups = [byX.slice(0, half), byX.slice(half)];
 		}
+		buildBreathing(
+			ports,
+			length,
+			induction,
+			groups.filter((g) => g.length > 0),
+		);
+		const what =
+			induction === 'none'
+				? ''
+				: induction === 'supercharger'
+					? ', supercharged'
+					: turbos.length > 1
+						? induction === 'sequential'
+							? ', sequential twin turbo'
+							: ', twin turbo'
+						: ', turbo';
+		title = layout.title + what;
 
 		const box = new THREE.Box3().setFromObject(body);
 		radius = box.getBoundingSphere(new THREE.Sphere()).radius;
@@ -1147,9 +1083,12 @@ export function createEngineModel(
 	function update(state: EngineModelState, dt: number) {
 		const prev = theta;
 		theta += (state.rpm / 60) * 360 * model.slowMotion * dt;
+		// Near the real speed a frame can turn the crank through a whole cycle, so every angle in
+		// it was passed
 		const crossed = (angle: number) =>
+			theta - prev >= cycle ||
 			THREE.MathUtils.euclideanModulo(theta - angle, cycle) <
-			THREE.MathUtils.euclideanModulo(prev - angle, cycle);
+				THREE.MathUtils.euclideanModulo(prev - angle, cycle);
 		const fire = state.cut ? 0 : 0.35 + 0.65 * state.throttle;
 		const crank = THREE.MathUtils.degToRad(theta);
 
@@ -1191,10 +1130,6 @@ export function createEngineModel(
 			m.emissive.copy(color);
 		}
 		for (const s of spinners) s.object.rotation.x = crank * s.rate;
-		if (windings)
-			windings.emissive
-				.setRGB(0.1, 0.35, 1)
-				.multiplyScalar(0.15 + 0.85 * state.throttle);
 
 		// Turbos: the shaft follows its boost, quickly up and slowly down
 		const up = turboParams?.spinUp ?? 0.15;

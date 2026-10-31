@@ -1,15 +1,15 @@
 // Procedural car sound for the vehicle examples, made with the Web Audio API and no audio files:
 // an engine whose pitch follows the rpm, tire squeal from filtered noise that follows how far
-// the tires slide, wind noise with speed, a thump when the suspension hits its bump stop, and a
-// turbo with a compressor whine, intake whoosh and a blow-off valve or compressor flutter on
+// the tires slide, a thump when the suspension hits its bump stop, and a
+// turbo or supercharger with a running sound of its own (a compressor whistle and intake whoosh,
+// or a supercharger's whine, see turboSounds) and a blow-off valve or compressor flutter on
 // lift. The lift sounds only play when a real car would make them (see "Lift sounds" below).
 // Browsers only start audio after a user gesture, so the context resumes on the first key
 // press or click.
 //
 // The engine has several voices. Classic is a pair of soft oscillators. The others are built
 // from exhaust pulses, one per cylinder firing, in vehicle-engine-worklet.js: inline four,
-// boxer four, inline six, cross-plane and flat-plane V8, V10, V12, rotary, diesel, plus an
-// electric whine. The pulses run through a model of each voice's exhaust pipes (its headers,
+// boxer four, inline six, cross-plane and flat-plane V8, V10, V12, rotary and diesel. The pulses run through a model of each voice's exhaust pipes (its headers,
 // collector, muffler and tailpipe, one system per bank on a V), and an intake layer adds
 // induction roar. Character knobs (pipe size, brightness, rumble, roughness, grit, drive,
 // crackle, intake) scale a voice around its own design, so any setting still sounds like an
@@ -24,6 +24,8 @@
 // driver pick the engine voice (vehicle-engine-voice.ts); everything else stays at
 // defaultSoundParams. The sound lab (example-vehicle-sound.ts, vehicle-sound-panel.ts) tunes all
 // of it without a car.
+
+import type { VehicleTurboName } from 'box3d.js/vehicles';
 
 export type VehicleSound = {
 	engineRpm: number;
@@ -63,7 +65,10 @@ export type EngineVoiceConfig = {
 	misfire?: number;
 	/** The uneven idle's style, for a voice with misfire */
 	brap?: BrapStyle;
-	/** For the lope: how much weaker each firing burns at idle, in firing order, 0 to 1 */
+	/**
+	 * For the lope: how much weaker each firing burns at idle, in firing order, 0 to 1. Without
+	 * misfire it is a big cam's lope, at idle only.
+	 */
 	lope?: number[];
 	/** How much of the high-rev dip around 3.2 kHz the voice takes, 1 all of it */
 	presence?: number;
@@ -88,19 +93,71 @@ export type EngineVoiceConfig = {
 	crackle: number;
 	/** Output level, set so every voice is about as loud as classic at 4000 rpm, part throttle */
 	level: number;
-	/** Electric only: [order of rpm / 60, level] sines instead of pulses */
-	whine?: [number, number][];
 	/** The exhaust the pulses go through: the pipes, or the two resonances above */
 	exhaust?: EngineExhaust;
-	/** The exhaust system the pipes model plays. The electric voice has none. */
+	/** The exhaust system the pipes model plays */
 	pipes?: EnginePipes;
 	/** Intake roar: the plenum's resonance (Hz) and the level, 0 for none */
 	intake?: { hz: number; level: number };
 	/** How the listener hears it: the intake's level and how far apart the tailpipes sit (0 to 1) */
 	mix?: { intake: number; width: number };
+	/** How the sound is built, beyond the basic pulses and pipes. Leave out for none of it. */
+	build?: EngineBuild;
 };
 
 export type EngineExhaust = 'pipes' | 'resonances';
+
+/** Build options for a voice, see vehicle-engine-worklet.js. Each is off when left out. */
+export type EngineBuild = {
+	/** Pulses that swell in as the valve opens, then leave a scavenging suction dip */
+	blowdown?: boolean;
+	/** How much a bank's back pressure weakens a pulse that closely follows the last one */
+	interference?: number;
+	/** How far each cylinder's strength wanders, slowly, from cycle to cycle */
+	drift?: number;
+	/** The share of each bank's exhaust that crosses to the other bank (an H or X pipe) */
+	crossover?: number;
+	/** A chambered muffler's chamber length (m) */
+	chamber?: number;
+	/** A 4-2-1 header's secondary pipe length (m): alternate firings' runners pair up */
+	secondary?: number;
+	/** Level of the intake tract's honk: the suction pulses ringing a pipe, not rushing air */
+	honk?: number;
+	/** Rpm where a high lift cam takes over, with sharper, stronger pulses and more intake */
+	cam?: number;
+	/** Level of individual throttle bodies: a trumpet per cylinder, each rung by its suction */
+	itb?: number;
+	/** Rpm where an exhaust flap opens past the muffler on a firm throttle */
+	flap?: number;
+	/** Shock steepening: how much faster a pulse of unit pressure runs down the pipes */
+	steepen?: number;
+	/** How far apart the tailpipes are (m), so each reaches the far ear later */
+	spacing?: number;
+	/** Cycle to cycle combustion variation at any revs: this share of strength, 30 times it in
+	 * degrees of timing */
+	combustion?: number;
+	/** How much faster sound runs in each pulse's slug of hot gas, so the pipes' resonances move */
+	heat?: number;
+	/** Level of the turbulence where the runners' flows mix, riding on the flow */
+	turbulence?: number;
+	/** Manufacturing tolerance: runners up to this much (m) longer or shorter, cylinders up to
+	 * 1.5 times this share stronger or weaker, the same every run */
+	tolerance?: number;
+	/** A megaphone collector this long (m): a cone between the runners and the mid pipe */
+	megaphone?: number;
+	/** Quad exhaust: a second tailpipe per bank, this many times as long as the first */
+	quad?: number;
+	/** Rpm where variable intake runners switch the trumpets from long to short (needs itb) */
+	intakeSwitch?: number;
+	/** A diesel's breathing: full air at any throttle, and the fuel cut on the overrun */
+	unthrottled?: boolean;
+	/** A turbo's turbine after the collector, taking this share of each pulse's peak */
+	turbine?: number;
+	/** A particulate filter before the muffler, absorbing the mids and highs by this share */
+	filter?: number;
+	/** Strength of a diesel's knock: a sharp spike on the front of each pulse */
+	knockEdge?: number;
+};
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
 export type BrapStyle = 'even' | 'lope' | 'bursts' | 'skips' | 'mixed';
@@ -163,6 +220,16 @@ export const engineVoices = {
 		title: 'Inline four (buzzy hatchback)',
 		cylinders: 4,
 		firing: evenFiring([1, 0.94, 1.04, 0.97]),
+		// Rounded blowdown pulses, cylinders that wander slowly, a 4-2-1 header, a chambered
+		// muffler, an intake that honks, and a high lift cam from 5600 rpm
+		build: {
+			blowdown: true,
+			drift: 0.15,
+			secondary: 0.4,
+			chamber: 0.3,
+			honk: 1,
+			cam: 5600,
+		},
 		attack: 0.25,
 		decay: 2.6,
 		noise: 0.35,
@@ -177,8 +244,8 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.6,
 		crackle: 0.04,
-		level: 15.5,
-		// Four short equal headers into one collector
+		level: 12.5,
+		// Four short equal headers, paired by the build's 4-2-1 secondaries into one collector
 		pipes: {
 			runners: headers(4, 0.55),
 			mid: 1.6,
@@ -200,6 +267,21 @@ export const engineVoices = {
 			[360, 1],
 			[554, 0.86],
 		],
+		// A turbo boxer: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// rounded blowdown, a chambered muffler, the turbine in the exhaust, an intake honk,
+		// pulses that steepen and a megaphone collector
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			chamber: 0.3,
+			turbine: 0.6,
+			honk: 0.5,
+			steepen: 0.5,
+			megaphone: 0.4,
+		},
 		attack: 0.35,
 		decay: 3.6,
 		noise: 0.32,
@@ -214,7 +296,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.9,
 		crackle: 0.06,
-		level: 16.4,
+		level: 22.4,
 		// Unequal length headers, short on one bank and long on the other, into one collector
 		pipes: {
 			runners: [
@@ -236,6 +318,16 @@ export const engineVoices = {
 		title: 'Inline six (smooth)',
 		cylinders: 6,
 		firing: evenFiring([1, 0.97, 1.02, 0.98, 1.01, 0.96]),
+		// Rounded blowdown pulses, cylinders that wander slowly, a split manifold, a chambered
+		// muffler, individual throttle bodies, and an exhaust flap that opens from 4000 rpm
+		build: {
+			blowdown: true,
+			drift: 0.15,
+			secondary: 0.5,
+			chamber: 0.35,
+			itb: 0.5,
+			flap: 4000,
+		},
 		attack: 0.25,
 		decay: 2.4,
 		noise: 0.25,
@@ -250,8 +342,9 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.3,
 		crackle: 0.03,
-		level: 11.2,
-		// Six long equal headers into one collector
+		level: 14.9,
+		// Six long equal headers. The build's secondaries split them, as firing order 1-5-3-6-2-4
+		// alternates them, into the front three and the rear three, which meet at the collector.
 		pipes: {
 			runners: headers(6, 0.7),
 			mid: 2,
@@ -269,6 +362,18 @@ export const engineVoices = {
 		// Firing order 1-8-4-3-6-5-7-2: the banks go L R R L R L L R, so each bank's exhaust
 		// pulses are uneven, which is the burble. The right bank is a little quieter here.
 		firing: evenFiring([1, 0.72, 0.72, 1, 0.72, 1, 1, 0.72]),
+		// A big cam: at idle the long valve overlap leaves some cylinders a diluted charge, a
+		// lumpy idle that swells and sags once every two turns
+		lope: [0, 0.08, 0.25, 0.45, 0.55, 0.4, 0.2, 0.05],
+		// Rounded blowdown pulses, each bank's uneven gaps fighting its manifold's back pressure,
+		// cylinders that wander slowly, a crossover between the banks and a chambered muffler
+		build: {
+			blowdown: true,
+			interference: 0.25,
+			drift: 0.15,
+			crossover: 0.3,
+			chamber: 0.35,
+		},
 		attack: 0.4,
 		decay: 4.5,
 		noise: 0.3,
@@ -283,7 +388,7 @@ export const engineVoices = {
 		mufflerOpen: 3,
 		drive: 2.2,
 		crackle: 0.06,
-		level: 11.6,
+		level: 15.8,
 		// A system per bank, so each bank's uneven pulses come out of its own tailpipe
 		pipes: {
 			runners: headers(8, 0.6, [0, 1, 1, 0, 1, 0, 0, 1]),
@@ -300,6 +405,15 @@ export const engineVoices = {
 		title: 'Flat-plane V8 (supercar howl)',
 		cylinders: 8,
 		firing: evenFiring([1, 0.85, 1, 0.85, 1, 0.85, 1, 0.85]),
+		// Not a machine: combustion that varies from cycle to cycle at any revs, slugs of hot gas
+		// that move the pipes' resonances, turbulence where the flows mix, and cylinders and
+		// runners that are never quite the same
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+		},
 		attack: 0.2,
 		decay: 2.2,
 		noise: 0.25,
@@ -314,7 +428,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 2,
 		crackle: 0.05,
-		level: 9.4,
+		level: 8.5,
 		// A system per bank: each bank fires evenly, every 180°
 		pipes: {
 			runners: headers(8, 0.45, alternate(8)),
@@ -331,6 +445,21 @@ export const engineVoices = {
 		title: 'V10 (high-revving scream)',
 		cylinders: 10,
 		firing: evenFiring([1, 0.9, 1, 0.9, 1, 0.9, 1, 0.9, 1, 0.9]),
+		// A race-bred V10: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// a trumpet per cylinder, a bypass flap from 5000 rpm, pulses that steepen in the pipes,
+		// rounded blowdown, megaphone collectors and tailpipes 1.1 m apart
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			itb: 0.5,
+			flap: 5000,
+			steepen: 0.5,
+			spacing: 1.1,
+			blowdown: true,
+			megaphone: 0.4,
+		},
 		attack: 0.18,
 		decay: 1.8,
 		noise: 0.2,
@@ -345,7 +474,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.8,
 		crackle: 0.04,
-		level: 8.7,
+		level: 7,
 		pipes: {
 			runners: headers(10, 0.42, alternate(10)),
 			mid: 1.5,
@@ -361,6 +490,25 @@ export const engineVoices = {
 		title: 'V12 (silky)',
 		cylinders: 12,
 		firing: evenFiring([1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95]),
+		// A grand tourer's V12: not a machine (varying combustion, hot gas, turbulence,
+		// tolerances), each bank's six split into halves of three, trumpets on variable intake
+		// runners that go short from 5000 rpm, a bypass flap from 5500 rpm, pulses that steepen,
+		// rounded blowdown, megaphone collectors, and two tailpipes a side, 1.1 m apart
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			secondary: 0.45,
+			itb: 0.5,
+			intakeSwitch: 5000,
+			flap: 5500,
+			steepen: 0.4,
+			spacing: 1.1,
+			blowdown: true,
+			megaphone: 0.4,
+			quad: 1.3,
+		},
 		attack: 0.16,
 		decay: 1.6,
 		noise: 0.15,
@@ -375,7 +523,7 @@ export const engineVoices = {
 		mufflerOpen: 2,
 		drive: 1.3,
 		crackle: 0.02,
-		level: 9.0,
+		level: 10.7,
 		pipes: {
 			runners: headers(12, 0.5, alternate(12)),
 			mid: 1.7,
@@ -415,6 +563,21 @@ export const engineVoices = {
 		// The regular lope: strong at the start of each 1080° cycle and weaker over its faces, so
 		// the idle goes brap once every three turns of the shaft
 		lope: [0, 0.05, 0.3, 0.55, 0.75, 0.6],
+		// A twin-turbo rotary: not a machine (varying combustion, hot gas, turbulence,
+		// tolerances), rounded blowdown, the turbines in the exhaust, an intake honk, pulses that
+		// steepen, a megaphone collector and a bypass flap from 4500 rpm
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			turbine: 0.6,
+			honk: 0.5,
+			steepen: 0.5,
+			megaphone: 0.4,
+			flap: 4500,
+		},
 		formants: [
 			[250, 1.5, 0.9],
 			[700, 2, 0.5],
@@ -427,7 +590,7 @@ export const engineVoices = {
 		crackle: 0.15,
 		// Flat out it screams: half the high-rev dip the others take
 		presence: 0.5,
-		level: 6.8,
+		level: 9.6,
 		// Short ports, one per rotor, which no valve closes, into a free flowing exhaust
 		pipes: {
 			runners: headers(2, 0.3),
@@ -447,6 +610,20 @@ export const engineVoices = {
 		cylinders: 4,
 		// Sharp pressure rise from compression ignition: a hard knock with a bright clatter on top
 		firing: evenFiring([1, 0.92, 1.05, 0.95]),
+		// A turbo diesel: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// rounded blowdown, no throttle plate and the fuel cut on the overrun, a turbine and a
+		// particulate filter in the exhaust, and the knock on the front of each pulse
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			unthrottled: true,
+			turbine: 0.6,
+			filter: 0.6,
+			knockEdge: 0.7,
+		},
 		attack: 0.08,
 		decay: 1.4,
 		noise: 0.55,
@@ -461,7 +638,7 @@ export const engineVoices = {
 		mufflerOpen: 1,
 		drive: 1.2,
 		crackle: 0,
-		level: 8.4,
+		level: 11.6,
 		pipes: {
 			runners: headers(4, 0.5),
 			mid: 2.2,
@@ -472,33 +649,6 @@ export const engineVoices = {
 			level: 0.36,
 		},
 		intake: { hz: 180, level: 0.54 },
-	},
-	electric: {
-		title: 'Electric motor (whine)',
-		cylinders: 0,
-		firing: [],
-		attack: 1,
-		decay: 1,
-		noise: 1,
-		jitter: 0,
-		ampJitter: 0,
-		formants: [
-			[1000, 1, 0],
-			[1000, 1, 0],
-		],
-		dry: 0,
-		muffler: 8000,
-		mufflerOpen: 0,
-		drive: 1,
-		crackle: 0,
-		level: 1.8,
-		// The motor's electrical order and the gear mesh above it
-		whine: [
-			[6, 0.5],
-			[12, 0.25],
-			[27, 0.12],
-			[48, 0.06],
-		],
 	},
 } satisfies Record<string, EngineVoice>;
 
@@ -617,13 +767,6 @@ export type VehicleSoundParams = {
 		flutterPitch: number;
 		/** Flutter length (s) */
 		flutterLength: number;
-	};
-	wind: {
-		volume: number;
-		/** Speed (m/s) where the wind reaches full volume */
-		fullSpeed: number;
-		/** Low pass cutoff (Hz) */
-		cutoff: number;
 	};
 	bump: {
 		volume: number;
@@ -759,7 +902,6 @@ export const defaultSoundParams: VehicleSoundParams = {
 		flutterPitch: 800,
 		flutterLength: 0.6,
 	},
-	wind: { volume: 0.6, fullSpeed: 70, cutoff: 500 },
 	bump: { volume: 0.9, cutoff: 180, length: 0.22, threshold: 0.95 },
 	listener: { position: 'exterior', room: 1 },
 	smoothing: 0.05,
@@ -774,7 +916,8 @@ export function cloneSoundParams(
 
 /**
  * Copies every known field of a partial params object (for example parsed JSON) onto target,
- * ignoring unknown keys and values of the wrong type
+ * ignoring unknown keys and values of the wrong type. An engine voice that no longer exists
+ * (a saved 'electric') becomes 'auto'.
  */
 export function assignSoundParams(
 	target: VehicleSoundParams,
@@ -795,6 +938,9 @@ export function assignSoundParams(
 			}
 		} else if (typeof value === typeof current) to[key] = value;
 	}
+	const voice = target.engine.voice;
+	if (voice !== 'auto' && voice !== 'classic' && !(voice in engineVoices))
+		target.engine.voice = 'auto';
 }
 
 /**
@@ -855,6 +1001,7 @@ export function engineVoiceConfig(
 		cycle: voice.cycle,
 		brap: p.brap,
 		lope: voice.lope,
+		build: voice.build,
 		presence: voice.presence,
 		misfire: voice.misfire && Math.min(voice.misfire * p.roughness, 0.6),
 		attack: voice.attack,
@@ -880,9 +1027,66 @@ export function engineVoiceConfig(
 		drive: voice.drive * p.drive,
 		crackle: Math.min(voice.crackle * p.crackle, 1),
 		level: voice.level,
-		whine: voice.whine,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Turbo sounds
+// ---------------------------------------------------------------------------
+
+/** How the turbo's running sound is built, see vehicle-turbo-worklet.js. Each is off when left out. */
+export type TurboBuild = {
+	/** Compressor blades, each a little different: sidebands at the shaft rate */
+	blades?: number;
+	/** The exhaust pulses kick the turbine: the whistle and the air throb with the firing */
+	pulses?: number;
+	/** Twin-scroll: one scroll's pulses this share weaker, a slower beat on the throb (needs pulses) */
+	scrolls?: number;
+	/** A charge pipe this long (m) to the throttle, which rings like a tube when it shuts */
+	charge?: number;
+	/** Near surge on a part throttle with boost: the flow chuffs, by this share */
+	surge?: number;
+	/** A belt driven supercharger: Hz of whine per engine rpm, locked to the engine */
+	belt?: number;
+	/** A twin-screw or Roots supercharger's rotors: a series of harmonics of the lobe passing rate */
+	lobes?: boolean;
+	/** A supercharger's bypass valve: the whine drops and dulls off and on a part throttle */
+	bypass?: boolean;
+	/** A bigger compressor wheel: the whistle at this share of the pitch, and airier */
+	wheel?: number;
+	/** A heavy shaft (s): the whistle sweeps up slowly and sings long after a lift */
+	inertia?: number;
+};
+
+/** A turbo type's running sound: how it is built, and its air rush as a share of whooshVolume */
+export type TurboSound = { build: TurboBuild; whoosh?: number };
+
+/** The small single turbo's sound: the whistle, the whoosh, and a chuff near surge */
+const smallTurbo: TurboSound = { build: { surge: 0.6 } };
+
+/**
+ * The running sound of each turbo type (box3d.js/vehicles turboTypes). Types without a sound of
+ * their own yet play the small turbo's. Without boost a turbo is silent, so 'none' is too.
+ */
+export const turboSounds: Record<VehicleTurboName, TurboSound> = {
+	none: smallTurbo,
+	small: smallTurbo,
+	// A big wheel, lower and airier, on a heavy shaft that spools slowly and sings long after a lift
+	big: { build: { surge: 0.6, wheel: 0.6, inertia: 2.5 } },
+	// The exhaust pulses reach the turbine through two scrolls in turns
+	twinScroll: { build: { surge: 0.6, pulses: 0.6, scrolls: 0.45 } },
+	parallel: smallTurbo,
+	sequential: smallTurbo,
+	vgt: smallTurbo,
+	electric: smallTurbo,
+	antiLag: smallTurbo,
+	// A twin-screw supercharger's whine, locked to the engine (about 1.2 kHz at 6200 rpm, as on a
+	// Hellcat), with a bypass valve, and no air rush or surge
+	supercharger: {
+		build: { belt: 0.197, lobes: true, bypass: true },
+		whoosh: 0,
+	},
+};
 
 // ---------------------------------------------------------------------------
 // Listener
@@ -1011,6 +1215,9 @@ export type VehicleAudio = {
 	setCarVoice(voice: EngineVoiceName): void;
 	/** The voice playing now, after resolving 'auto' */
 	readonly voice: EngineVoiceName;
+	/** The car's turbo type, which picks the turbo's running sound (turboSounds) */
+	setTurbo(type: VehicleTurboName): void;
+	readonly turbo: VehicleTurboName;
 	setVolume(volume: number): void;
 	/** 0 to 1, as last set */
 	readonly volume: number;
@@ -1051,11 +1258,8 @@ function loopedNoise(context: AudioContext, buffer: AudioBuffer) {
 	return source;
 }
 
-/** Gains that bring the narrow noise bands of the turbo whistle to about the level of a sine */
-const WHISTLE_AIR = 17.5;
-const WHISTLE_HARMONIC = 8.7;
-
 const workletUrl = new URL('./vehicle-engine-worklet.js', import.meta.url);
+const turboWorkletUrl = new URL('./vehicle-turbo-worklet.js', import.meta.url);
 
 export function createVehicleAudio(
 	volume = 0.5,
@@ -1072,6 +1276,10 @@ export function createVehicleAudio(
 	// The pulse voices, once the worklet module has loaded. Classic plays until then.
 	let pulses: AudioWorkletNode | null = null;
 	let pulsesKey = '';
+	// The turbo's running sound, once its worklet has loaded, and the car's turbo type
+	let turboNode: AudioWorkletNode | null = null;
+	let turboKey = '';
+	let turboType: VehicleTurboName = 'small';
 
 	function build(ctx: AudioContext) {
 		// Every sound meets in master, then reaches the speakers through the listener
@@ -1139,54 +1347,17 @@ export function createVehicleAudio(
 			.connect(squealGain)
 			.connect(master);
 
-		// Wind: low passed noise that rises with speed
-		const windFilter = ctx.createBiquadFilter();
-		windFilter.type = 'lowpass';
-		const windGain = ctx.createGain();
-		windGain.gain.value = 0;
-		loopedNoise(ctx, noise)
-			.connect(windFilter)
-			.connect(windGain)
-			.connect(master);
-
-		// Turbo whistle: noise through two narrow band passes in a row at the blade pass
-		// frequency, a quieter band an octave up, and a trace of pure tone for definition
-		const whineGain = ctx.createGain();
-		whineGain.gain.value = 0;
-		whineGain.connect(master);
-		const whistleBand = ctx.createBiquadFilter();
-		whistleBand.type = 'bandpass';
-		const whistleBand2 = ctx.createBiquadFilter();
-		whistleBand2.type = 'bandpass';
-		const whistleAir = ctx.createGain();
-		loopedNoise(ctx, noise)
-			.connect(whistleBand)
-			.connect(whistleBand2)
-			.connect(whistleAir)
-			.connect(whineGain);
-		const harmonicBand = ctx.createBiquadFilter();
-		harmonicBand.type = 'bandpass';
-		const harmonicGain = ctx.createGain();
-		loopedNoise(ctx, noise)
-			.connect(harmonicBand)
-			.connect(harmonicGain)
-			.connect(whineGain);
-		const whistleTone = ctx.createOscillator();
-		whistleTone.type = 'sine';
-		const whistleToneGain = ctx.createGain();
-		whistleTone.connect(whistleToneGain).connect(whineGain);
-		whistleTone.start();
-
-		// Turbo whoosh: air through the compressor, noise in a wide band that rises with the shaft
-		const whooshFilter = ctx.createBiquadFilter();
-		whooshFilter.type = 'bandpass';
-		whooshFilter.Q.value = 0.9;
-		const whooshGain = ctx.createGain();
-		whooshGain.gain.value = 0;
-		loopedNoise(ctx, noise)
-			.connect(whooshFilter)
-			.connect(whooshGain)
-			.connect(master);
+		// The turbo's running sound: its worklet joins master when it has loaded
+		ctx.audioWorklet
+			.addModule(turboWorkletUrl)
+			.then(() => {
+				turboNode = new AudioWorkletNode(ctx, 'vehicle-turbo', {
+					numberOfInputs: 0,
+					outputChannelCount: [1],
+				});
+				turboNode.connect(master);
+			})
+			.catch((error) => console.warn('Turbo sound unavailable', error));
 
 		const built = {
 			master,
@@ -1202,18 +1373,6 @@ export function createVehicleAudio(
 			pulseGain,
 			squealFilter,
 			squealGain,
-			windFilter,
-			windGain,
-			whineGain,
-			whistleBand,
-			whistleBand2,
-			whistleAir,
-			harmonicBand,
-			harmonicGain,
-			whistleTone,
-			whistleToneGain,
-			whooshFilter,
-			whooshGain,
 			// Long enough for the longest one-shot the panel allows
 			oneShotBuffer: noiseBuffer(ctx, 1.5),
 		};
@@ -1264,6 +1423,28 @@ export function createVehicleAudio(
 		if (key === pulsesKey) return;
 		pulsesKey = key;
 		pulses.port.postMessage(config);
+	}
+
+	// Sends the turbo's sound to its worklet when the type or a turbo setting changes
+	function syncTurbo() {
+		if (!turboNode) return;
+		const { turbo } = params;
+		const sound = turboSounds[turboType] ?? smallTurbo;
+		const config = {
+			pitch: turbo.whinePitch,
+			width: turbo.whineWidth,
+			tone: turbo.whineTone,
+			harmonic: turbo.whineHarmonic,
+			whineVolume: turbo.whineVolume,
+			whooshVolume: turbo.whooshVolume * (sound.whoosh ?? 1),
+			idleSpin: turbo.idleSpin,
+			cylinders,
+			build: sound.build,
+		};
+		const key = JSON.stringify(config);
+		if (key === turboKey) return;
+		turboKey = key;
+		turboNode.port.postMessage(config);
 	}
 
 	// A burst of noise through a filter, rising over attack seconds and fading out by length
@@ -1499,7 +1680,7 @@ export function createVehicleAudio(
 			nodes.listener.set(params.listener.position, params.listener.room);
 			const t = context.currentTime;
 			const glide = Math.max(params.smoothing, 0.001);
-			const { engine, tires, turbo, wind, bump } = params;
+			const { engine, tires, turbo, bump } = params;
 
 			// ---- Engine
 			playing = resolveVoice();
@@ -1532,7 +1713,7 @@ export function createVehicleAudio(
 				glide,
 			);
 
-			// ---- Tires and wind
+			// ---- Tires
 			const speed = Math.abs(sound.speed);
 			const squeal =
 				speed > tires.minSpeed
@@ -1543,12 +1724,6 @@ export function createVehicleAudio(
 				tires.pitch + tires.pitchSkid * sound.skid,
 				t,
 				glide,
-			);
-			nodes.windFilter.frequency.setTargetAtTime(wind.cutoff, t, glide);
-			nodes.windGain.gain.setTargetAtTime(
-				Math.min((speed / Math.max(wind.fullSpeed, 1)) ** 2, 1) * wind.volume,
-				t,
-				0.2,
 			);
 
 			thumpCooldown = Math.max(thumpCooldown - dt, 0);
@@ -1566,44 +1741,17 @@ export function createVehicleAudio(
 			const spinTime = sound.boost > shaftSpeed ? turbo.spinUp : turbo.spinDown;
 			shaftSpeed +=
 				(sound.boost - shaftSpeed) * Math.min(dt / Math.max(spinTime, 0.01), 1);
-			const spin = turbo.idleSpin + (1 - turbo.idleSpin) * shaftSpeed;
-			// The airflow wavers a little, so the pitch drifts by about 1%
-			const drift = 1 + 0.007 * Math.sin(t * 2.3) + 0.004 * Math.sin(t * 5.7);
-			const bladePass = turbo.whinePitch * spin * drift;
-			// A narrower band passes less noise power: make it up so width does not change volume
-			const q = 1 / Math.max(turbo.whineWidth, 0.005);
-			nodes.whistleBand.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleBand2.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleBand.Q.setTargetAtTime(q, t, glide);
-			nodes.whistleBand2.Q.setTargetAtTime(q, t, glide);
-			nodes.whistleAir.gain.setTargetAtTime(
-				WHISTLE_AIR * Math.sqrt(q / 25),
-				t,
-				glide,
-			);
-			nodes.harmonicBand.frequency.setTargetAtTime(bladePass * 2, t, glide);
-			nodes.harmonicBand.Q.setTargetAtTime(q, t, glide);
-			nodes.harmonicGain.gain.setTargetAtTime(
-				turbo.whineHarmonic * WHISTLE_HARMONIC * Math.sqrt(q / 25),
-				t,
-				glide,
-			);
-			nodes.whistleTone.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleToneGain.gain.setTargetAtTime(turbo.whineTone, t, glide);
-			// The whistle follows the shaft, so it keeps singing as the turbo coasts down after a
-			// lift, and it is loudest while air is flowing on throttle
-			nodes.whineGain.gain.setTargetAtTime(
-				turbo.whineVolume * shaftSpeed ** 1.5 * (0.35 + 0.65 * sound.throttle),
-				t,
-				glide,
-			);
-			// It tops out below 3 kHz: higher, at full boost and high revs, it turns into a hiss
-			nodes.whooshFilter.frequency.setTargetAtTime(500 + 2300 * spin, t, glide);
-			nodes.whooshGain.gain.setTargetAtTime(
-				turbo.whooshVolume * sound.boost * sound.throttle,
-				t,
-				glide,
-			);
+			// The worklet builds the whistle and the whoosh from the shaft, the boost, the throttle and
+			// the rpm (a supercharger's whine from the rpm alone)
+			syncTurbo();
+			if (turboNode) {
+				const set = (name: string, value: number) =>
+					turboNode?.parameters.get(name)?.setValueAtTime(value, t);
+				set('shaft', shaftSpeed);
+				set('boost', sound.boost);
+				set('throttle', sound.throttle);
+				set('rpm', Math.max(sound.engineRpm, 300));
+			}
 
 			// ---- Lift sounds
 			overrun = updateLift(sound, dt);
@@ -1620,6 +1768,12 @@ export function createVehicleAudio(
 		},
 		get voice() {
 			return playing;
+		},
+		setTurbo(type) {
+			turboType = type;
+		},
+		get turbo() {
+			return turboType;
 		},
 		setVolume(value) {
 			level = value;
