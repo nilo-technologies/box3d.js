@@ -249,6 +249,10 @@ const PRESENCE_RPM = [3000, 8000];
 //   milliseconds, so the pipes' resonances move with every pulse instead of standing still.
 // - turbulence: noise from the flows mixing where the runners meet, as strong as the flow
 //   arriving, so it rides on the pulses and rings the exhaust's own resonances
+// - quad: each bank's exhaust splits after the muffler into two tailpipes, the second this many
+//   times as long as the first, so two sets of tailpipe resonances layer
+// - intakeSwitch: the rpm where variable intake runners switch the throttle bodies' trumpets
+//   from long to short, retuning the intake (needs itb)
 // - megaphone: a collector that widens like a cone this long (m) between the runners and the mid
 //   pipe, rather than a sharp junction. Each step in its width reflects a little, so it sends a
 //   soft, spread out suction wave back up the runners instead of one sharp one.
@@ -296,6 +300,12 @@ const HOT_MID = 15;
 /** The megaphone's sections and their widths (admittance against a runner), from the runners
  * to the mid pipe */
 const MEGAPHONE_AREAS = [1.2, 1.8, 2.7, 4];
+/** Of the muffler's output, the share each of a quad exhaust's two tailpipes takes */
+const QUAD_SPLIT = 0.5;
+/** Variable intake: the trumpets' long and short lengths (m), and the rpm span of the switch */
+const TRUMPET_LONG = 0.45;
+const TRUMPET_SHORT = 0.25;
+const SWITCH_RPM = 300;
 /** A fixed number from -1 to 1 for each index, the same every run */
 const fixed = (i) => {
 	const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
@@ -428,6 +438,10 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						steep: voice.build?.steepen ?? 0,
 					}),
 					tail: new Pipe(pipes.tail),
+					tail2: voice.build?.quad
+						? new Pipe(pipes.tail * voice.build.quad)
+						: null,
+					openLow2: 0,
 					muffler: new Svf(),
 					muffler2: new Svf(),
 					presence: new Svf(),
@@ -584,6 +598,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			for (const bank of this.banks) {
 				bank.mid.setSpeed(c);
 				bank.tail.setSpeed(c);
+				bank.tail2?.setSpeed(c);
 				bank.chamber.setSpeed(c);
 				for (const sec of bank.secondaries) sec.pipe.setSpeed(c);
 				for (const section of bank.cone) section.pipe.setSpeed(c);
@@ -598,6 +613,19 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const turbulence = v.build?.turbulence ?? 0;
 		const kOpen = onePole(OPEN_CUTOFF);
 		const kBypass = onePole(FLAP_CUTOFF);
+		if (v.build?.intakeSwitch) {
+			// Variable intake: long trumpets low down, short ones up top
+			const shortOn = smoothstep(
+				v.build.intakeSwitch - SWITCH_RPM,
+				v.build.intakeSwitch + SWITCH_RPM,
+				rpm,
+			);
+			for (const c of this.cylinders) {
+				c.trumpet.length =
+					TRUMPET_LONG + (TRUMPET_SHORT - TRUMPET_LONG) * shortOn;
+				c.trumpet.setSpeed(TRACT_AIR);
+			}
+		}
 		// The flap swings toward open on a firm throttle above its rpm
 		const flapTarget = v.build?.flap
 			? smoothstep(v.build.flap - FLAP_RPM, v.build.flap + FLAP_RPM, rpm) *
@@ -994,8 +1022,10 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					bank.bypassLow += kBypass * (midAtMuffler - bank.bypassLow);
 					muffled = (1 - flap) * muffled + flap * bank.bypassLow;
 				}
+				const tail2 = bank.tail2;
+				const toTail = tail2 ? QUAD_SPLIT * muffled : muffled;
 				bank.tail.ahead.write(
-					(1 - 0.5 * p.reflect) * muffled + TAIL_REFLECT * tailAtMuffler,
+					(1 - 0.5 * p.reflect) * toTail + TAIL_REFLECT * tailAtMuffler,
 				);
 
 				// Open end: the lows reflect back inverted, and the gas flowing out radiates. The flow
@@ -1004,7 +1034,19 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				bank.openLow += kOpen * (tailAtEnd - bank.openLow);
 				const reflected = -p.open * bank.openLow;
 				bank.tail.back.write(reflected);
-				const flow = (tailAtEnd - reflected) * PIPE_GAIN;
+				let flow = (tailAtEnd - reflected) * PIPE_GAIN;
+				if (tail2) {
+					// The second tailpipe of a quad exhaust, alongside the first
+					const tail2End = tail2.atEnd(kPipe);
+					const tail2Muffler = tail2.atStart(kPipe);
+					tail2.ahead.write(
+						(1 - 0.5 * p.reflect) * toTail + TAIL_REFLECT * tail2Muffler,
+					);
+					bank.openLow2 += kOpen * (tail2End - bank.openLow2);
+					const reflected2 = -p.open * bank.openLow2;
+					tail2.back.write(reflected2);
+					flow += (tail2End - reflected2) * PIPE_GAIN;
+				}
 
 				// The steady part of the flow goes first: long pulses that overlap at high revs
 				// push a steady pressure, which would hold the saturator in its flat top

@@ -145,6 +145,10 @@ export type EngineBuild = {
 	tolerance?: number;
 	/** A megaphone collector this long (m): a cone between the runners and the mid pipe */
 	megaphone?: number;
+	/** Quad exhaust: a second tailpipe per bank, this many times as long as the first */
+	quad?: number;
+	/** Rpm where variable intake runners switch the trumpets from long to short (needs itb) */
+	intakeSwitch?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -463,6 +467,25 @@ export const engineVoices = {
 		title: 'V12 (silky)',
 		cylinders: 12,
 		firing: evenFiring([1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95, 1, 0.95]),
+		// A grand tourer's V12: not a machine (varying combustion, hot gas, turbulence,
+		// tolerances), each bank's six split into halves of three, trumpets on variable intake
+		// runners that go short from 5000 rpm, a bypass flap from 5500 rpm, pulses that steepen,
+		// rounded blowdown, megaphone collectors, and two tailpipes a side, 1.1 m apart
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			secondary: 0.45,
+			itb: 0.5,
+			intakeSwitch: 5000,
+			flap: 5500,
+			steepen: 0.4,
+			spacing: 1.1,
+			blowdown: true,
+			megaphone: 0.4,
+			quad: 1.3,
+		},
 		attack: 0.16,
 		decay: 1.6,
 		noise: 0.15,
@@ -477,7 +500,7 @@ export const engineVoices = {
 		mufflerOpen: 2,
 		drive: 1.3,
 		crackle: 0.02,
-		level: 9.0,
+		level: 10.7,
 		pipes: {
 			runners: headers(12, 0.5, alternate(12)),
 			mid: 1.7,

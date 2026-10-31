@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The V12 voice is rebuilt as a grand tourer's V12 with thirteen build options. The other voices sound exactly as before.
+  - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`, as on the flat-plane V8 and the V10). Its harmonic-to-noise ratio at speed drops from 15-24 dB to 7-11 dB.
+  - `secondary` (0.45 m): each bank of six splits into halves of three, as a Ferrari V12's 6-into-2-into-1 headers do. Also `itb` (0.5), `flap` (5500 rpm), `steepen` (0.4), `spacing` (1.1 m), `blowdown` and `megaphone` (0.4 m).
+  - `quad` (1.3), new: each bank's exhaust splits after the muffler into two tailpipes, the second 1.3 times as long, each taking half the flow, so two sets of tailpipe resonances layer.
+  - `intakeSwitch` (5000 rpm), new: variable intake runners switch the throttle bodies' trumpets from long (0.45 m) to short (0.25 m) across 600 rpm, so the intake retunes partway up each gear.
+  - The level is 10.7 (was 9), so a drive through the gears is as loud as before, and the saturator doesn't clip.
+
 - The V10 voice is rebuilt as a race-bred V10 with ten build options. The other voices sound exactly as before.
   - The flat-plane V8's four that make it less of a machine: `combustion` (0.04), `heat` (0.25), `turbulence` (0.12) and `tolerance` (0.04). Its harmonic-to-noise ratio at speed drops from 19-24 dB to 10-12 dB.
   - `itb` (0.5): a trumpet per cylinder, as on the Lexus LFA. `flap` (5000 rpm): a bypass flap past the muffler. `blowdown`: rounded pulses with a scavenging dip.
