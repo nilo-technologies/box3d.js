@@ -10,7 +10,7 @@
 // a flutter from the compressor inlet, the tailpipe spits flame during overrun crackle, and the
 // engine rocks on its mounts with the torque and shudders on the rev limiter.
 //
-// The crank turns at slowMotion times the real speed: at the real speed it would only flicker.
+// The crank turns at slowMotion times the real speed. At the real speed (1) it mostly flickers.
 
 import * as THREE from 'three';
 import {
@@ -1083,9 +1083,12 @@ export function createEngineModel(
 	function update(state: EngineModelState, dt: number) {
 		const prev = theta;
 		theta += (state.rpm / 60) * 360 * model.slowMotion * dt;
+		// Near the real speed a frame can turn the crank through a whole cycle, so every angle in
+		// it was passed
 		const crossed = (angle: number) =>
+			theta - prev >= cycle ||
 			THREE.MathUtils.euclideanModulo(theta - angle, cycle) <
-			THREE.MathUtils.euclideanModulo(prev - angle, cycle);
+				THREE.MathUtils.euclideanModulo(prev - angle, cycle);
 		const fire = state.cut ? 0 : 0.35 + 0.65 * state.throttle;
 		const crank = THREE.MathUtils.degToRad(theta);
 

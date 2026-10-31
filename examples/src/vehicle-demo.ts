@@ -765,6 +765,7 @@ export async function runVehicleDemo(
 	const audio = createVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
 	audio.setCarVoice(engineFor(options.preset).voice);
+	audio.setTurbo(options.turbo ?? 'none');
 	const soundSettings = { volume: audio.volume };
 	let unmutedVolume = soundSettings.volume || 0.5;
 	const volumeController = app.gui
@@ -884,6 +885,7 @@ export async function runVehicleDemo(
 		);
 		audio.setCylinders(cylindersFor(name));
 		audio.setCarVoice(engineFor(name).voice);
+		audio.setTurbo(turbo);
 		clearTrail();
 		// The Vehicle folder is new, with the new preset's values: they are the start values now
 		urlSettings?.reset('vehicle');

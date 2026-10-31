@@ -1,5 +1,5 @@
 // Sound tuning panel for the sound lab (example-vehicle-sound.ts): a lil-gui folder with every
-// setting in VehicleSoundParams (engine voice and character, listener, tires, turbo, wind, bump stop),
+// setting in VehicleSoundParams (engine voice and character, listener, tires, turbo, bump stop),
 // buttons that play the blow-off, the stutter (flutter) and the bump, hotkeys for the first two
 // (V and C), and copy, paste and reset. Changes apply live and are saved in localStorage (only
 // what differs from the defaults). The driving examples don't read it: they play
@@ -150,12 +150,6 @@ const valveSliders: Slider<TurboParams>[] = [
 	['flutterLength', 0.1, 1.4, 0.01, 'flutter length (s)'],
 ];
 
-const windSliders: Slider<VehicleSoundParams['wind']>[] = [
-	['volume', 0, 2, 0.01, 'volume'],
-	['fullSpeed', 5, 150, 1, 'full volume at (m/s)'],
-	['cutoff', 50, 4000, 10, 'cutoff (Hz)'],
-];
-
 const bumpSliders: Slider<VehicleSoundParams['bump']>[] = [
 	['volume', 0, 3, 0.01, 'volume'],
 	['cutoff', 30, 1000, 5, 'cutoff (Hz)'],
@@ -275,9 +269,6 @@ export function addSoundPanel(
 		.name('play on every lift, even without a turbo');
 	sliders(turbo, params.turbo, whineSliders);
 	sliders(turbo, params.turbo, valveSliders);
-
-	const wind = folder.addFolder('Wind').close();
-	sliders(wind, params.wind, windSliders);
 
 	const bump = folder.addFolder('Bump stop').close();
 	sliders(bump, params.bump, bumpSliders);

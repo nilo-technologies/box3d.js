@@ -1,7 +1,8 @@
 // Procedural car sound for the vehicle examples, made with the Web Audio API and no audio files:
 // an engine whose pitch follows the rpm, tire squeal from filtered noise that follows how far
-// the tires slide, wind noise with speed, a thump when the suspension hits its bump stop, and a
-// turbo with a compressor whine, intake whoosh and a blow-off valve or compressor flutter on
+// the tires slide, a thump when the suspension hits its bump stop, and a
+// turbo or supercharger with a running sound of its own (a compressor whistle and intake whoosh,
+// or a supercharger's whine, see turboSounds) and a blow-off valve or compressor flutter on
 // lift. The lift sounds only play when a real car would make them (see "Lift sounds" below).
 // Browsers only start audio after a user gesture, so the context resumes on the first key
 // press or click.
@@ -23,6 +24,8 @@
 // driver pick the engine voice (vehicle-engine-voice.ts); everything else stays at
 // defaultSoundParams. The sound lab (example-vehicle-sound.ts, vehicle-sound-panel.ts) tunes all
 // of it without a car.
+
+import type { VehicleTurboName } from 'box3d.js/vehicles';
 
 export type VehicleSound = {
 	engineRpm: number;
@@ -765,13 +768,6 @@ export type VehicleSoundParams = {
 		/** Flutter length (s) */
 		flutterLength: number;
 	};
-	wind: {
-		volume: number;
-		/** Speed (m/s) where the wind reaches full volume */
-		fullSpeed: number;
-		/** Low pass cutoff (Hz) */
-		cutoff: number;
-	};
 	bump: {
 		volume: number;
 		/** Low pass cutoff (Hz) */
@@ -906,7 +902,6 @@ export const defaultSoundParams: VehicleSoundParams = {
 		flutterPitch: 800,
 		flutterLength: 0.6,
 	},
-	wind: { volume: 0.6, fullSpeed: 70, cutoff: 500 },
 	bump: { volume: 0.9, cutoff: 180, length: 0.22, threshold: 0.95 },
 	listener: { position: 'exterior', room: 1 },
 	smoothing: 0.05,
@@ -1036,6 +1031,64 @@ export function engineVoiceConfig(
 }
 
 // ---------------------------------------------------------------------------
+// Turbo sounds
+// ---------------------------------------------------------------------------
+
+/** How the turbo's running sound is built, see vehicle-turbo-worklet.js. Each is off when left out. */
+export type TurboBuild = {
+	/** Compressor blades, each a little different: sidebands at the shaft rate */
+	blades?: number;
+	/** The exhaust pulses kick the turbine: the whistle and the air throb with the firing */
+	pulses?: number;
+	/** Twin-scroll: one scroll's pulses this share weaker, a slower beat on the throb (needs pulses) */
+	scrolls?: number;
+	/** A charge pipe this long (m) to the throttle, which rings like a tube when it shuts */
+	charge?: number;
+	/** Near surge on a part throttle with boost: the flow chuffs, by this share */
+	surge?: number;
+	/** A belt driven supercharger: Hz of whine per engine rpm, locked to the engine */
+	belt?: number;
+	/** A twin-screw or Roots supercharger's rotors: a series of harmonics of the lobe passing rate */
+	lobes?: boolean;
+	/** A supercharger's bypass valve: the whine drops and dulls off and on a part throttle */
+	bypass?: boolean;
+	/** A bigger compressor wheel: the whistle at this share of the pitch, and airier */
+	wheel?: number;
+	/** A heavy shaft (s): the whistle sweeps up slowly and sings long after a lift */
+	inertia?: number;
+};
+
+/** A turbo type's running sound: how it is built, and its air rush as a share of whooshVolume */
+export type TurboSound = { build: TurboBuild; whoosh?: number };
+
+/** The small single turbo's sound: the whistle, the whoosh, and a chuff near surge */
+const smallTurbo: TurboSound = { build: { surge: 0.6 } };
+
+/**
+ * The running sound of each turbo type (box3d.js/vehicles turboTypes). Types without a sound of
+ * their own yet play the small turbo's. Without boost a turbo is silent, so 'none' is too.
+ */
+export const turboSounds: Record<VehicleTurboName, TurboSound> = {
+	none: smallTurbo,
+	small: smallTurbo,
+	// A big wheel, lower and airier, on a heavy shaft that spools slowly and sings long after a lift
+	big: { build: { surge: 0.6, wheel: 0.6, inertia: 2.5 } },
+	// The exhaust pulses reach the turbine through two scrolls in turns
+	twinScroll: { build: { surge: 0.6, pulses: 0.6, scrolls: 0.45 } },
+	parallel: smallTurbo,
+	sequential: smallTurbo,
+	vgt: smallTurbo,
+	electric: smallTurbo,
+	antiLag: smallTurbo,
+	// A twin-screw supercharger's whine, locked to the engine (about 1.2 kHz at 6200 rpm, as on a
+	// Hellcat), with a bypass valve, and no air rush or surge
+	supercharger: {
+		build: { belt: 0.197, lobes: true, bypass: true },
+		whoosh: 0,
+	},
+};
+
+// ---------------------------------------------------------------------------
 // Listener
 // ---------------------------------------------------------------------------
 
@@ -1162,6 +1215,9 @@ export type VehicleAudio = {
 	setCarVoice(voice: EngineVoiceName): void;
 	/** The voice playing now, after resolving 'auto' */
 	readonly voice: EngineVoiceName;
+	/** The car's turbo type, which picks the turbo's running sound (turboSounds) */
+	setTurbo(type: VehicleTurboName): void;
+	readonly turbo: VehicleTurboName;
 	setVolume(volume: number): void;
 	/** 0 to 1, as last set */
 	readonly volume: number;
@@ -1202,11 +1258,8 @@ function loopedNoise(context: AudioContext, buffer: AudioBuffer) {
 	return source;
 }
 
-/** Gains that bring the narrow noise bands of the turbo whistle to about the level of a sine */
-const WHISTLE_AIR = 17.5;
-const WHISTLE_HARMONIC = 8.7;
-
 const workletUrl = new URL('./vehicle-engine-worklet.js', import.meta.url);
+const turboWorkletUrl = new URL('./vehicle-turbo-worklet.js', import.meta.url);
 
 export function createVehicleAudio(
 	volume = 0.5,
@@ -1223,6 +1276,10 @@ export function createVehicleAudio(
 	// The pulse voices, once the worklet module has loaded. Classic plays until then.
 	let pulses: AudioWorkletNode | null = null;
 	let pulsesKey = '';
+	// The turbo's running sound, once its worklet has loaded, and the car's turbo type
+	let turboNode: AudioWorkletNode | null = null;
+	let turboKey = '';
+	let turboType: VehicleTurboName = 'small';
 
 	function build(ctx: AudioContext) {
 		// Every sound meets in master, then reaches the speakers through the listener
@@ -1290,54 +1347,17 @@ export function createVehicleAudio(
 			.connect(squealGain)
 			.connect(master);
 
-		// Wind: low passed noise that rises with speed
-		const windFilter = ctx.createBiquadFilter();
-		windFilter.type = 'lowpass';
-		const windGain = ctx.createGain();
-		windGain.gain.value = 0;
-		loopedNoise(ctx, noise)
-			.connect(windFilter)
-			.connect(windGain)
-			.connect(master);
-
-		// Turbo whistle: noise through two narrow band passes in a row at the blade pass
-		// frequency, a quieter band an octave up, and a trace of pure tone for definition
-		const whineGain = ctx.createGain();
-		whineGain.gain.value = 0;
-		whineGain.connect(master);
-		const whistleBand = ctx.createBiquadFilter();
-		whistleBand.type = 'bandpass';
-		const whistleBand2 = ctx.createBiquadFilter();
-		whistleBand2.type = 'bandpass';
-		const whistleAir = ctx.createGain();
-		loopedNoise(ctx, noise)
-			.connect(whistleBand)
-			.connect(whistleBand2)
-			.connect(whistleAir)
-			.connect(whineGain);
-		const harmonicBand = ctx.createBiquadFilter();
-		harmonicBand.type = 'bandpass';
-		const harmonicGain = ctx.createGain();
-		loopedNoise(ctx, noise)
-			.connect(harmonicBand)
-			.connect(harmonicGain)
-			.connect(whineGain);
-		const whistleTone = ctx.createOscillator();
-		whistleTone.type = 'sine';
-		const whistleToneGain = ctx.createGain();
-		whistleTone.connect(whistleToneGain).connect(whineGain);
-		whistleTone.start();
-
-		// Turbo whoosh: air through the compressor, noise in a wide band that rises with the shaft
-		const whooshFilter = ctx.createBiquadFilter();
-		whooshFilter.type = 'bandpass';
-		whooshFilter.Q.value = 0.9;
-		const whooshGain = ctx.createGain();
-		whooshGain.gain.value = 0;
-		loopedNoise(ctx, noise)
-			.connect(whooshFilter)
-			.connect(whooshGain)
-			.connect(master);
+		// The turbo's running sound: its worklet joins master when it has loaded
+		ctx.audioWorklet
+			.addModule(turboWorkletUrl)
+			.then(() => {
+				turboNode = new AudioWorkletNode(ctx, 'vehicle-turbo', {
+					numberOfInputs: 0,
+					outputChannelCount: [1],
+				});
+				turboNode.connect(master);
+			})
+			.catch((error) => console.warn('Turbo sound unavailable', error));
 
 		const built = {
 			master,
@@ -1353,18 +1373,6 @@ export function createVehicleAudio(
 			pulseGain,
 			squealFilter,
 			squealGain,
-			windFilter,
-			windGain,
-			whineGain,
-			whistleBand,
-			whistleBand2,
-			whistleAir,
-			harmonicBand,
-			harmonicGain,
-			whistleTone,
-			whistleToneGain,
-			whooshFilter,
-			whooshGain,
 			// Long enough for the longest one-shot the panel allows
 			oneShotBuffer: noiseBuffer(ctx, 1.5),
 		};
@@ -1415,6 +1423,28 @@ export function createVehicleAudio(
 		if (key === pulsesKey) return;
 		pulsesKey = key;
 		pulses.port.postMessage(config);
+	}
+
+	// Sends the turbo's sound to its worklet when the type or a turbo setting changes
+	function syncTurbo() {
+		if (!turboNode) return;
+		const { turbo } = params;
+		const sound = turboSounds[turboType] ?? smallTurbo;
+		const config = {
+			pitch: turbo.whinePitch,
+			width: turbo.whineWidth,
+			tone: turbo.whineTone,
+			harmonic: turbo.whineHarmonic,
+			whineVolume: turbo.whineVolume,
+			whooshVolume: turbo.whooshVolume * (sound.whoosh ?? 1),
+			idleSpin: turbo.idleSpin,
+			cylinders,
+			build: sound.build,
+		};
+		const key = JSON.stringify(config);
+		if (key === turboKey) return;
+		turboKey = key;
+		turboNode.port.postMessage(config);
 	}
 
 	// A burst of noise through a filter, rising over attack seconds and fading out by length
@@ -1650,7 +1680,7 @@ export function createVehicleAudio(
 			nodes.listener.set(params.listener.position, params.listener.room);
 			const t = context.currentTime;
 			const glide = Math.max(params.smoothing, 0.001);
-			const { engine, tires, turbo, wind, bump } = params;
+			const { engine, tires, turbo, bump } = params;
 
 			// ---- Engine
 			playing = resolveVoice();
@@ -1683,7 +1713,7 @@ export function createVehicleAudio(
 				glide,
 			);
 
-			// ---- Tires and wind
+			// ---- Tires
 			const speed = Math.abs(sound.speed);
 			const squeal =
 				speed > tires.minSpeed
@@ -1694,12 +1724,6 @@ export function createVehicleAudio(
 				tires.pitch + tires.pitchSkid * sound.skid,
 				t,
 				glide,
-			);
-			nodes.windFilter.frequency.setTargetAtTime(wind.cutoff, t, glide);
-			nodes.windGain.gain.setTargetAtTime(
-				Math.min((speed / Math.max(wind.fullSpeed, 1)) ** 2, 1) * wind.volume,
-				t,
-				0.2,
 			);
 
 			thumpCooldown = Math.max(thumpCooldown - dt, 0);
@@ -1717,44 +1741,17 @@ export function createVehicleAudio(
 			const spinTime = sound.boost > shaftSpeed ? turbo.spinUp : turbo.spinDown;
 			shaftSpeed +=
 				(sound.boost - shaftSpeed) * Math.min(dt / Math.max(spinTime, 0.01), 1);
-			const spin = turbo.idleSpin + (1 - turbo.idleSpin) * shaftSpeed;
-			// The airflow wavers a little, so the pitch drifts by about 1%
-			const drift = 1 + 0.007 * Math.sin(t * 2.3) + 0.004 * Math.sin(t * 5.7);
-			const bladePass = turbo.whinePitch * spin * drift;
-			// A narrower band passes less noise power: make it up so width does not change volume
-			const q = 1 / Math.max(turbo.whineWidth, 0.005);
-			nodes.whistleBand.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleBand2.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleBand.Q.setTargetAtTime(q, t, glide);
-			nodes.whistleBand2.Q.setTargetAtTime(q, t, glide);
-			nodes.whistleAir.gain.setTargetAtTime(
-				WHISTLE_AIR * Math.sqrt(q / 25),
-				t,
-				glide,
-			);
-			nodes.harmonicBand.frequency.setTargetAtTime(bladePass * 2, t, glide);
-			nodes.harmonicBand.Q.setTargetAtTime(q, t, glide);
-			nodes.harmonicGain.gain.setTargetAtTime(
-				turbo.whineHarmonic * WHISTLE_HARMONIC * Math.sqrt(q / 25),
-				t,
-				glide,
-			);
-			nodes.whistleTone.frequency.setTargetAtTime(bladePass, t, glide);
-			nodes.whistleToneGain.gain.setTargetAtTime(turbo.whineTone, t, glide);
-			// The whistle follows the shaft, so it keeps singing as the turbo coasts down after a
-			// lift, and it is loudest while air is flowing on throttle
-			nodes.whineGain.gain.setTargetAtTime(
-				turbo.whineVolume * shaftSpeed ** 1.5 * (0.35 + 0.65 * sound.throttle),
-				t,
-				glide,
-			);
-			// It tops out below 3 kHz: higher, at full boost and high revs, it turns into a hiss
-			nodes.whooshFilter.frequency.setTargetAtTime(500 + 2300 * spin, t, glide);
-			nodes.whooshGain.gain.setTargetAtTime(
-				turbo.whooshVolume * sound.boost * sound.throttle,
-				t,
-				glide,
-			);
+			// The worklet builds the whistle and the whoosh from the shaft, the boost, the throttle and
+			// the rpm (a supercharger's whine from the rpm alone)
+			syncTurbo();
+			if (turboNode) {
+				const set = (name: string, value: number) =>
+					turboNode?.parameters.get(name)?.setValueAtTime(value, t);
+				set('shaft', shaftSpeed);
+				set('boost', sound.boost);
+				set('throttle', sound.throttle);
+				set('rpm', Math.max(sound.engineRpm, 300));
+			}
 
 			// ---- Lift sounds
 			overrun = updateLift(sound, dt);
@@ -1771,6 +1768,12 @@ export function createVehicleAudio(
 		},
 		get voice() {
 			return playing;
+		},
+		setTurbo(type) {
+			turboType = type;
+		},
+		get turbo() {
+			return turboType;
 		},
 		setVolume(value) {
 			level = value;

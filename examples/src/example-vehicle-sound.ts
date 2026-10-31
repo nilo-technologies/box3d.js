@@ -1,5 +1,5 @@
-// Vehicle: sound lab. Tunes the vehicle examples' procedural sound (engine, tires, turbo, wind,
-// bump stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
+// Vehicle: sound lab. Tunes the vehicle examples' procedural sound (engine, tires, turbo, bump
+// stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
 // rev, drag the sliders yourself, or let a loop drive it (free revs, a pull through the gears
 // and a stop, a drift). A small engine and turbo model stands in for the physics, using the
 // rpm range, gearing and turbo types from box3d.js/vehicles. A see-through 3D engine
@@ -52,6 +52,7 @@ const settings = {
 };
 audio.setCylinders(settings.cylinders);
 audio.setCarVoice(carEngines.sports.voice);
+audio.setTurbo(settings.turbo);
 
 const sound: VehicleSound & { gear: number } = {
 	engineRpm: vehicleCars.sports.engine.idleRpm,
@@ -134,7 +135,10 @@ carFolder
 		audio.setCarVoice(carEngines[name]?.voice ?? 'classic');
 		resetDrive();
 	});
-carFolder.add(settings, 'turbo', turboOptions).name('turbo');
+carFolder
+	.add(settings, 'turbo', turboOptions)
+	.name('turbo')
+	.onChange((type: VehicleTurboName) => audio.setTurbo(type));
 carFolder
 	.add(settings, 'cylinders', 2, 16, 1)
 	.name('cylinders (classic voice)')
@@ -478,7 +482,7 @@ audio.onSound = (name, strength) => {
 };
 
 const modelFolder = gui.addFolder('Engine model');
-modelFolder.add(engine, 'slowMotion', 0.01, 0.25, 0.01).name('speed (x real)');
+modelFolder.add(engine, 'slowMotion', 0.01, 1, 0.01).name('speed (x real)');
 
 const inductions: Record<VehicleTurboName, EngineInduction> = {
 	none: 'none',
