@@ -134,17 +134,27 @@ class Pipe {
 		this.delay = 2;
 		this.endLow = 0;
 		this.startLow = 0;
+		// Shock steepening: how much faster a wave runs ahead per unit of its pressure
+		this.steep = 0;
 	}
 
 	/** Sets the delay for the speed of sound (m/s) */
 	setSpeed(c) {
 		const max = this.ahead.buf.length - 3;
-		this.delay = Math.min(Math.max((this.length / c) * sampleRate, 2), max);
+		this.base = Math.min(Math.max((this.length / c) * sampleRate, 2), max);
+		this.delay = this.base;
 	}
 
 	/** The wave arriving at the far end */
 	atEnd(k) {
-		this.endLow += k * (this.ahead.read(this.delay) - this.endLow);
+		// A steepening pipe carries high pressure faster, so it arrives sooner
+		const delay = this.steep
+			? Math.min(
+					Math.max(this.delay * (1 - this.steep * this.endLow), 2),
+					this.ahead.buf.length - 3,
+				)
+			: this.delay;
+		this.endLow += k * (this.ahead.read(delay) - this.endLow);
 		return this.endLow * PIPE_LOSS;
 	}
 
@@ -227,6 +237,23 @@ const PRESENCE_RPM = [3000, 8000];
 //   level.
 // - flap: the rpm where an exhaust flap opens past the muffler on a firm throttle, so the
 //   exhaust runs straight through, with the muffler's low pass and reflection mostly gone
+// - steepen: shock steepening. Sound runs faster in the high pressure of a loud pulse, so each
+//   pulse's front catches up with its foot as it runs down the runners, the secondaries and the
+//   mid pipe, and sharpens toward a shock at full throttle: a race exhaust's rasp. The value is
+//   the share by which a pulse of unit pressure runs faster.
+// - combustion: real combustion varies from cycle to cycle at any revs and load, in strength by
+//   about this share and in when it burns by about 30 times it in crank degrees, unlike the
+//   voice's jitter, which fades out as the revs rise
+// - heat: each pulse is a slug of hot gas, and sound runs faster in it, by this share for a
+//   pulse of unit strength. It warms its runner and then its bank's mid pipe and cools within
+//   milliseconds, so the pipes' resonances move with every pulse instead of standing still.
+// - turbulence: noise from the flows mixing where the runners meet, as strong as the flow
+//   arriving, so it rides on the pulses and rings the exhaust's own resonances
+// - tolerance: no two cylinders are made quite the same. Each runner is up to this many metres
+//   longer or shorter, and each cylinder burns up to 1.5 times this share stronger or weaker,
+//   the same every time the engine runs.
+// - spacing: how far apart the tailpipes are (m). Each bank's tailpipe reaches the far ear later
+//   than the near one, as well as quieter.
 /** Suction after a blowdown pulse: its depth against the peak, and its span in decay times */
 const BLOWDOWN_SUCTION = 0.12;
 const BLOWDOWN_SPAN = [2.5, 5];
@@ -258,6 +285,18 @@ const FLAP_RPM = 500;
 const FLAP_THROTTLE = [0.3, 0.7];
 const FLAP_TIME = 0.25;
 const FLAP_CUTOFF = 4000;
+/** Speed of sound in the air between the tailpipes and the listener (m/s) */
+const AIR_SPEED = 343;
+/** How long a runner's and a mid pipe's slug of hot gas lasts (ms at 2500 rpm and below) */
+const HOT_RUNNER = 6;
+const HOT_MID = 15;
+/** A fixed number from -1 to 1 for each index, the same every run */
+const fixed = (i) => {
+	const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+	return 2 * (x - Math.floor(x)) - 1;
+};
+/** About unit size, about normally distributed */
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
 class VehicleEngineProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
@@ -341,7 +380,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		this.cylinders = voice.firing.map(([angle, gain], i) => {
 			const old = this.cylinders[i];
 			return {
-				gain,
+				gain: gain * (1 + 1.5 * (voice.build?.tolerance ?? 0) * fixed(i)),
 				// Crank degrees to this cylinder's next firing, and its random timing offset
 				due: (((angle - this.theta) % cycle) + cycle) % cycle,
 				offset: 0,
@@ -379,13 +418,18 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			for (let b = 0; b < bankCount; b++) {
 				this.banks.push({
 					runners: [],
-					mid: new Pipe(pipes.mid),
+					mid: Object.assign(new Pipe(pipes.mid), {
+						steep: voice.build?.steepen ?? 0,
+					}),
 					tail: new Pipe(pipes.tail),
 					muffler: new Svf(),
 					muffler2: new Svf(),
 					presence: new Svf(),
 					openLow: 0,
 					bypassLow: 0,
+					index: b,
+					hot: 0,
+					farEar: new Delay(Math.ceil(sampleRate * 0.012) + 2),
 					chamber: new Pipe(voice.build?.chamber || 0.3),
 					midIn: 0,
 					dcIn: 0,
@@ -395,8 +439,15 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				});
 			}
 			this.bankFired = this.banks.map(() => -1e9);
-			for (const [length, bank] of pipes.runners) {
-				const runner = { pipe: new Pipe(length), push: 0, atCollector: 0 };
+			for (const [j, [length, bank]] of pipes.runners.entries()) {
+				const tolerance = (voice.build?.tolerance ?? 0) * fixed(j + 100);
+				const runner = {
+					pipe: new Pipe(length + tolerance),
+					push: 0,
+					atCollector: 0,
+					hot: 0,
+				};
+				runner.pipe.steep = voice.build?.steepen ?? 0;
 				this.runners.push(runner);
 				this.banks[bank].runners.push(runner);
 			}
@@ -406,7 +457,9 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				if (!voice.build?.secondary) continue;
 				for (let g = 0; g < Math.min(2, bank.runners.length); g++)
 					bank.secondaries.push({
-						pipe: new Pipe(voice.build.secondary),
+						pipe: Object.assign(new Pipe(voice.build.secondary), {
+							steep: voice.build.steepen ?? 0,
+						}),
 						runners: bank.runners.filter((_, j) => j % 2 === g),
 						atEnd: 0,
 					});
@@ -525,6 +578,10 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			}
 		}
 		const kPipe = onePole(PIPE_CUTOFF);
+		const heat = v.build?.heat ?? 0;
+		const kHotRunner = decayCoef(HOT_RUNNER * pulseScale);
+		const kHotMid = decayCoef(HOT_MID * pulseScale);
+		const turbulence = v.build?.turbulence ?? 0;
 		const kOpen = onePole(OPEN_CUTOFF);
 		const kBypass = onePole(FLAP_CUTOFF);
 		// The flap swings toward open on a firm throttle above its rpm
@@ -536,6 +593,14 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			(flapTarget - this.flapOpen) *
 			Math.min(out.length / sampleRate / FLAP_TIME, 1);
 		const flap = this.flapOpen;
+		// The far ear's delay (samples), for a V's two tailpipes
+		const spacing =
+			this.banks.length === 2 && v.build?.spacing
+				? Math.min(
+						Math.max((v.build.spacing / AIR_SPEED) * sampleRate, 1),
+						sampleRate * 0.012,
+					)
+				: 0;
 		// Intake: suction pulses longer than the exhaust's, through a throttle plate that lets
 		// more of them reach the airbox as it opens, and louder as more air flows
 		const intake = v.intake && v.intake.level > 0 ? v.intake : null;
@@ -669,6 +734,15 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						const t = Math.min(Math.max(Math.log2(gap / evenGap), -1), 1);
 						amp *= 1 + build.interference * t;
 					}
+					if (build.combustion)
+						amp *= Math.max(1 + build.combustion * gauss(), 0.2);
+					if (heat && usePipes) {
+						// Its slug of hot gas warms its runner, and later its bank's mid pipe
+						const runner = this.runners[c.runner];
+						runner.hot += amp;
+						this.banks[c.bank].hot +=
+							amp / Math.max(this.banks[c.bank].runners.length, 1);
+					}
 					// The firing happened part way through this sample: start the pulse that far along
 					const late = -c.due / turn;
 					if (build.blowdown) {
@@ -683,7 +757,8 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 					// A weak face of the lope fires late, behind the beat
 					const offset =
 						jitter * (Math.random() * 2 - 1) +
-						(loping ? LOPE_LATE * lopeIn * c.lope : 0);
+						(loping ? LOPE_LATE * lopeIn * c.lope : 0) +
+						(build.combustion ? 30 * build.combustion * gauss() : 0);
 					c.due += cycle + offset - c.offset;
 					c.offset = offset;
 					// The intake valve opens near the top of the exhaust stroke, and the pull peaks
@@ -794,6 +869,15 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			let rightSum = air;
 			for (const bank of this.banks) {
 				const runners = bank.runners;
+				if (heat) {
+					// Hot gas carries sound faster: shorter delays while a slug passes
+					for (const r of runners) {
+						r.pipe.delay = Math.max(r.pipe.base / (1 + heat * r.hot), 2);
+						r.hot *= kHotRunner;
+					}
+					bank.mid.delay = Math.max(bank.mid.base / (1 + heat * bank.hot), 2);
+					bank.hot *= kHotMid;
+				}
 				let arriving = 0;
 				for (const r of runners) {
 					r.atCollector = r.pipe.atEnd(kPipe);
@@ -848,6 +932,10 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				// Overrun pops are fuel lighting in the hot pipe past the collector. The write waits
 				// until every bank is done, in case a crossover mixes them.
 				bank.midIn = joint - midAtCollector + 2 * pop;
+				// Turbulence where the flows mix, riding on the flow arriving
+				if (turbulence)
+					bank.midIn +=
+						turbulence * (Math.random() * 2 - 1) * Math.abs(arriving);
 
 				// Muffler: part of the wave reflects back up the mid pipe and the rest passes its low
 				// pass into the tailpipe. A wave coming back up the tailpipe mostly dies in it.
@@ -895,8 +983,21 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				}
 				// The pipes keep ringing between pulses, so they need none of the rate make-up gain
 				const voiced = y * v.level * p.level;
-				left += voiced * bank.left;
-				rightSum += voiced * bank.right;
+				if (spacing > 0) {
+					// The near ear hears this tailpipe now, the far one a little later
+					const late = bank.farEar.read(spacing);
+					bank.farEar.write(voiced);
+					if (bank.index === 0) {
+						left += voiced * bank.left;
+						rightSum += late * bank.right;
+					} else {
+						left += late * bank.left;
+						rightSum += voiced * bank.right;
+					}
+				} else {
+					left += voiced * bank.left;
+					rightSum += voiced * bank.right;
+				}
 			}
 			const cross = this.banks.length === 2 ? (build.crossover ?? 0) : 0;
 			const [b0, b1] = this.banks;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The flat-plane V8 voice sounds less like a machine. Every firing used to be nearly the same and the pipes were fixed filters, so at speed its harmonic-to-noise ratio was 21-25 dB. With four new build options it is 12-16 dB, the range of the rotary and the boxer. The other voices sound exactly as before.
+  - `combustion` (0.04): combustion varies from cycle to cycle at any revs and load, about 4% in strength and about 1.2° in timing. The voice's jitter still fades out with the revs on top of it.
+  - `heat` (0.25): each pulse is a slug of hot gas, and sound runs faster in it. It warms its runner, then its bank's mid pipe, and cools within milliseconds, so the pipes' resonances move with every pulse.
+  - `turbulence` (0.12): noise where the runners' flows mix at the collector, as strong as the flow arriving, so it rides on the pulses and rings the exhaust's own resonances. It stays out of the top octaves.
+  - `tolerance` (0.04): each runner is up to 4 cm longer or shorter and each cylinder up to 6% stronger or weaker, fixed per index, so the same every run. It brings up the odd orders a real engine has (orders 1 and 3 go from about -47 dB to -28 dB under the firing order).
+  - The worklet also has `steepen` (shock steepening: high pressure runs faster, so pulse fronts sharpen) and `spacing` (each bank's tailpipe reaches the far ear later) as build options, unused by the voices for now.
+  - The level is 8.5 (was 9.4), so a drive through the gears is as loud as before.
+
 - The inline six voice is rebuilt with six build options: `blowdown`, `drift` (0.15), `chamber` (0.35 m), `secondary` (0.5 m) and two new ones. The other voices sound exactly as before.
   - `secondary` on a six is a split manifold: firing order 1-5-3-6-2-4 alternates the front three and the rear three, so the pairing of alternate firings puts each half into a pipe of its own, and the two meet at the collector, as on a BMW six. It fills out the growl from 3000 to 4500 rpm.
   - `itb` (0.5): individual throttle bodies. Each cylinder breathes through a short trumpet of its own (0.3 m), open to the air, and its suction pulse rings it: an intake howl that grows with the revs.

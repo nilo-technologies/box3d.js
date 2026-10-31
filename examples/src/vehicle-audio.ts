@@ -129,6 +129,20 @@ export type EngineBuild = {
 	itb?: number;
 	/** Rpm where an exhaust flap opens past the muffler on a firm throttle */
 	flap?: number;
+	/** Shock steepening: how much faster a pulse of unit pressure runs down the pipes */
+	steepen?: number;
+	/** How far apart the tailpipes are (m), so each reaches the far ear later */
+	spacing?: number;
+	/** Cycle to cycle combustion variation at any revs: this share of strength, 30 times it in
+	 * degrees of timing */
+	combustion?: number;
+	/** How much faster sound runs in each pulse's slug of hot gas, so the pipes' resonances move */
+	heat?: number;
+	/** Level of the turbulence where the runners' flows mix, riding on the flow */
+	turbulence?: number;
+	/** Manufacturing tolerance: runners up to this much (m) longer or shorter, cylinders up to
+	 * 1.5 times this share stronger or weaker, the same every run */
+	tolerance?: number;
 };
 
 /** How an engine with misfire (the rotary) idles, see vehicle-engine-worklet.js */
@@ -362,6 +376,15 @@ export const engineVoices = {
 		title: 'Flat-plane V8 (supercar howl)',
 		cylinders: 8,
 		firing: evenFiring([1, 0.85, 1, 0.85, 1, 0.85, 1, 0.85]),
+		// Not a machine: combustion that varies from cycle to cycle at any revs, slugs of hot gas
+		// that move the pipes' resonances, turbulence where the flows mix, and cylinders and
+		// runners that are never quite the same
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+		},
 		attack: 0.2,
 		decay: 2.2,
 		noise: 0.25,
@@ -376,7 +399,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 2,
 		crackle: 0.05,
-		level: 9.4,
+		level: 8.5,
 		// A system per bank: each bank fires evenly, every 180°
 		pipes: {
 			runners: headers(8, 0.45, alternate(8)),
