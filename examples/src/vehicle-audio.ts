@@ -267,6 +267,21 @@ export const engineVoices = {
 			[360, 1],
 			[554, 0.86],
 		],
+		// A turbo boxer: not a machine (varying combustion, hot gas, turbulence, tolerances),
+		// rounded blowdown, a chambered muffler, the turbine in the exhaust, an intake honk,
+		// pulses that steepen and a megaphone collector
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			chamber: 0.3,
+			turbine: 0.6,
+			honk: 0.5,
+			steepen: 0.5,
+			megaphone: 0.4,
+		},
 		attack: 0.35,
 		decay: 3.6,
 		noise: 0.32,
@@ -281,7 +296,7 @@ export const engineVoices = {
 		mufflerOpen: 2.5,
 		drive: 1.9,
 		crackle: 0.06,
-		level: 16.4,
+		level: 22.4,
 		// Unequal length headers, short on one bank and long on the other, into one collector
 		pipes: {
 			runners: [
@@ -548,6 +563,21 @@ export const engineVoices = {
 		// The regular lope: strong at the start of each 1080° cycle and weaker over its faces, so
 		// the idle goes brap once every three turns of the shaft
 		lope: [0, 0.05, 0.3, 0.55, 0.75, 0.6],
+		// A twin-turbo rotary: not a machine (varying combustion, hot gas, turbulence,
+		// tolerances), rounded blowdown, the turbines in the exhaust, an intake honk, pulses that
+		// steepen, a megaphone collector and a bypass flap from 4500 rpm
+		build: {
+			combustion: 0.04,
+			heat: 0.25,
+			turbulence: 0.12,
+			tolerance: 0.04,
+			blowdown: true,
+			turbine: 0.6,
+			honk: 0.5,
+			steepen: 0.5,
+			megaphone: 0.4,
+			flap: 4500,
+		},
 		formants: [
 			[250, 1.5, 0.9],
 			[700, 2, 0.5],
@@ -560,7 +590,7 @@ export const engineVoices = {
 		crackle: 0.15,
 		// Flat out it screams: half the high-rev dip the others take
 		presence: 0.5,
-		level: 6.8,
+		level: 9.6,
 		// Short ports, one per rotor, which no valve closes, into a free flowing exhaust
 		pipes: {
 			runners: headers(2, 0.3),

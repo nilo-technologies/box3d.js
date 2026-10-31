@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The boxer four and the rotary take build options too, on top of the sound they had. Their character is unchanged: the boxer's unequal header rumble, and the rotary's lope at idle (its idle harmonic-to-noise ratio stays at about 2 dB).
+  - Boxer, as a turbo boxer: the four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`), `blowdown`, `chamber` (0.3 m), `turbine` (0.6), `honk` (0.5), `steepen` (0.5) and `megaphone` (0.4 m). Its level is 22.4 (was 16.4).
+  - Rotary, as a twin-turbo rotary: the same four, `blowdown`, `turbine` (0.6), `honk` (0.5), `steepen` (0.5), `megaphone` (0.4 m) and `flap` (4500 rpm). Its level is 9.6 (was 6.8).
+  - Both are as loud as before over a drive through the gears, and their saturators don't clip. Every pulse voice now has a build; the electric motor is unchanged.
+
 - The diesel voice is rebuilt as a turbo diesel with nine build options. The other voices sound exactly as before.
   - The four that make it less of a machine (`combustion`, `heat`, `turbulence`, `tolerance`) and `blowdown`.
   - `unthrottled`, new: a diesel has no throttle plate, so its intake draws full air at any throttle, and the fuel alone sets the power. At idle it still burns idle fuel, but on the overrun the fuel is cut (from 1100 to 1600 rpm), so coasting the exhaust pulses fall to 12% of full and the engine goes quiet but for its breathing.
