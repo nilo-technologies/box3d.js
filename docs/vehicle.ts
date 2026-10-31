@@ -66,6 +66,73 @@ for (let i = 0; i < b3.getNumVehicleWheels(stateBuffer); i++) {
 b3.destroyVehicleStateBuffer(stateBuffer);
 /* SNIPPET_END: read */
 
+/* SNIPPET_START: wheels-local */
+// Wheel meshes parented to the chassis mesh need only each wheel's pose in chassis space. One call
+// fills a Float32Array for every wheel: position (3), rotation x, y, z, w (4), then the raw
+// rotationAngle, angularVelocity, steerAngle and suspensionLength.
+const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
+const maxWheels = b3.B3_MAX_VEHICLE_WHEELS;
+const wheelData = new Float32Array(maxWheels * stride); // the latest physics step
+const previousData = new Float32Array(maxWheels * stride); // the step before it
+const spinTurn = new Float32Array(maxWheels); // how far each wheel turned between the two
+let wheelCount = 0;
+const stepDt = 1 / 60;
+
+// After each physics step: keep the previous readout and unwrap each wheel's spin. rotationAngle
+// wraps to [-pi, pi] and a fast wheel turns more than pi in a step, so neither the angles nor the
+// quaternions tell how far it turned. Take the turn nearest angularVelocity * dt.
+function readWheels() {
+    const seeded = wheelCount > 0;
+    previousData.set(wheelData);
+    wheelCount = b3.b3Vehicle_GetWheelLocalData(wheelData, vehicle);
+    if (!seeded) previousData.set(wheelData); // first read: nothing to interpolate from yet
+    for (let i = 0; i < wheelCount; i++) {
+        const o = i * stride;
+        const turn = wheelData[o + 7] - previousData[o + 7];
+        spinTurn[i] = turn + 2 * Math.PI * Math.round((wheelData[o + 8] * stepDt - turn) / (2 * Math.PI));
+    }
+}
+
+// Each render frame: blend the two steps by alpha (0 = previous step, 1 = latest), then rebuild
+// the rotation the readout packs, steer about chassis up times spin about the axle (up x forward).
+const { up, forward } = b3.b3Vehicle_GetChassis(vehicle);
+const axle: [number, number, number] = [
+    up[1] * forward[2] - up[2] * forward[1],
+    up[2] * forward[0] - up[0] * forward[2],
+    up[0] * forward[1] - up[1] * forward[0],
+];
+const axisAngle = (axis: number[], angle: number) => {
+    const s = Math.sin(angle / 2);
+    return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(angle / 2)];
+};
+const mulQuat = (a: number[], b: number[]) => [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+function wheelPoseAt(i: number, alpha: number, outPosition: number[]) {
+    const o = i * stride;
+    for (let k = 0; k < 3; k++) outPosition[k] = previousData[o + k] + (wheelData[o + k] - previousData[o + k]) * alpha;
+    const spin = previousData[o + 7] + spinTurn[i] * alpha;
+    const steer = previousData[o + 9] + (wheelData[o + 9] - previousData[o + 9]) * alpha;
+    return mulQuat(axisAngle(up, steer), axisAngle(axle, spin)); // x, y, z, w
+}
+
+for (let s = 0; s < 2; s++) {
+    b3.b3World_Step(world, stepDt, 4);
+    readWheels();
+}
+const wheelPosition = [0, 0, 0];
+for (let i = 0; i < wheelCount; i++) {
+    const wheelRotation = wheelPoseAt(i, 0.5, wheelPosition);
+    // wheelMeshes[i].position.fromArray(wheelPosition); wheelMeshes[i].quaternion.fromArray(wheelRotation);
+}
+
+// One wheel, as b3Vehicle_GetWheelTransform does in world space
+const [frontLeftPosition, frontLeftRotation] = b3.b3Vehicle_GetWheelLocalTransform([0, 0, 0], [0, 0, 0, 1], vehicle, 0);
+/* SNIPPET_END: wheels-local */
+
 /* SNIPPET_START: tune */
 // Every part of the definition can be changed while driving. Changes apply on the next step.
 const suspension = b3.b3Vehicle_GetWheel(vehicle, 0);
