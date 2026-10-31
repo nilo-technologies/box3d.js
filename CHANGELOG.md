@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Each turbo type has a running sound of its own, and a supercharger whines. The turbo's whistle and whoosh moved from fixed Web Audio filters into an AudioWorklet (`examples/src/vehicle-turbo-worklet.js`), which plays them as before (level within 0.2 dB) and builds each type's sound from `turboSounds` in `vehicle-audio.ts`. `audio.setTurbo(type)` tells the audio the car's turbo type (box3d.js/vehicles `VehicleTurboName`); the showcase calls it when it builds or swaps a car, and the sound lab when the turbo changes. Until the worklet loads the turbo is silent.
+- The small single, big single and twin-scroll turbos each have a running sound of their own, the other turbo types reuse the small turbo's for now, and a supercharger whines. The turbo's whistle and whoosh moved from fixed Web Audio filters into an AudioWorklet (`examples/src/vehicle-turbo-worklet.js`), which plays them as before (level within 0.2 dB) and builds each type's sound from `turboSounds` in `vehicle-audio.ts`. `audio.setTurbo(type)` tells the audio the car's turbo type (box3d.js/vehicles `VehicleTurboName`); the showcase calls it when it builds or swaps a car, and the sound lab when the turbo changes. Until the worklet loads the turbo is silent.
   - Small single turbo: the whistle and the whoosh, plus a chuff near surge (`surge`): on a part throttle with boost built up, the flow through the compressor pulses a few times a second.
   - Big single turbo: the small turbo's sound with a bigger compressor wheel (`wheel`: the whistle at 0.6 of the pitch, airier) on a heavy shaft (`inertia`: 2.5 s), so the whistle sweeps up slowly as it spools and sings long after a lift.
   - Twin-scroll turbo: the small turbo's sound with the exhaust pulses kicking the turbine (`pulses`), so the whistle and the air throb with the firing, through two scrolls in turns (`scrolls`), one a little weaker, a slower beat on the throb.
@@ -33,7 +33,7 @@
   - The level is 10.7 (was 9), so a drive through the gears is as loud as before, and the saturator doesn't clip.
 
 - The V10 voice is rebuilt as a race-bred V10 with ten build options. The other voices sound exactly as before.
-  - The flat-plane V8's four that make it less of a machine: `combustion` (0.04), `heat` (0.25), `turbulence` (0.12) and `tolerance` (0.04). Its harmonic-to-noise ratio at speed drops from 19-24 dB to 10-12 dB.
+  - The four options the flat-plane V8 introduced to make it less of a machine: `combustion` (0.04), `heat` (0.25), `turbulence` (0.12) and `tolerance` (0.04). Its harmonic-to-noise ratio at speed drops from 19-24 dB to 10-12 dB.
   - `itb` (0.5): a trumpet per cylinder, as on the Lexus LFA. `flap` (5000 rpm): a bypass flap past the muffler. `blowdown`: rounded pulses with a scavenging dip.
   - `steepen` (0.5) and `spacing` (1.1 m), now in use: high pressure runs faster down the pipes, so pulse fronts sharpen toward a shock on a firm throttle, and each bank's tailpipe reaches the far ear later than the near one.
   - `megaphone` (0.4 m), new: each bank's collector widens like a cone in four sections, from 1.2 to 4 times a runner's width, rather than meeting the mid pipe at a sharp junction. Each step reflects a little, so the suction wave back up the runners is soft and spread out. It strengthens the mids from about 4500 rpm.
