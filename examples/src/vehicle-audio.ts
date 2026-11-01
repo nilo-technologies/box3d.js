@@ -4,6 +4,7 @@
 // turbo or supercharger with a running sound of its own (a compressor whistle and intake whoosh,
 // or a supercharger's whine, see turboSounds) and a blow-off valve or compressor flutter on
 // lift. The lift sounds only play when a real car would make them (see "Lift sounds" below).
+// A turbo with anti-lag bangs and pops off throttle instead (see "Anti-lag" below).
 // Browsers only start audio after a user gesture, so the context resumes on the first key
 // press or click.
 //
@@ -44,6 +45,11 @@ export type VehicleSound = {
 	 * quietly on a lift, so there is no blow-off or flutter.
 	 */
 	supercharged?: boolean;
+	/**
+	 * The turbo has anti-lag. Off throttle above turbo.antiLagMinRpm it burns fuel in the exhaust
+	 * manifold to keep the shaft spinning, so the exhaust bangs and pops.
+	 */
+	antiLag?: boolean;
 };
 
 export type SoundWave = 'sine' | 'triangle' | 'square' | 'sawtooth';
@@ -767,6 +773,12 @@ export type VehicleSoundParams = {
 		flutterPitch: number;
 		/** Flutter length (s) */
 		flutterLength: number;
+		/** Anti-lag bang strength, 1 as designed, 0 for none. Pulse voices only. */
+		antiLagVolume: number;
+		/** Anti-lag bangs per second, on average, while the throttle is shut */
+		antiLagRate: number;
+		/** Rpm below which anti-lag stops, so it never bangs at idle */
+		antiLagMinRpm: number;
 	};
 	bump: {
 		volume: number;
@@ -901,6 +913,9 @@ export const defaultSoundParams: VehicleSoundParams = {
 		flutterRate: 20,
 		flutterPitch: 800,
 		flutterLength: 0.6,
+		antiLagVolume: 1,
+		antiLagRate: 14,
+		antiLagMinRpm: 3000,
 	},
 	bump: { volume: 0.9, cutoff: 180, length: 0.22, threshold: 0.95 },
 	listener: { position: 'exterior', room: 1 },
@@ -1233,6 +1248,8 @@ export type VehicleAudio = {
 	readonly output: GainNode | null;
 	/** Overrun crackle level, 0 to 1, while the exhaust pops after a lift */
 	readonly crackle: number;
+	/** Anti-lag level, 0 to 1, while it bangs off throttle */
+	readonly antiLag: number;
 	/** Called when a one-shot plays, for visuals that react to it */
 	onSound: ((name: VehicleSoundEvent, strength: number) => void) | null;
 };
@@ -1669,6 +1686,42 @@ export function createVehicleAudio(
 		return crackle.strength * (1 - crackle.age / crackle.length) ** 2;
 	}
 
+	// ---- Anti-lag
+	//
+	// Off throttle, an anti-lag system retards the ignition and keeps some air flowing, so fuel
+	// burns in the exhaust manifold and the turbo keeps spinning. It bangs and pops for as long
+	// as the throttle stays shut, through lifts and the throttle cut of every shift, until the
+	// revs fall below antiLagMinRpm. It comes in within ANTI_LAG_ATTACK seconds of the lift,
+	// fading in over ANTI_LAG_FADE_RPM above antiLagMinRpm and as the throttle closes past a
+	// quarter, and stops as soon as the throttle is past a quarter open.
+	const ANTI_LAG_ATTACK = 0.05;
+	/** Rpm over which it fades in above antiLagMinRpm */
+	const ANTI_LAG_FADE_RPM = 600;
+	/** Throttle the engine's volume follows while anti-lag works, for the bypass it holds open */
+	const ANTI_LAG_LOAD = 0.6;
+	let antiLag = 0;
+
+	function updateAntiLag(sound: VehicleSound, dt: number): number {
+		let target = 0;
+		if (sound.antiLag) {
+			const shut = 1 - Math.min(Math.max((sound.throttle - 0.05) / 0.2, 0), 1);
+			const revs = Math.min(
+				Math.max(
+					(sound.engineRpm - params.turbo.antiLagMinRpm) / ANTI_LAG_FADE_RPM,
+					0,
+				),
+				1,
+			);
+			target = shut * revs;
+		}
+		// It eases in, but stops at once: no bangs once the throttle opens
+		antiLag =
+			target === 0
+				? 0
+				: antiLag + (target - antiLag) * Math.min(dt / ANTI_LAG_ATTACK, 1);
+		return antiLag;
+	}
+
 	// Turbo shaft speed, 0 to 1: follows the boost up quickly and coasts down slowly
 	let shaftSpeed = 0;
 	let overrun = 0;
@@ -1688,8 +1741,12 @@ export function createVehicleAudio(
 			syncPulses(classic ? 'classic' : playing);
 			nodes.classicGain.gain.setTargetAtTime(classic ? 1 : 0, t, 0.03);
 			nodes.pulseGain.gain.setTargetAtTime(classic ? 0 : 1, t, 0.03);
+			// Anti-lag holds a bypass open off throttle, so the engine stays loud while it bangs.
+			// Only the pulse voices bang, so the classic voice keeps its own level.
+			const bypass = classic ? 0 : ANTI_LAG_LOAD * antiLag;
 			nodes.engineGain.gain.setTargetAtTime(
-				engine.idleVolume + engine.throttleVolume * sound.throttle,
+				engine.idleVolume +
+					engine.throttleVolume * Math.max(sound.throttle, bypass),
 				t,
 				glide,
 			);
@@ -1756,6 +1813,15 @@ export function createVehicleAudio(
 			// ---- Lift sounds
 			overrun = updateLift(sound, dt);
 			pulses?.parameters.get('overrun')?.setValueAtTime(overrun, t);
+
+			// ---- Anti-lag
+			const bangs = updateAntiLag(sound, dt);
+			pulses?.parameters
+				.get('antiLag')
+				?.setValueAtTime(turbo.antiLagVolume * bangs, t);
+			pulses?.parameters
+				.get('antiLagRate')
+				?.setValueAtTime(turbo.antiLagRate, t);
 		},
 		setCylinders(count) {
 			cylinders = count;
@@ -1793,6 +1859,9 @@ export function createVehicleAudio(
 		},
 		get crackle() {
 			return overrun;
+		},
+		get antiLag() {
+			return antiLag;
 		},
 		get onSound() {
 			return onSound;
