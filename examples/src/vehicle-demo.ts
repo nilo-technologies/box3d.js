@@ -479,6 +479,8 @@ export async function runVehicleDemo(
 			fullBoost: number;
 			/** Boost with no lag at all comes from a belt driven supercharger */
 			supercharged: boolean;
+			/** The turbo has anti-lag, so the exhaust bangs off throttle */
+			antiLag: boolean;
 			manual: boolean;
 			tractionControl: boolean;
 			abs: boolean;
@@ -522,6 +524,7 @@ export async function runVehicleDemo(
 			maxRpm: defaults.engine.maxRpm,
 			fullBoost: turboGain(defaults.turbo),
 			supercharged: defaults.turbo.instantFraction >= 1,
+			antiLag: defaults.turbo.antiLag,
 			manual: false,
 			tractionControl: false,
 			abs: false,
@@ -533,6 +536,7 @@ export async function runVehicleDemo(
 			const turbo = b3.b3Vehicle_GetTurbo(vehicle);
 			live.fullBoost = turboGain(turbo);
 			live.supercharged = turbo.instantFraction >= 1;
+			live.antiLag = turbo.antiLag;
 			live.manual =
 				b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
 				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
@@ -1264,6 +1268,7 @@ export async function runVehicleDemo(
 			compression,
 			boost: car.live.fullBoost > 0 ? state.boost / car.live.fullBoost : 0,
 			supercharged: car.live.supercharged,
+			antiLag: car.live.fullBoost > 0 && car.live.antiLag,
 		};
 		audio.update(sound, dt);
 

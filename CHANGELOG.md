@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Anti-lag can be heard. A car whose turbo has anti-lag (the rally car's own turbo, or any car with "Rally turbo with anti-lag" or the anti-lag checkbox) used to sound like a plain turbo with the blow-off taken away: lifting off went quiet. Now its exhaust bangs and pops whenever the throttle is shut above 3000 rpm, on lifts and in the throttle cut of every shift, and stops as soon as the throttle opens. The physics was already right: the boost holds off throttle.
+  - The engine worklet has an `antiLag` bang strength and an `antiLagRate` (bangs per second), as AudioParams. A bang is a heavy afterfire that rings the pipes, mostly with a sharp crack on top, and falls on a firing. Pulse voices only, as with overrun crackle.
+  - `VehicleSound` has an optional `antiLag` flag, which the showcase sets from the live turbo. `VehicleSoundParams.turbo` has `antiLagVolume` (1), `antiLagRate` (14 per second) and `antiLagMinRpm` (3000), with sliders in the sound lab's Turbo folder. `VehicleAudio` has `antiLag`, the level while it bangs.
+  - While anti-lag works, the engine stays about as loud as at 60% throttle, for the bypass that a real system holds open, so the bangs are about as loud as a full throttle pull.
+  - In the sound lab, the anti-lag turbo holds its boost off throttle, as the engine's does, and the tailpipes spit flame on the bangs.
+
 - The rotary engine voice sounds like a rotary. Before, it was a soft, noisy piston engine: long blurry pulses, an even idle and a lot of hiss.
   - Its firing follows the rotors: two rotors with three faces each, every face firing once per turn of its rotor, which is three turns of the shaft. The worklet takes a cycle length per voice (`cycle`, 720° by default, 1080° for the rotary). The faces differ a little in strength, which repeats every three turns as a growl under the note.
   - Each pulse starts firmly, as the apex seal uncovers the peripheral exhaust port quickly (0.35 ms rise, was 0.8 ms), and is fat, as the port stays open long. There is less combustion noise (0.6, was 0.9) and less saturation, so the rasp is in the note rather than in hiss.

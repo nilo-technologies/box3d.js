@@ -239,12 +239,13 @@ const smoothstep = (a: number, b: number, x: number) => {
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];
 	const maxRpm = vehicleCars[settings.car].engine.maxRpm;
+	// Anti-lag keeps the shaft driven off throttle, as the engine's does
+	const load = type.antiLag ? 1 : sound.throttle;
 	let total = 0;
 	let gains = 0;
 	type.stages.forEach((stage, i) => {
 		const target =
-			sound.throttle *
-			smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
+			load * smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
 		const time = target > stageBoost[i] ? stage.spoolTime : stage.bleedTime;
 		stageBoost[i] +=
 			(target - stageBoost[i]) * Math.min(dt / Math.max(time, 0.01), 1);
@@ -253,8 +254,7 @@ function updateBoost(dt: number): void {
 	});
 	const lagged = gains > 0 ? total / gains : 0;
 	const instant = type.instantFraction ?? 0;
-	sound.boost =
-		gains > 0 ? instant * sound.throttle + (1 - instant) * lagged : 0;
+	sound.boost = gains > 0 ? instant * load + (1 - instant) * lagged : 0;
 }
 
 // Rev limiter: at the max rpm the ignition cuts until the revs fall LIMITER_DROP, then fires
@@ -418,6 +418,7 @@ function step(dt: number): void {
 			speed: burnout ? Math.max(sound.speed, 12) : sound.speed,
 			throttle: limiterCut ? sound.throttle * CUT_THROTTLE : sound.throttle,
 			supercharged: settings.turbo === 'supercharger',
+			antiLag: settings.turbo === 'antiLag',
 		},
 		dt,
 	);
@@ -430,7 +431,8 @@ function step(dt: number): void {
 				settings.turbo === 'sequential' && settings.mode !== 'manual'
 					? stageBoost
 					: [sound.boost],
-			crackle: audio.crackle,
+			// The tailpipes spit flame on anti-lag bangs as on overrun pops
+			crackle: Math.max(audio.crackle, audio.antiLag),
 		},
 		dt,
 	);

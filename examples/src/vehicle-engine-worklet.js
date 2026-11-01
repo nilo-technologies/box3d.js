@@ -5,7 +5,8 @@
 // some combustion noise riding on it. Uneven firing angles or uneven pulse strengths between
 // banks give the burble of a cross-plane V8 or the rumble of a boxer; small random timing and
 // strength changes keep it from sounding like a machine. During an overrun crackle burst, some
-// firings pop. A voice with misfire has an uneven idle, in one of these styles (brap):
+// firings pop. With anti-lag working off throttle, fuel burns in the exhaust manifold to keep
+// the turbo spinning: some firings bang hard, with a crack on top. A voice with misfire has an uneven idle, in one of these styles (brap):
 // - bursts, as a ported rotary does: exhaust left in the chamber dilutes each charge a little
 //   more, so the burns weaken, until one fails to light. Its fuel bangs in the hot exhaust and
 //   the chamber clears for a strong burn again.
@@ -43,8 +44,9 @@
 //   octave rather than 12, so the top end howls instead of buzzing.
 //
 // The voice arrives as a message (see EngineVoiceConfig in vehicle-audio.ts), the rpm, the
-// throttle and the crackle level as AudioParams. vehicle-audio.ts decides when the exhaust
-// crackles (after a hard pull, on some lifts) and sets overrun for the length of the burst.
+// throttle, the crackle level and the anti-lag bangs as AudioParams. vehicle-audio.ts decides
+// when the exhaust crackles (after a hard pull, on some lifts) and sets overrun for the length of
+// the burst, and when anti-lag bangs (off throttle above its rpm, on a car that has it).
 // An electric voice is a few sines at fixed orders of the rpm instead.
 
 /** Topology-preserving state variable filter (Simper). band is normalized to a peak of 1. */
@@ -160,6 +162,12 @@ const BANG_ATTACK = 1.5;
 const BANG_DECAY = 14;
 /** Its strength, against a firing at full strength */
 const BANG_LEVEL = 0.35;
+/**
+ * An anti-lag bang at full strength, against a firing at full strength: a whole charge burning in
+ * the manifold, louder than an idle afterfire. ANTI_LAG_CRACK of them have a sharp crack on top.
+ */
+const ANTI_LAG_BANG = 1.1;
+const ANTI_LAG_CRACK = 0.7;
 /** How much weaker the weakest face burns at idle with the regular lope */
 const LOPE_DEPTH = 0.85;
 /**
@@ -223,6 +231,22 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 				defaultValue: 0,
 				minValue: 0,
 				maxValue: 1,
+				automationRate: 'k-rate',
+			},
+			{
+				// Anti-lag bang strength, 0 none (on throttle, or no anti-lag) to 1 as designed
+				name: 'antiLag',
+				defaultValue: 0,
+				minValue: 0,
+				maxValue: 4,
+				automationRate: 'k-rate',
+			},
+			{
+				// Anti-lag bangs per second, on average. They fall on firings.
+				name: 'antiLagRate',
+				defaultValue: 0,
+				minValue: 0,
+				maxValue: 200,
 				automationRate: 'k-rate',
 			},
 		];
@@ -352,6 +376,7 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 		const rpm = parameters.rpm[0];
 		const throttle = parameters.throttle[0];
 		const overrun = parameters.overrun[0];
+		const antiLag = parameters.antiLag[0];
 
 		if (v.whine) {
 			// Electric: sines at fixed orders of the motor speed, a little louder under load
@@ -453,6 +478,12 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 			? Math.max(idling, COAST_LOPE * coasting, CRUISE_LOPE * cruising)
 			: 0;
 		const loping = lopeIn > 0 && (style === 'lope' || style === 'mixed');
+		// Chance that a firing bangs with anti-lag, for its rate of bangs per second
+		const firingsPerSecond = (this.cylinders.length * rpm * 6) / cycle;
+		const antiLagChance =
+			antiLag > 0
+				? Math.min(parameters.antiLagRate[0] / Math.max(firingsPerSecond, 1), 1)
+				: 0;
 		const kWobble = Math.exp(-1 / (WOBBLE_SETTLE * sampleRate));
 		const kIntakeAttack = decayCoef(0.5 * pulseScale);
 		const kIntakeDecay = decayCoef(3.5 * pulseScale);
@@ -502,6 +533,18 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 						this.bangY += bang;
 						if (Math.random() < 0.3)
 							this.pop = Math.max(this.pop, 0.25 * Math.random());
+					}
+					if (antiLagChance > 0 && Math.random() < antiLagChance) {
+						// Anti-lag: the charge lights in the manifold, a heavy bang that rings the
+						// pipes, mostly with a crack on it
+						const bang = ANTI_LAG_BANG * (0.6 + 0.6 * Math.random()) * antiLag;
+						this.bangX += bang;
+						this.bangY += bang;
+						if (Math.random() < ANTI_LAG_CRACK)
+							this.pop = Math.max(
+								this.pop,
+								(0.4 + 0.6 * Math.random()) * antiLag,
+							);
 					}
 					if (misfire > 0 && (style === 'skips' || style === 'mixed')) {
 						// Now and then a firing drops out, leaving a gap

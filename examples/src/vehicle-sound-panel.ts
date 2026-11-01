@@ -148,6 +148,9 @@ const valveSliders: Slider<TurboParams>[] = [
 	['flutterRate', 5, 40, 0.5, 'flutter rate (Hz)'],
 	['flutterPitch', 200, 3000, 10, 'flutter pitch (Hz)'],
 	['flutterLength', 0.1, 1.4, 0.01, 'flutter length (s)'],
+	['antiLagVolume', 0, 3, 0.01, 'anti-lag bangs'],
+	['antiLagRate', 1, 40, 0.5, 'anti-lag bangs per second'],
+	['antiLagMinRpm', 1000, 8000, 50, 'anti-lag above rpm'],
 ];
 
 const windSliders: Slider<VehicleSoundParams['wind']>[] = [
