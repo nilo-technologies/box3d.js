@@ -232,33 +232,57 @@ window.addEventListener('blur', () => held.clear());
 // Engine and turbo model
 // ---------------------------------------------------------------------------
 
-const stageBoost = [0, 0];
+// Each stage's shaft spool and delivered pressure, 0 to 1
+const stageSpool = [0, 0];
+const stagePressure = [0, 0];
+/** Manifold pressure dumping through the blow-off valve (s), as in the engine */
+const DUMP_TIME = 0.1;
 
+const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
 const smoothstep = (a: number, b: number, x: number) => {
-	const t = Math.min(Math.max((x - a) / Math.max(b - a, 1e-6), 0), 1);
+	const t = clamp01((x - a) / Math.max(b - a, 1e-6));
 	return t * t * (3 - 2 * t);
 };
 
-/** Boost from the turbo type's stages, each lagging toward throttle x its rpm curve */
+/**
+ * Boost from the turbo type's stages, the way the engine (b3UpdateTurbo in vendor/box3d) makes it.
+ * The pedal asks for a share of the fully boosted torque, so boost only builds past 1 / (1 +
+ * full boost). Each stage's shaft spools toward that load times its rpm curve, quicker high in
+ * the revs and as boost builds, and spins down over its bleed time. The pressure is what the
+ * shaft makes, capped by what the pedal asks for: it fills at once and dumps within DUMP_TIME.
+ */
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];
 	const maxRpm = vehicleCars[settings.car].engine.maxRpm;
-	// Anti-lag keeps the shaft driven off throttle, as the engine's does
-	const load = type.antiLag ? 1 : sound.throttle;
-	let total = 0;
-	let gains = 0;
-	type.stages.forEach((stage, i) => {
-		const target =
-			load * smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
-		const time = target > stageBoost[i] ? stage.spoolTime : stage.bleedTime;
-		stageBoost[i] +=
-			(target - stageBoost[i]) * Math.min(dt / Math.max(time, 0.01), 1);
-		total += stage.gain * stageBoost[i];
-		gains += stage.gain;
-	});
-	const lagged = gains > 0 ? total / gains : 0;
+	const rpm = sound.engineRpm;
+	const full = type.stages.reduce((sum, stage) => sum + stage.gain, 0);
+	const load = full > 0 ? clamp01((sound.throttle * (1 + full) - 1) / full) : 0;
+	// Anti-lag keeps the shaft driven and the manifold pressurized off throttle
+	const shaftLoad = type.antiLag ? 1 : load;
 	const instant = type.instantFraction ?? 0;
-	sound.boost = gains > 0 ? instant * load + (1 - instant) * lagged : 0;
+	let total = 0;
+	type.stages.forEach((stage, i) => {
+		const fullRpm = stage.full * maxRpm;
+		const target = shaftLoad * smoothstep(stage.spool * maxRpm, fullRpm, rpm);
+		let tau = stage.bleedTime;
+		if (target > stageSpool[i]) {
+			const drive = Math.min(
+				Math.max(shaftLoad * (rpm / fullRpm) * (0.5 + stageSpool[i]), 0.2),
+				3,
+			);
+			tau = stage.spoolTime / drive;
+		}
+		stageSpool[i] += ((target - stageSpool[i]) * dt) / (tau + dt);
+		const spool = stageSpool[i];
+		const delivered = Math.min(spool + (target - spool) * instant, target);
+		stagePressure[i] =
+			delivered >= stagePressure[i]
+				? delivered
+				: stagePressure[i] +
+					((delivered - stagePressure[i]) * dt) / (DUMP_TIME + dt);
+		total += stage.gain * stagePressure[i];
+	});
+	sound.boost = full > 0 ? total / full : 0;
 }
 
 // Rev limiter: at the max rpm the ignition cuts until the revs fall LIMITER_DROP, then fires
@@ -297,7 +321,8 @@ function resetDrive(): void {
 	clock = 0;
 	phase = 'launch';
 	phaseTime = 0;
-	stageBoost.fill(0);
+	stageSpool.fill(0);
+	stagePressure.fill(0);
 	limiterCut = false;
 	sound.engineRpm = vehicleCars[settings.car].engine.idleRpm;
 	sound.throttle = 0;
@@ -433,7 +458,7 @@ function step(dt: number): void {
 			cut: limiterCut,
 			boost:
 				settings.turbo === 'sequential' && settings.mode !== 'manual'
-					? stageBoost
+					? stagePressure
 					: [sound.boost],
 			// The tailpipes spit flame on anti-lag bangs as on overrun pops
 			crackle: Math.max(audio.crackle, audio.antiLag),
@@ -688,9 +713,14 @@ function frame(now: number): void {
 	renderer.render(scene, camera);
 	drawScope();
 	const gear = sound.gear > 0 ? `gear ${sound.gear}` : 'neutral';
+	// The pressure in bar, as the showcase's HUD shows it: about the torque the boost adds
+	const bar =
+		sound.boost *
+		turboTypes[settings.turbo].stages.reduce((sum, s) => sum + s.gain, 0) *
+		1.013;
 	readout.textContent =
 		`${Math.round(sound.engineRpm)} rpm · ${gear} · ` +
-		`${Math.round(sound.speed * 3.6)} km/h · boost ${Math.round(sound.boost * 100)}%` +
+		`${Math.round(sound.speed * 3.6)} km/h · boost ${Math.round(sound.boost * 100)}% (${bar.toFixed(2)} bar)` +
 		(limiterCut ? ' · limiter' : '');
 	engineLabel.textContent = `${engine.title}, shown at ${engine.slowMotion.toFixed(2)}x speed`;
 	requestAnimationFrame(frame);

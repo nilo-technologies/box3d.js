@@ -32,6 +32,7 @@ import { createVehicleAudio } from './vehicle-audio';
 import { addEngineVoicePicker, carEngines } from './vehicle-engine-voice';
 import {
 	createVehicleSettings,
+	formatBoost,
 	type VehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
@@ -1057,7 +1058,9 @@ export async function runVehicleDemo(
 		const flags = [
 			isManual() ? 'MANUAL' : 'AUTO',
 			`${state.engineRpm.toFixed(0)} rpm`,
-			car.live.fullBoost > 0 ? `boost +${(state.boost * 100).toFixed(0)}%` : '',
+			car.live.fullBoost > 0
+				? `boost ${formatBoost(state.boost, car.live.fullBoost)}`
+				: '',
 			car.live.tractionControl ? 'TC' : '',
 			car.live.abs ? 'ABS' : '',
 			state.isLaunching ? 'LAUNCH' : '',
