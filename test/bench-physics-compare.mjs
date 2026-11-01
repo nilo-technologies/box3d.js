@@ -31,6 +31,7 @@ const { values: args } = parseArgs( {
 } );
 
 const runs = Number( args.runs );
+if ( !Number.isInteger( runs ) || runs < 1 ) throw new Error( `--runs must be a whole number of at least 1 (got ${args.runs})` );
 const script = path.join( import.meta.dirname, 'bench-physics.mjs' );
 const sides = args.base ? [ 'base', 'head' ] : [ 'head' ];
 const builds = { base: args.base, head: args.head };
@@ -39,14 +40,15 @@ const samples = { base: [], head: [] };
 function runOnce( side )
 {
 	const child = spawnSync( process.execPath, [ script, '--dist', builds[ side ], '--json' ], { encoding: 'utf8', maxBuffer: 1 << 26 } );
-	const line = child.stdout.trim().split( '\n' ).at( -1 );
+	const line = ( child.stdout ?? '' ).trim().split( '\n' ).at( -1 );
 	try
 	{
 		return JSON.parse( line );
 	}
 	catch
 	{
-		return { error: ( child.stderr || child.stdout || `exit ${child.status}` ).trim() };
+		// the process died before reporting (a crash, or no build at that path)
+		return { error: ( child.stderr || child.stdout || child.error?.message || `exit ${child.status}` ).trim() };
 	}
 }
 
@@ -73,11 +75,14 @@ const names = [ ...new Set( sides.flatMap( ( side ) => samples[ side ].flatMap( 
 
 function summarize( side, name )
 {
-	const ok = samples[ side ].map( ( r ) => r.results?.[ name ] ).filter( ( r ) => r && !r.error );
-	if ( !ok.length )
+	// Every run must have the scenario: medians over fewer runs than asked for would mislead
+	const ok = samples[ side ].map( ( r ) => r.results?.[ name ] );
+	const failed = ok.findIndex( ( r ) => !r || r.error );
+	if ( failed >= 0 )
 	{
-		const failed = samples[ side ].map( ( r ) => r.results?.[ name ]?.error ?? r.error ).find( Boolean );
-		return { error: failed ?? 'no result' };
+		const run = samples[ side ][ failed ];
+		const title = samples[ side ].map( ( r ) => r.results?.[ name ]?.title ).find( Boolean ) ?? name;
+		return { title, error: `run ${failed + 1}: ${run.results?.[ name ]?.error ?? run.error ?? 'no result'}` };
 	}
 	const spread = ( key ) =>
 	{
@@ -168,10 +173,22 @@ for ( const { base, head } of rows )
 lines.push( '', 'collide and solve come from `b3World_GetProfile`. The check is how the scene ended up: when it differs between the builds, the simulation changed and so did the work.', '' );
 lines.push( '</details>', '' );
 
+// The comparison fails when the head build fails a scenario, or when a run of either build died
+// without reporting. A base build that fails a single scenario only shows it as failed: a new
+// scenario can need an API that only the head build has.
+const crashed = sides.filter( ( side ) => samples[ side ].some( ( r ) => r.error ) );
+const headFailed = rows.filter( ( { head } ) => head.error ).map( ( { head } ) => head.title );
+const baseFailed = rows.filter( ( { base } ) => base?.error ).map( ( { base } ) => base.title );
+if ( crashed.length ) lines.push( `**Failed:** a ${crashed.join( ' and a ' )} run died without reporting (see the workflow log).`, '' );
+if ( headFailed.length ) lines.push( `**Failed:** the head build failed ${headFailed.join( ', ' )}.`, '' );
+if ( baseFailed.length && !crashed.includes( 'base' ) )
+{
+	lines.push( `The base build failed ${baseFailed.join( ', ' )}, so ${baseFailed.length > 1 ? 'they have' : 'it has'} nothing to compare against. A scenario that needs an API the base build lacks does this.`, '' );
+}
+
 const markdown = lines.join( '\n' );
 console.log( markdown );
 if ( args.markdown ) writeFileSync( args.markdown, markdown );
 if ( args.json ) writeFileSync( args.json, JSON.stringify( { builds, samples }, null, '\t' ) );
 
-const failed = rows.some( ( { head } ) => head.error );
-process.exit( failed ? 1 : 0 );
+process.exit( crashed.length || headFailed.length ? 1 : 0 );

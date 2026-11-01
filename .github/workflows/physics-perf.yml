@@ -86,13 +86,16 @@ jobs:
           HEAD_SHA: ${{ steps.pr.outputs.head }}
           BASE_SHA: ${{ steps.base.outputs.sha }}
           BASE_REF: ${{ steps.pr.outputs.base }}
+        # A failed comparison still writes its report, which says what failed: publish it, then fail
         run: |
+          status=0
           node test/bench-physics-compare.mjs \
             --base .bench/base/dist --head dist --runs 7 \
             --base-label "$BASE_REF @ ${BASE_SHA::7} (merge base)" \
             --head-label "#${{ steps.pr.outputs.number }} @ ${HEAD_SHA::7}" \
-            --markdown .bench/report.md --json .bench/runs.json
-          cat .bench/report.md >> "$GITHUB_STEP_SUMMARY"
+            --markdown .bench/report.md --json .bench/runs.json || status=$?
+          if [ -f .bench/report.md ]; then cat .bench/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit $status
 
       - name: Upload the report
         if: always()
@@ -106,21 +109,27 @@ jobs:
 
   comment:
     needs: bench
-    # A pull request from a fork gets a read only token, so its report stays in the job summary
+    # Posts the report, also of a failed comparison. When a fork's pull request opens, its token is
+    # read only, so that report stays in the job summary. A maintainer's 📊 on a fork's pull request
+    # does post: the run then has a write token, and this job runs none of the pull request's code.
     if: >-
-      github.event_name == 'issue_comment' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      !cancelled() && needs.bench.result != 'skipped' &&
+      (github.event_name == 'issue_comment' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     # No checkout: this job only posts the report
     permissions:
       pull-requests: write
     steps:
       - name: Download the report
+        # a run that failed before writing a report has none to post
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: physics-perf
 
       - name: Comment on the pull request
+        if: hashFiles('report.md') != ''
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ needs.bench.outputs.number }}

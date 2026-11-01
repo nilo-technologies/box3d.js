@@ -37,12 +37,17 @@ function axisAngle( axis, angle )
 	return [ axis[ 0 ] * s, axis[ 1 ] * s, axis[ 2 ] * s, Math.cos( angle / 2 ) ];
 }
 
+// The worlds the running scenario created, destroyed once it ends however it ends
+const worlds = [];
+
 function createWorld( { enableSleep = true } = {} )
 {
 	const worldDef = b3.b3DefaultWorldDef();
 	worldDef.gravity = [ 0, -9.81, 0 ];
 	worldDef.enableSleep = enableSleep;
-	return b3.b3CreateWorld( worldDef );
+	const world = b3.b3CreateWorld( worldDef );
+	worlds.push( world );
+	return world;
 }
 
 function staticBody( world, position = [ 0, 0, 0 ], rotation = ID )
@@ -324,43 +329,57 @@ async function run( name )
 {
 	const scenario = scenarios[ name ];
 	const loaded = await scenario.load?.();
-	const t0 = performance.now();
-	const s = scenario.setup( loaded );
-	const setup = performance.now() - t0;
-	const counters = b3.b3World_GetCounters( s.world );
-	const result = { title: scenario.title, setup, bodies: counters.bodyCount, joints: counters.jointCount, steps: s.steps };
-
-	for ( let i = 0; i < s.warmup; i++ )
+	worlds.length = 0;
+	let s;
+	try
 	{
-		s.beforeStep?.( i );
-		b3.b3World_Step( s.world, dt, subSteps );
-	}
-
-	const times = new Float64Array( s.steps );
-	// The engine's own profile, summed over the timed steps (ms)
-	const phases = { collide: 0, solve: 0 };
-	let contacts = 0;
-	for ( let i = 0; i < s.steps; i++ )
-	{
-		s.beforeStep?.( s.warmup + i );
 		const t0 = performance.now();
-		b3.b3World_Step( s.world, dt, subSteps );
-		times[ i ] = performance.now() - t0;
-		const profile = b3.b3World_GetProfile( s.world );
-		phases.collide += profile.collide;
-		phases.solve += profile.solve;
-		contacts = Math.max( contacts, b3.b3World_GetCounters( s.world ).contactCount );
-	}
+		s = scenario.setup( loaded );
+		const setup = performance.now() - t0;
+		const counters = b3.b3World_GetCounters( s.world );
+		const result = { title: scenario.title, setup, bodies: counters.bodyCount, joints: counters.jointCount, steps: s.steps };
 
-	Object.assign( result, stats( times ), {
-		collide: phases.collide / s.steps,
-		solve: phases.solve / s.steps,
-		contacts,
-		check: s.check(),
-	} );
-	if ( s.release ) s.release();
-	else b3.b3DestroyWorld( s.world );
-	return result;
+		for ( let i = 0; i < s.warmup; i++ )
+		{
+			s.beforeStep?.( i );
+			b3.b3World_Step( s.world, dt, subSteps );
+		}
+
+		const times = new Float64Array( s.steps );
+		// The engine's own profile, summed over the timed steps (ms)
+		const phases = { collide: 0, solve: 0 };
+		let contacts = 0;
+		for ( let i = 0; i < s.steps; i++ )
+		{
+			s.beforeStep?.( s.warmup + i );
+			const t0 = performance.now();
+			b3.b3World_Step( s.world, dt, subSteps );
+			times[ i ] = performance.now() - t0;
+			const profile = b3.b3World_GetProfile( s.world );
+			phases.collide += profile.collide;
+			phases.solve += profile.solve;
+			contacts = Math.max( contacts, b3.b3World_GetCounters( s.world ).contactCount );
+		}
+
+		return Object.assign( result, stats( times ), {
+			collide: phases.collide / s.steps,
+			solve: phases.solve / s.steps,
+			contacts,
+			check: s.check(),
+		} );
+	}
+	finally
+	{
+		// Also when the scenario throws, so a failed scenario leaves nothing behind for the next one
+		try
+		{
+			s?.release?.();
+		}
+		finally
+		{
+			for ( const world of worlds ) if ( b3.b3World_IsValid( world ) ) b3.b3DestroyWorld( world );
+		}
+	}
 }
 
 const names = args.scenario ?? Object.keys( scenarios );
