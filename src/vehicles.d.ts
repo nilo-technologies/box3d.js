@@ -4,6 +4,7 @@ import type {
 	b3Vec3,
 	b3VehicleDef,
 	b3VehicleSteering,
+	b3VehicleId,
 	b3VehicleTurbo,
 	b3VehicleWheelDef,
 } from 'box3d.js';
@@ -244,20 +245,31 @@ export function createPresetVehicleDef(
 ): b3VehicleDef;
 
 /** Grip limited steer input for a keyboard or other full lock input. Returns the limited steer. */
-export type VehicleSteeringLimiter = (
-	chassis: b3BodyId,
-	steering: b3VehicleSteering,
-	wheels: b3VehicleWheelDef[],
-	steer: number,
-	/** Brake input, 0 to 1. While braking the cap moves to brakingPeakScale. */
-	braking?: number,
-) => number;
+export interface VehicleSteeringLimiter {
+	/**
+	 * One b3Vehicle_LimitSteer call: the vehicle supplies its chassis, wheels, tires and steering.
+	 * `braking` is the brake input, 0 to 1; while braking the cap moves to brakingPeakScale.
+	 */
+	(vehicle: b3VehicleId, steer: number, braking?: number): number;
+	/**
+	 * @deprecated Pass the vehicle instead: (vehicle, steer, braking). This form computes the same
+	 * limit in JavaScript with four module calls and assumes the car faces +z with +x to its left.
+	 */
+	(
+		chassis: b3BodyId,
+		steering: b3VehicleSteering,
+		wheels: b3VehicleWheelDef[],
+		steer: number,
+		/** Brake input, 0 to 1. While braking the cap moves to brakingPeakScale. */
+		braking?: number,
+	): number;
+}
 
 /**
  * A driver aid applied to the input before b3Vehicle_SetInput: caps the steer angle at
  * `peakScale` (default 1.5) times the front tires' peak slip angle from the direction the front
  * axle travels, and at `brakingPeakScale` (default 1) while braking. The presets are tuned to be
- * driven with it.
+ * driven with it. It wraps b3Vehicle_LimitSteer, which can also be called directly.
  */
 export function createSteeringLimiter(
 	b3: Box3DModule,

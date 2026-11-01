@@ -93,8 +93,6 @@ export function driveLap(preset, pace, style = driverStyles[1], options = {}) {
 	def.chassisId = chassis;
 	const vehicle = b3.b3CreateVehicle(world, def);
 	const limitSteer = createSteeringLimiter(b3);
-	const steering = b3.b3Vehicle_GetSteering(vehicle);
-	const wheels = def.wheels.slice(0, def.wheelCount);
 
 	const cornerSpeed = line.map((p) => (p.k === 0 ? Number.POSITIVE_INFINITY : Math.sqrt((pace * 9.81) / Math.abs(p.k))));
 	const pos = [0, 0, 0];
@@ -155,7 +153,7 @@ export function driveLap(preset, pace, style = driverStyles[1], options = {}) {
 		b3.b3Vehicle_SetInput(vehicle, {
 			forward: throttle - brake,
 			brake: 0,
-			steer: limit ? limitSteer(chassis, steering, wheels, steer, brake) : steer,
+			steer: limit ? limitSteer(vehicle, steer, brake) : steer,
 			handbrake: 0,
 		});
 		b3.b3World_Step(world, dt, 4);

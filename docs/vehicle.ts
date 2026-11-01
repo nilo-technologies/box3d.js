@@ -190,11 +190,10 @@ superDef.assists.abs = true;
 applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
 
 // The presets are tuned to be driven through the steering limiter, a driver aid for keyboard
-// input: it caps the steer angle near the front tires' grip limit, tighter while braking
+// input: it caps the steer angle near the front tires' grip limit, tighter while braking. It is
+// one native call each step, b3Vehicle_LimitSteer(vehicle, steer, braking, 1.5, 1) underneath.
 const limitSteer = createSteeringLimiter(b3);
-const rallySteering = b3.b3Vehicle_GetSteering(rally);
 const keys = { forward: 1, brake: 0, steer: 1, handbrake: 0 }; // W and D held
-const rallyWheels = rallyDef.wheels.slice(0, rallyDef.wheelCount);
-const steer = limitSteer(rallyChassis, rallySteering, rallyWheels, keys.steer, keys.brake);
+const steer = limitSteer(rally, keys.steer, keys.brake);
 b3.b3Vehicle_SetInput(rally, { ...keys, steer });
 /* SNIPPET_END: presets */

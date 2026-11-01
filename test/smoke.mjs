@@ -1434,6 +1434,35 @@ async function vehicleScenarios( b3 )
 		b3.b3DestroyWorld( world );
 	}
 
+	// Steering limit: b3Vehicle_LimitSteer leaves slow and zero input alone, only takes steering
+	// away at speed, holds tighter while braking, and matches the deprecated JavaScript form
+	{
+		const { createSteeringLimiter } = await import( '../dist/vehicles.mjs' );
+		const world = createWorld();
+		const { vehicle, chassis } = createCar( world, { def: createPresetVehicleDef( b3, 'sports-50-rwd' ), halfExtents: vehiclePresets[ 'sports-50-rwd' ].halfExtents } );
+		step( world, 60 );
+		assert.equal( b3.b3Vehicle_LimitSteer( vehicle, 1, 0, 1.5, 1 ), 1, 'no limit when parked' );
+		b3.b3Body_SetLinearVelocity( chassis, [ 0.2, 0, 10 ] );
+		b3.b3Body_SetAngularVelocity( chassis, [ 0, 0.2, 0 ] );
+		const limitSteer = createSteeringLimiter( b3 );
+		const steering = b3.b3Vehicle_GetSteering( vehicle );
+		const wheels = [ 0, 1, 2, 3 ].map( ( i ) => b3.b3Vehicle_GetWheel( vehicle, i ) );
+		for ( const steer of [ 1, -1, 0.5, -0.3 ] )
+		{
+			const free = b3.b3Vehicle_LimitSteer( vehicle, steer, 0, 1.5, 1 );
+			const braking = b3.b3Vehicle_LimitSteer( vehicle, steer, 1, 1.5, 1 );
+			assert.ok( Math.sign( free ) === Math.sign( steer ) && Math.abs( free ) <= Math.abs( steer ) + 1e-6, `limit ${steer} -> ${free.toFixed( 3 )} only takes steering away` );
+			assert.ok( Math.abs( braking ) <= Math.abs( free ) + 1e-6, `tighter while braking (${braking.toFixed( 3 )})` );
+			assert.equal( limitSteer( vehicle, steer, 0.5 ), b3.b3Vehicle_LimitSteer( vehicle, steer, 0.5, 1.5, 1 ), 'the limiter wraps the native call' );
+			const legacy = limitSteer( chassis, steering, wheels, steer, 0.5 );
+			assert.ok( Math.abs( legacy - limitSteer( vehicle, steer, 0.5 ) ) < 1e-3, `deprecated form agrees (${legacy.toFixed( 4 )})` );
+		}
+		assert.ok( Math.abs( b3.b3Vehicle_LimitSteer( vehicle, 1, 0, 1.5, 1 ) ) < 0.9, 'full lock is limited at 10 m/s' );
+		assert.equal( b3.b3Vehicle_LimitSteer( vehicle, 0, 0, 1.5, 1 ), 0, 'zero stays zero' );
+		assert.equal( b3.b3Vehicle_LimitSteer( vehicle, Number.NaN, 0, 1.5, 1 ), 0, 'NaN steer reads as zero' );
+		b3.b3DestroyWorld( world );
+	}
+
 	// Turbo: naturally aspirated by default, live settings round-trip, boost builds with lag and
 	// shows in both readouts. Every turbo type keeps the car's rated torque.
 	{

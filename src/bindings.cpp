@@ -4145,6 +4145,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 	function( "b3Vehicle_GetState(vehicleId)", &b3Vehicle_GetState );
 	function( "b3Vehicle_GetWheelState(vehicleId, wheelIndex)", &b3Vehicle_GetWheelState );
 	function( "b3Vehicle_GetSprungMass(vehicleId, wheelIndex)", &b3Vehicle_GetSprungMass );
+	function( "b3Vehicle_LimitSteer(vehicleId, steer, braking, peakScale, brakingPeakScale)", &b3Vehicle_LimitSteer );
 	function( "b3World_GetVehicleCount(worldId)", &b3World_GetVehicleCount );
 	out_function( "b3Vehicle_GetWheelTransform(outPosition, outRotation, vehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
 		+[]( uintptr_t outPos, uintptr_t outRot, b3VehicleId id, int wheelIndex ) { b3WorldTransform t = b3Vehicle_GetWheelTransform( id, wheelIndex ); writeVec3( outPos, t.p ); writeQuat( outRot, t.q ); } );

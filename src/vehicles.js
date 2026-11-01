@@ -871,14 +871,20 @@ export const vehiclePresets = {
 // than full lock without it could take. A cap right at the peak (peakScale 1) holds the fronts
 // where they grip best but cannot rotate the car, so a corner taken too fast ploughs wide; 1.5
 // lets the car turn in harder and slide when overdone. Braking, the cap returns to the peak.
+// The limit itself is b3Vehicle_LimitSteer in the engine, which reads everything it needs from
+// the vehicle in one call. Below 3 m/s at the front axle it leaves the input alone.
 const STEER_LIMIT_MIN_SPEED = 3;
 
 /**
- * Returns limitSteer(chassis, steering, wheels, steer, braking): the steer input (1 full right,
- * -1 full left) with the grip limit applied. `steering` is b3Vehicle_GetSteering(vehicle) and
- * `wheels` the vehicle's wheel defs. While braking (0 to 1) the cap moves to `brakingPeakScale`:
- * under braking the weight is on the front and extra lock past the peak spins the car, while off
- * the brake it helps the car turn in. Cars face +z with +x to their left, as the presets do.
+ * Returns limitSteer(vehicle, steer, braking): the steer input (1 full right, -1 full left) with
+ * the grip limit applied, through one b3Vehicle_LimitSteer call. While braking (0 to 1) the cap
+ * moves to `brakingPeakScale`: under braking the weight is on the front and extra lock past the
+ * peak spins the car, while off the brake it helps the car turn in.
+ *
+ * The older form limitSteer(chassis, steering, wheels, steer, braking), with `steering` from
+ * b3Vehicle_GetSteering(vehicle) and `wheels` the vehicle's wheel defs, still works and gives the
+ * same result, but is deprecated: it computes the limit in JavaScript with four module calls and
+ * assumes the car faces +z with +x to its left, as the presets do.
  */
 export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 1 } = {}) {
 	const center = [0, 0, 0];
@@ -888,7 +894,7 @@ export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 
 	const left = [0, 0, 0];
 	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-	return function limitSteer(chassis, steering, wheels, steer, braking = 0) {
+	function legacyLimitSteer(chassis, steering, wheels, steer, braking) {
 		if (steer === 0) return 0;
 		const scale = peakScale + (brakingPeakScale - peakScale) * Math.min(Math.max(braking, 0), 1);
 
@@ -928,6 +934,12 @@ export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 
 		if (angle > 0) angle = Math.min(angle, Math.max(travel + peakAngle, 0));
 		else angle = Math.max(angle, Math.min(travel - peakAngle, 0));
 		return -angle / maxAngle;
+	}
+
+	// The deprecated form passes (chassis, steering, wheels, steer, braking)
+	return function limitSteer(vehicle, steer, braking = 0, oldSteer, oldBraking = 0) {
+		if (typeof steer !== 'number') return legacyLimitSteer(vehicle, steer, braking, oldSteer, oldBraking);
+		return b3.b3Vehicle_LimitSteer(vehicle, steer, braking, peakScale, brakingPeakScale);
 	};
 }
 

@@ -76,7 +76,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 ## Keyboard driving
 
-Most players use WASD: full lock, full throttle or full brake, nothing in between. The examples pass the steer input through `createSteeringLimiter` (shipped in `box3d.js/vehicles`), which caps the steer angle at 1.5 times the front tires' peak slip angle from the direction the front axle travels, and at the peak itself while braking. The presets are tuned for it. What the WASD sweep taught (findings #36-38):
+Most players use WASD: full lock, full throttle or full brake, nothing in between. The examples pass the steer input through `createSteeringLimiter` (shipped in `box3d.js/vehicles`; `limitSteer(vehicle, steer, braking)` is one call to the engine's `b3Vehicle_LimitSteer`), which caps the steer angle at 1.5 times the front tires' peak slip angle from the direction the front axle travels, and at the peak itself while braking. The presets are tuned for it. What the WASD sweep taught (findings #36-38):
 
 - The front to rear tire balance decides whether a keyboard car turns, ploughs or spins. Without a limiter, full lock at speed takes the fronts far past their peak, and that understeer is what keeps the car from spinning. A limiter that holds the fronts near their best grip removes that safety, so the rear tires need about 5% more side grip than the fronts (`rear.tire` in the car layer; wide rear tires on a real car do the same).
 - A cap right at the peak (1.0) makes every corner taken too fast plough wide; 1.5 lets the car turn in and slide when overdone. Braking with extra lock spins the car, so the cap returns to the peak under the brake (`brakingPeakScale`).

@@ -11,7 +11,6 @@ import type {
 	b3Vec3,
 	b3VehicleDef,
 	b3VehicleId,
-	b3VehicleSteering,
 	b3VehicleWheelDef,
 	VehicleWheelRecord,
 } from 'box3d.js';
@@ -482,7 +481,6 @@ export async function runVehicleDemo(
 			manual: boolean;
 			tractionControl: boolean;
 			abs: boolean;
-			steering: b3VehicleSteering;
 			wheels: b3VehicleWheelDef[];
 		};
 		refreshLive(): void;
@@ -525,7 +523,6 @@ export async function runVehicleDemo(
 			manual: false,
 			tractionControl: false,
 			abs: false,
-			steering: defaults.steering,
 			wheels: defaults.wheels.slice(0, wheelCount),
 		};
 		function refreshLive(): void {
@@ -539,7 +536,6 @@ export async function runVehicleDemo(
 			const assists = b3.b3Vehicle_GetAssists(vehicle);
 			live.tractionControl = assists.tractionControl;
 			live.abs = assists.abs;
-			live.steering = b3.b3Vehicle_GetSteering(vehicle);
 			for (let i = 0; i < wheelCount; i++)
 				live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
 		}
@@ -1146,13 +1142,7 @@ export async function runVehicleDemo(
 				// The brake pedal, or S in the automatic mode where it brakes while moving forward
 				const braking = Math.max(input.brake, -input.forward, 0);
 				const steer = car.settings.aids.steeringLimit
-					? limitSteer(
-							car.chassis,
-							car.live.steering,
-							car.live.wheels,
-							input.steer,
-							braking,
-						)
+					? limitSteer(car.vehicle, input.steer, braking)
 					: input.steer;
 				b3.b3Vehicle_SetInput(car.vehicle, { ...input, steer });
 				b3.b3World_Step(world, STEP, SUBSTEPS);

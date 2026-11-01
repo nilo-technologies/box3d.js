@@ -1458,6 +1458,7 @@ interface EmbindModule {
   b3Vehicle_GetState(vehicleId: b3VehicleId): b3VehicleState;
   b3Vehicle_GetWheelState(vehicleId: b3VehicleId, wheelIndex: number): b3VehicleWheelState;
   b3Vehicle_GetSprungMass(vehicleId: b3VehicleId, wheelIndex: number): number;
+  b3Vehicle_LimitSteer(vehicleId: b3VehicleId, steer: number, braking: number, peakScale: number, brakingPeakScale: number): number;
   b3Body_SetName(bodyId: b3BodyId, name: EmbindString): void;
   b3Body_GetName(bodyId: b3BodyId): string;
   b3Body_GetTransformsPacked(ids: Int32Array): Float64Array;

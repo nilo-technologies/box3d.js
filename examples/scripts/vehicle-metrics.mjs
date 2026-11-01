@@ -488,11 +488,9 @@ function testKeyboard(preset) {
 			step(car);
 		}
 		let slip = 0;
-		const steering = b3.b3Vehicle_GetSteering(car.vehicle);
-		const wheels = car.def.wheels.slice(0, car.def.wheelCount);
 		for (let i = 0; i < seconds / dt; i++) {
 			const keys = script(i * dt);
-			keys.steer = limitSteer(car.chassis, steering, wheels, keys.steer, keys.brake);
+			keys.steer = limitSteer(car.vehicle, keys.steer, keys.brake);
 			b3.b3Vehicle_SetInput(car.vehicle, keys);
 			step(car);
 			// Stopped: held brake selects reverse, and a car reversing reads as 180 degrees of
