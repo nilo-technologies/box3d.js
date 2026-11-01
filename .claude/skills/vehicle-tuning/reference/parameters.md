@@ -102,14 +102,14 @@ Traction control and the clutch launch floor both see the boosted torque. With t
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `counterSteer` | 0.2 | Adds this fraction of the rear slide angle to the steering target, clamped to `maxAngle` (not the speed reduced angle). Above about 0.6 it catches handbrake slides and the car rotates less. |
+| `counterSteer` | 0.2 | Adds this fraction of the rear slide angle to the steering target, clamped to `maxAngle` (not the speed reduced angle). It has no dead band, so it also takes lock away in every normal corner, where the rears run at 3-5° of slip angle: at 0.6 the arcade cars used half their grip at full lock and 120 km/h. Above about 0.6 it catches handbrake slides and the car rotates less. |
 | `driftGripScale` | 1 | Lateral grip multiplier on wheels with a handbrake, at full handbrake. |
 | `tractionControl` | true | Caps the engine so no driven wheel gets more than its peak torque. Behind the center of mass it also leaves room for the cornering force (never less than 30%). It is conservative on a launch: see findings. |
 | `launchControl` | true | From a standstill, a slip controller on the driven wheels: each wheel's torque cap follows its slip toward 0.9 of the peak slip (at most 1.1x the tire's peak torque at the wheel, 2x at the engine). Works with `tractionControl` off. Ends when the driver lifts or the engine has not been held back for 0.3 s; the gearbox's shift cut does not end it. `b3VehicleState.isLaunching` reads it. |
-| `abs` | false | Caps the service brake at the tire's peak torque. It cannot release a wheel that is already past its peak slip, because a locked wheel needs only the sliding torque to stay locked. |
+| `abs` | false | Caps the service brake at the tire's peak torque, times the room the cornering force leaves on the friction ellipse (from the slip angle against the lateral peak angle, never below 30%), so braking in a turn keeps the wheels rolling. A wheel past its peak slip is released to half its sliding torque until it grips again. Engine braking on a driven wheel shares the cap, as engine drag torque control does. Before this, ABS used the straight line peak and could not release a locked wheel, so braking at full lock locked the fronts (findings #7, #30, #34). |
 | `downforce` | 1.5 | Force = downforce × forward speed², applied at the center of mass (no aero balance). Real cars: 0.1-0.3 road, 0.5-1 supercar. |
 | `drag` | 0.6 | Force = drag × speed². Real cars: ½ρ·Cd·A ≈ 0.35-0.45. |
-| `rollInfluence` | 0.25 | Raises the point where lateral tire forces act toward the center of mass height. 0 is physical, 1 removes cornering roll. It does not add grip. |
+| `rollInfluence` | 0.25 | Raises the point where lateral tire forces act toward the center of mass height. 0 is physical, 1 removes cornering roll. It does not add grip, and it takes load off the outside wheels, which under braking in a turn lets the outside rear lock and spins the car (0.35 and up on the sports car, findings #30). |
 | `airControl`, `airAngularDamping` | 1, 2 | Rotation from input and damping while all wheels are in the air. |
 | `selfRighting` | 3 | Roll-only righting while partly grounded and rolled past 0.3 rad, or 3x as strong once stuck (on the side or roof and slow for 0.5 s). 0 disables. |
 | `maxTiltAngle` | 0 | Stops angular velocity that tilts the car past this angle. 0 disables. |
