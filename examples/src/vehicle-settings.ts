@@ -266,6 +266,16 @@ function applyTips(root: GUI): void {
 	}
 }
 
+/**
+ * The boost as a gauge reads it: the share of full boost, and the pressure in bar. An engine's
+ * torque goes with its manifold's absolute pressure, so `boost` (the torque added, as a fraction
+ * of the curve) is about the gauge pressure in atmospheres.
+ */
+export function formatBoost(boost: number, fullBoost: number): string {
+	const share = fullBoost > 0 ? boost / fullBoost : 0;
+	return `${(share * 100).toFixed(0)}% (${(boost * 1.013).toFixed(2)} bar)`;
+}
+
 export function createVehicleSettings(
 	gui: GUI,
 	b3: Box3DModule,
@@ -823,7 +833,7 @@ export function createVehicleSettings(
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
 		let text = `${pad(state.speed * 3.6, 0, 4)} km/h  ${pad(state.engineRpm, 0, 5)} rpm  gear ${gear}${state.isShifting ? '*' : ''}\n`;
 		if (turboGain(turbo) > 0)
-			text += `boost +${pad(state.boost * 100, 0, 3)}% of +${(turboGain(turbo) * 100).toFixed(0)}%\n`;
+			text += `boost ${formatBoost(state.boost, turboGain(turbo)).padStart(15)}  torque +${pad(state.boost * 100, 0, 2)}% of +${(turboGain(turbo) * 100).toFixed(0)}%\n`;
 		text += `thr ${pad(state.throttle, 2, 4)} brk ${pad(state.brake, 2, 4)} steer ${pad(state.steerAngle * toDeg, 1, 5)}°\n`;
 		text += '      load   slip  angle  comp\n';
 		const count = b3.getNumVehicleWheels(stateBuffer);
