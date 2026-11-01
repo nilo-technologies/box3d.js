@@ -249,7 +249,7 @@ const smoothstep = (a: number, b: number, x: number) => {
  * The pedal asks for a share of the fully boosted torque, so boost only builds past 1 / (1 +
  * full boost). Each stage's shaft spools toward that load times its rpm curve, quicker high in
  * the revs and as boost builds, and spins down over its bleed time. The pressure is what the
- * shaft makes, capped by what the pedal asks for: it fills at once and dumps within DUMP_TIME.
+ * shaft makes, capped by what the pedal asks for: it fills at once and dumps with a DUMP_TIME time constant.
  */
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];

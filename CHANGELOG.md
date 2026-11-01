@@ -12,7 +12,7 @@
 - The sound lab's boost follows the engine's turbo model (`b3UpdateTurbo`) instead of a simpler one of its own:
   - The pedal gate: boost only builds past 1 / (1 + full boost) of the pedal, as in the showcase.
   - The lag depends on the revs, the load and the boost built so far.
-  - The pressure dumps within 0.1 s on a lift while the shaft spins down slowly. Before, the pressure itself fell over the bleed time, so the big turbo (1.8 s) still held 87% of its boost 0.25 s after a lift and never blew off.
+  - The pressure dumps on a lift with a 0.1 s time constant while the shaft spins down slowly. Before, the pressure itself fell over the bleed time, so the big turbo (1.8 s) still held 87% of its boost 0.25 s after a lift and never blew off.
   - A supercharger's or electric turbo's instant boost follows the rpm curve. Before, a supercharger showed 100% boost on a blip at idle.
   - The readout shows the pressure in bar too.
 
