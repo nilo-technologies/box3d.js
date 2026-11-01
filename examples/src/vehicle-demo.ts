@@ -769,6 +769,7 @@ export async function runVehicleDemo(
 	const audio = createVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
 	audio.setCarVoice(engineFor(options.preset).voice);
+	audio.setTurbo(options.turbo ?? 'none');
 	const soundSettings = { volume: audio.volume };
 	let unmutedVolume = soundSettings.volume || 0.5;
 	const volumeController = app.gui
@@ -888,6 +889,7 @@ export async function runVehicleDemo(
 		);
 		audio.setCylinders(cylindersFor(name));
 		audio.setCarVoice(engineFor(name).voice);
+		audio.setTurbo(turbo);
 		clearTrail();
 		// The Vehicle folder is new, with the new preset's values: they are the start values now
 		urlSettings?.reset('vehicle');
@@ -1145,12 +1147,15 @@ export async function runVehicleDemo(
 			while (accumulator >= STEP && steps < 4) {
 				prevPos.copy(currPos);
 				prevQuat.copy(currQuat);
+				// The brake pedal, or S in the automatic mode where it brakes while moving forward
+				const braking = Math.max(input.brake, -input.forward, 0);
 				const steer = car.settings.aids.steeringLimit
 					? limitSteer(
 							car.chassis,
 							car.live.steering,
 							car.live.wheels,
 							input.steer,
+							braking,
 						)
 					: input.steer;
 				b3.b3Vehicle_SetInput(car.vehicle, { ...input, steer });

@@ -1,8 +1,11 @@
 import type {
 	Box3DModule,
+	b3BodyId,
 	b3Vec3,
 	b3VehicleDef,
+	b3VehicleSteering,
 	b3VehicleTurbo,
+	b3VehicleWheelDef,
 } from 'box3d.js';
 
 export type VehicleCarName = 'sports' | 'rally' | 'super';
@@ -51,6 +54,8 @@ export interface VehicleAxle {
 	brake: number;
 	/** Ride frequency (Hz) */
 	frequency: number;
+	/** Tire values for this axle that differ from the car's `tire` */
+	tire?: Partial<VehicleTire>;
 }
 
 /** A car at 100% realism, the first preset layer */
@@ -123,10 +128,12 @@ export interface VehicleDrivetrainLayer {
 /** The third preset layer */
 export interface VehicleRealismLevel {
 	title: string;
-	/** Multiplies every tire friction coefficient */
+	/** Multiplies every tire friction coefficient, and the rear brake torque */
 	tireGrip: number;
 	rollInfluence: number;
 	counterSteer: number;
+	/** Multiplies the rear tires' lateral friction on top of tireGrip */
+	rearGrip: number;
 	driftGripScale: number;
 	/** Multiplies the car's downforce */
 	downforceScale: number;
@@ -235,3 +242,24 @@ export function createPresetVehicleDef(
 	b3: Box3DModule,
 	name: VehiclePresetName,
 ): b3VehicleDef;
+
+/** Grip limited steer input for a keyboard or other full lock input. Returns the limited steer. */
+export type VehicleSteeringLimiter = (
+	chassis: b3BodyId,
+	steering: b3VehicleSteering,
+	wheels: b3VehicleWheelDef[],
+	steer: number,
+	/** Brake input, 0 to 1. While braking the cap moves to brakingPeakScale. */
+	braking?: number,
+) => number;
+
+/**
+ * A driver aid applied to the input before b3Vehicle_SetInput: caps the steer angle at
+ * `peakScale` (default 1.5) times the front tires' peak slip angle from the direction the front
+ * axle travels, and at `brakingPeakScale` (default 1) while braking. The presets are tuned to be
+ * driven with it.
+ */
+export function createSteeringLimiter(
+	b3: Box3DModule,
+	options?: { peakScale?: number; brakingPeakScale?: number },
+): VehicleSteeringLimiter;
