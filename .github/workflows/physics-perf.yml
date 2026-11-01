@@ -1,0 +1,134 @@
+name: Physics performance
+
+# Times the physics scenarios in test/bench-physics.mjs on the pull request's dist/ against the
+# dist/ of its merge base, and posts the report on the pull request. Runs when a pull request is
+# opened or marked ready for review, and again whenever a maintainer comments with 📊.
+# It times the committed dist/, so a pull request that changes src/ must rebuild it to be measured.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+# A new request cancels the one in flight. Every other comment gets a group of its own, so it
+# cannot cancel a run on the way to skipping its jobs.
+concurrency:
+  group: physics-perf-${{ github.event.pull_request.number || github.event.issue.number }}-${{ (github.event_name == 'pull_request' || contains(github.event.comment.body, '📊')) && 'bench' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  acknowledge:
+    # A 👀 on the 📊 comment, so the requester knows the run started
+    if: >-
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      contains(github.event.comment.body, '📊') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: React to the comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes
+
+  bench:
+    if: >-
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      contains(github.event.comment.body, '📊') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    # This job runs the pull request's code, so it gets a read only token and no secrets
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+    steps:
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/$NUMBER" \
+            --jq '"number=\(.number)\nhead=\(.head.sha)\nbase=\(.base.ref)"' >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Extract the base build
+        id: base
+        env:
+          BASE_REF: ${{ steps.pr.outputs.base }}
+        run: |
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          mkdir -p .bench/base
+          git archive "$base" dist | tar -x -C .bench/base
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Run the scenarios
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          BASE_REF: ${{ steps.pr.outputs.base }}
+        run: |
+          node test/bench-physics-compare.mjs \
+            --base .bench/base/dist --head dist --runs 7 \
+            --base-label "$BASE_REF @ ${BASE_SHA::7} (merge base)" \
+            --head-label "#${{ steps.pr.outputs.number }} @ ${HEAD_SHA::7}" \
+            --markdown .bench/report.md --json .bench/runs.json
+          cat .bench/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: physics-perf
+          path: |
+            .bench/report.md
+            .bench/runs.json
+          if-no-files-found: ignore
+
+  comment:
+    needs: bench
+    # A pull request from a fork gets a read only token, so its report stays in the job summary
+    if: >-
+      github.event_name == 'issue_comment' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # No checkout: this job only posts the report
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download the report
+        uses: actions/download-artifact@v4
+        with:
+          name: physics-perf
+
+      - name: Comment on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ needs.bench.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            cat report.md
+            echo
+            echo "<sub>[Workflow run]($RUN_URL). Comment with the bar chart emoji to measure again.</sub>"
+          } > comment.md
+          gh pr comment "$NUMBER" --repo "${{ github.repository }}" --body-file comment.md
