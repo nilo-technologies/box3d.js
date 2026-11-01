@@ -1691,8 +1691,9 @@ export function createVehicleAudio(
 	// Off throttle, an anti-lag system retards the ignition and keeps some air flowing, so fuel
 	// burns in the exhaust manifold and the turbo keeps spinning. It bangs and pops for as long
 	// as the throttle stays shut, through lifts and the throttle cut of every shift, until the
-	// revs fall below antiLagMinRpm. It comes in within ANTI_LAG_ATTACK seconds of the lift and
-	// stops as soon as the throttle opens.
+	// revs fall below antiLagMinRpm. It comes in within ANTI_LAG_ATTACK seconds of the lift,
+	// fading in over ANTI_LAG_FADE_RPM above antiLagMinRpm and as the throttle closes past a
+	// quarter, and stops as soon as the throttle is past a quarter open.
 	const ANTI_LAG_ATTACK = 0.05;
 	/** Rpm over which it fades in above antiLagMinRpm */
 	const ANTI_LAG_FADE_RPM = 600;
@@ -1713,7 +1714,11 @@ export function createVehicleAudio(
 			);
 			target = shut * revs;
 		}
-		antiLag += (target - antiLag) * Math.min(dt / ANTI_LAG_ATTACK, 1);
+		// It eases in, but stops at once: no bangs once the throttle opens
+		antiLag =
+			target === 0
+				? 0
+				: antiLag + (target - antiLag) * Math.min(dt / ANTI_LAG_ATTACK, 1);
 		return antiLag;
 	}
 
@@ -1736,11 +1741,12 @@ export function createVehicleAudio(
 			syncPulses(classic ? 'classic' : playing);
 			nodes.classicGain.gain.setTargetAtTime(classic ? 1 : 0, t, 0.03);
 			nodes.pulseGain.gain.setTargetAtTime(classic ? 0 : 1, t, 0.03);
-			// Anti-lag holds a bypass open off throttle, so the engine stays loud while it bangs
+			// Anti-lag holds a bypass open off throttle, so the engine stays loud while it bangs.
+			// Only the pulse voices bang, so the classic voice keeps its own level.
+			const bypass = classic ? 0 : ANTI_LAG_LOAD * antiLag;
 			nodes.engineGain.gain.setTargetAtTime(
 				engine.idleVolume +
-					engine.throttleVolume *
-						Math.max(sound.throttle, ANTI_LAG_LOAD * antiLag),
+					engine.throttleVolume * Math.max(sound.throttle, bypass),
 				t,
 				glide,
 			);
