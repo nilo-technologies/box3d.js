@@ -13,7 +13,7 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | center of mass drop | 0 | 0.05 | 0.1 | 0.17 | 0.25 | subtract from `centerOfMassOffset` y (m) |
 | `selfRighting` | 0 | 1 | 6 | 8 | 10 | set |
 | `airControl` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
-| `airAngularDamping` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
+| `airAngularDamping` | 0 | 0.5 | 2.5 | 3 | 3.5 | set |
 | `maxTiltAngle` | off | off | off | 70° | 55° | set (radians; 0 is off) |
 | `tractionControl` | car's own | car's own | on | on | on | |
 | `abs` | car's own | car's own | on | on | on | |
