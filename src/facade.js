@@ -1108,16 +1108,16 @@ function getDebugTransformAt( out, buf, i )
 //
 // The field read order below must match the WheeledVehicleStateBuffer packing order in src/bindings.cpp.
 
-const VEHICLE_I32 = LAYOUT.wheeledVehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
-const VEHICLE_F32 = LAYOUT.wheeledVehicleF32; //            speed engineRpm throttle brake steerAngle boost
-const VEHICLE_WHEEL_I32 = LAYOUT.wheeledVehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
-const VEHICLE_WHEEL_F32 = LAYOUT.wheeledVehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
-const VEHICLE_WHEEL_F64 = LAYOUT.wheeledVehicleWheelF64; // position(3) contactPoint(3)
+const WHEELED_VEHICLE_I32 = LAYOUT.wheeledVehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
+const WHEELED_VEHICLE_F32 = LAYOUT.wheeledVehicleF32; //            speed engineRpm throttle brake steerAngle boost
+const WHEELED_VEHICLE_WHEEL_I32 = LAYOUT.wheeledVehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
+const WHEELED_VEHICLE_WHEEL_F32 = LAYOUT.wheeledVehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
+const WHEELED_VEHICLE_WHEEL_F64 = LAYOUT.wheeledVehicleWheelF64; // position(3) contactPoint(3)
 
 // Chassis-space wheel readout, b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId) below: per wheel
 // position(3) rotation(4) rotationAngle angularVelocity steerAngle suspensionLength.
-const VEHICLE_WHEEL_LOCAL = LAYOUT.wheeledVehicleWheelLocal;
-const MAX_VEHICLE_WHEELS = LAYOUT.maxWheeledVehicleWheels;
+const WHEELED_VEHICLE_WHEEL_LOCAL = LAYOUT.wheeledVehicleWheelLocal;
+const MAX_WHEELED_VEHICLE_WHEELS = LAYOUT.maxWheeledVehicleWheels;
 
 function createWheeledVehicleStateBuffer()
 {
@@ -1188,9 +1188,9 @@ function getWheeledVehicleWheelAt( out, buf, i )
 {
 	// Only wheelCount records were packed, so any other index would read unrelated wasm memory
 	if ( !( Number.isInteger( i ) && i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getWheeledVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
-	const a = buf.i32; const is = buf.i32Base + VEHICLE_I32 + i * VEHICLE_WHEEL_I32;
-	const f = buf.f32; const fs = buf.f32Base + VEHICLE_F32 + i * VEHICLE_WHEEL_F32;
-	const d = buf.f64; const ds = buf.f64Base + i * VEHICLE_WHEEL_F64;
+	const a = buf.i32; const is = buf.i32Base + WHEELED_VEHICLE_I32 + i * WHEELED_VEHICLE_WHEEL_I32;
+	const f = buf.f32; const fs = buf.f32Base + WHEELED_VEHICLE_F32 + i * WHEELED_VEHICLE_WHEEL_F32;
+	const d = buf.f64; const ds = buf.f64Base + i * WHEELED_VEHICLE_WHEEL_F64;
 	out.hasContact = a[ is ] !== 0;
 	out.isSticky = a[ is + 1 ] !== 0;
 	readShapeId( out.groundShapeId, a, is + 2 );
@@ -1314,7 +1314,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	Module.b3WheeledVehicle_GetWheelLocalData = ( out, wheeledVehicleId ) =>
 	{
 		const count = rawWheelLocal( wheeledVehicleId );
-		const n = count * VEHICLE_WHEEL_LOCAL;
+		const n = count * WHEELED_VEHICLE_WHEEL_LOCAL;
 		if ( !( out.length >= n ) ) throw new RangeError( `b3WheeledVehicle_GetWheelLocalData: out holds ${out.length} floats, ${count} wheels need ${n}` );
 		const h = HEAPF32;
 		for ( let k = 0; k < n; k++ ) out[ k ] = h[ WHEEL_LOCAL_F32 + k ];
@@ -1351,7 +1351,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createDebugTransformPrimitive, getDebugTransformAt,
 		createWheeledVehicleStateBuffer, getWheeledVehicleStateData, destroyWheeledVehicleStateBuffer, getNumWheeledVehicleWheels,
 		createWheeledVehicleStateRecord, getWheeledVehicleStateAt, createWheeledVehicleWheelRecord, getWheeledVehicleWheelAt,
-		B3_MAX_VEHICLE_WHEELS: MAX_VEHICLE_WHEELS, B3_VEHICLE_WHEEL_LOCAL_STRIDE: VEHICLE_WHEEL_LOCAL,
+		B3_MAX_VEHICLE_WHEELS: MAX_WHEELED_VEHICLE_WHEELS, B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE: WHEELED_VEHICLE_WHEEL_LOCAL,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,

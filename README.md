@@ -1310,13 +1310,13 @@ for (let i = 0; i < b3.getNumWheeledVehicleWheels(stateBuffer); i++) {
 b3.destroyWheeledVehicleStateBuffer(stateBuffer);
 ```
 
-To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. Multiplying this pose by the chassis transform reproduces `b3WheeledVehicle_GetWheelTransform`, for any chassis axes, so a wheel mesh parented to the chassis mesh can take it as is. To draw the wheels between physics steps, keep the previous step's readout, unwrap each wheel's spin with `angularVelocity`, and blend, as below. `b3WheeledVehicle_GetWheelLocalTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)` reads one wheel.
+To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. Multiplying this pose by the chassis transform reproduces `b3WheeledVehicle_GetWheelTransform`, for any chassis axes, so a wheel mesh parented to the chassis mesh can take it as is. To draw the wheels between physics steps, keep the previous step's readout, unwrap each wheel's spin with `angularVelocity`, and blend, as below. `b3WheeledVehicle_GetWheelLocalTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)` reads one wheel.
 
 ```ts
 // Wheel meshes parented to the chassis mesh need only each wheel's pose in chassis space. One call
 // fills a Float32Array for every wheel: position (3), rotation x, y, z, w (4), then the raw
 // rotationAngle, angularVelocity, steerAngle and suspensionLength.
-const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
+const stride = b3.B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
 const maxWheels = b3.B3_MAX_VEHICLE_WHEELS;
 const wheelData = new Float32Array(maxWheels * stride); // the latest physics step
 const previousData = new Float32Array(maxWheels * stride); // the step before it

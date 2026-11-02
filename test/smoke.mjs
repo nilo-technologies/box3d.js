@@ -1683,7 +1683,7 @@ async function vehicleScenarios( b3 )
 	// wheel transform, for a tilted, steering, moving car with the default axes and with up = +z,
 	// forward = +x. The bulk readout matches the per-wheel one and carries the raw spin values.
 	{
-		const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE;
+		const stride = b3.B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE;
 		assert.equal( stride, 11, 'wheel local stride' );
 		assert.equal( b3.B3_MAX_VEHICLE_WHEELS, 8, 'max vehicle wheels' );
 		const qmul = ( a, b ) => [

@@ -4,7 +4,10 @@
 // car where it stands. The presets are layered in box3d.js/wheeled-vehicles: car, then drivetrain, then
 // realism level, then turbo. Each car plays its own engine sound.
 
-import { wheeledVehicleCars, wheeledVehiclePresets } from 'box3d.js/wheeled-vehicles';
+import {
+	wheeledVehicleCars,
+	wheeledVehiclePresets,
+} from 'box3d.js/wheeled-vehicles';
 import { runWheeledVehicleDemo } from './vehicle-demo';
 import { showcaseStart, showcaseTurbo } from './vehicle-showcase';
 

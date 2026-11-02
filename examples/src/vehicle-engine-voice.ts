@@ -35,6 +35,9 @@ for (const [key, voice] of Object.entries(engineVoices)) {
 	voiceOptions[voice.title] = key as EngineVoiceName;
 }
 
-export function addEngineVoicePicker(gui: GUI, audio: WheeledVehicleAudio): void {
+export function addEngineVoicePicker(
+	gui: GUI,
+	audio: WheeledVehicleAudio,
+): void {
 	gui.add(audio.params.engine, 'voice', voiceOptions).name('engine sound');
 }

@@ -1,6 +1,6 @@
 # b3WheeledVehicleDef parameters
 
-Each field, its default from `b3DefaultWheeledVehicleDef()`, and what the engine actually does with it (from `vendor/box3d/src/vehicle.c` and `vehicle_wheel_joint.c`). Units are SI; angles are radians. Conventions: +z forward, +y up, left is +x; wheels 0-3 are front left, front right, rear left, rear right.
+Each field, its default from `b3DefaultWheeledVehicleDef()`, and what the engine actually does with it (from `vendor/box3d/src/wheeled_vehicle.c` and `wheeled_vehicle_wheel_joint.c`). Units are SI; angles are radians. Conventions: +z forward, +y up, left is +x; wheels 0-3 are front left, front right, rear left, rear right.
 
 ## chassis
 

@@ -70,7 +70,7 @@ b3.destroyWheeledVehicleStateBuffer(stateBuffer);
 // Wheel meshes parented to the chassis mesh need only each wheel's pose in chassis space. One call
 // fills a Float32Array for every wheel: position (3), rotation x, y, z, w (4), then the raw
 // rotationAngle, angularVelocity, steerAngle and suspensionLength.
-const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
+const stride = b3.B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
 const maxWheels = b3.B3_MAX_VEHICLE_WHEELS;
 const wheelData = new Float32Array(maxWheels * stride); // the latest physics step
 const previousData = new Float32Array(maxWheels * stride); // the step before it

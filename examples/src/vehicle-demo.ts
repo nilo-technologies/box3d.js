@@ -404,7 +404,8 @@ export async function runWheeledVehicleDemo(
 
 	const stateBuffer = b3.createWheeledVehicleStateBuffer();
 	const state = b3.createWheeledVehicleStateRecord();
-	const wheelRecord: WheeledVehicleWheelRecord = b3.createWheeledVehicleWheelRecord();
+	const wheelRecord: WheeledVehicleWheelRecord =
+		b3.createWheeledVehicleWheelRecord();
 
 	// Ramps, hills and rocks in the ground's tone with its contour lines, props in the accent
 	const solidMaterial = topoMaterial({ color: topo.solid });
@@ -540,7 +541,8 @@ export async function runWheeledVehicleDemo(
 			live.antiLag = turbo.antiLag;
 			live.manual =
 				b3.b3WheeledVehicle_GetTransmission(vehicle).mode.value ===
-				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionManual.value;
+				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionManual
+					.value;
 			const assists = b3.b3WheeledVehicle_GetAssists(vehicle);
 			live.tractionControl = assists.tractionControl;
 			live.abs = assists.abs;
@@ -765,8 +767,10 @@ export async function runWheeledVehicleDemo(
 
 	// ---- Sound. Each car has its own engine voice, and its cylinder count sets the pitch.
 	const engineFor = (name: WheeledVehiclePresetName) =>
-		carEngines[wheeledVehiclePresets[name].matrix?.car ?? name] ?? carEngines.sports;
-	const cylindersFor = (name: WheeledVehiclePresetName) => engineFor(name).cylinders;
+		carEngines[wheeledVehiclePresets[name].matrix?.car ?? name] ??
+		carEngines.sports;
+	const cylindersFor = (name: WheeledVehiclePresetName) =>
+		engineFor(name).cylinders;
 	const audio = createWheeledVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
 	audio.setCarVoice(engineFor(options.preset).voice);
@@ -821,7 +825,9 @@ export async function runWheeledVehicleDemo(
 
 	function shift(delta: number): void {
 		if (!isManual()) setManual(true);
-		const gearCount = b3.b3WheeledVehicle_GetTransmission(car.vehicle).gearCount;
+		const gearCount = b3.b3WheeledVehicle_GetTransmission(
+			car.vehicle,
+		).gearCount;
 		const gear = b3.b3WheeledVehicle_GetState(car.vehicle).gear;
 		b3.b3WheeledVehicle_SetGear(
 			car.vehicle,
@@ -956,7 +962,11 @@ export async function runWheeledVehicleDemo(
 		'Left pad steers, further out for more lock · ▲ gas · ▼ brake, hold to reverse · HB handbrake · ↻ flip upright';
 	const info = document.createElement('div');
 	info.className = 'overlay';
-	let infoText = [wheeledVehiclePresets[options.preset].title, options.blurb, ''];
+	let infoText = [
+		wheeledVehiclePresets[options.preset].title,
+		options.blurb,
+		'',
+	];
 	let touchShown = false;
 	function setInfo(title: string, blurb: string, extra = ''): void {
 		infoText = [title, blurb, extra];

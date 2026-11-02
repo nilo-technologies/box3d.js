@@ -1922,7 +1922,7 @@ struct WheeledVehicleStateBuffer
 	unsigned f64Ptr() const { return (unsigned)(size_t)f64.data(); }
 };
 
-// A wheel's pose in chassis space: b3GetWheelTransform in vendor/box3d/src/vehicle.c before it
+// A wheel's pose in chassis space: b3GetWheelTransform in vendor/box3d/src/wheeled_vehicle.c before it
 // composes with the chassis transform. The center is the attachment point lowered along the
 // chassis up axis by the suspension length; the rotation is steer about up, then spin about the
 // axle (up x forward). The chassis body transform composed with it gives

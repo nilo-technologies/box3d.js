@@ -286,15 +286,20 @@ export function createWheeledVehicleSettings(
 	const root = gui.addFolder('Vehicle');
 	const wheelCount = b3.b3WheeledVehicle_GetWheelCount(vehicle);
 
-	const chassis: b3WheeledVehicleChassis = b3.b3WheeledVehicle_GetChassis(vehicle);
+	const chassis: b3WheeledVehicleChassis =
+		b3.b3WheeledVehicle_GetChassis(vehicle);
 	const engine: b3WheeledVehicleEngine = b3.b3WheeledVehicle_GetEngine(vehicle);
 	const turbo: b3WheeledVehicleTurbo = b3.b3WheeledVehicle_GetTurbo(vehicle);
 	const transmission: b3WheeledVehicleTransmission =
 		b3.b3WheeledVehicle_GetTransmission(vehicle);
-	const drivetrain: b3WheeledVehicleDrivetrain = b3.b3WheeledVehicle_GetDrivetrain(vehicle);
-	const antiRoll: b3WheeledVehicleAntiRoll = b3.b3WheeledVehicle_GetAntiRoll(vehicle);
-	const steering: b3WheeledVehicleSteering = b3.b3WheeledVehicle_GetSteering(vehicle);
-	const assists: b3WheeledVehicleAssists = b3.b3WheeledVehicle_GetAssists(vehicle);
+	const drivetrain: b3WheeledVehicleDrivetrain =
+		b3.b3WheeledVehicle_GetDrivetrain(vehicle);
+	const antiRoll: b3WheeledVehicleAntiRoll =
+		b3.b3WheeledVehicle_GetAntiRoll(vehicle);
+	const steering: b3WheeledVehicleSteering =
+		b3.b3WheeledVehicle_GetSteering(vehicle);
+	const assists: b3WheeledVehicleAssists =
+		b3.b3WheeledVehicle_GetAssists(vehicle);
 	const wheels: b3WheeledVehicleWheelDef[] = [];
 	for (let i = 0; i < wheelCount; i++)
 		wheels.push(b3.b3WheeledVehicle_GetWheel(vehicle, i));
@@ -304,9 +309,12 @@ export function createWheeledVehicleSettings(
 	const applyTurbo = () => b3.b3WheeledVehicle_SetTurbo(vehicle, turbo);
 	const applyTransmission = () =>
 		b3.b3WheeledVehicle_SetTransmission(vehicle, transmission);
-	const applyDrivetrain = () => b3.b3WheeledVehicle_SetDrivetrain(vehicle, drivetrain);
-	const applyAntiRoll = () => b3.b3WheeledVehicle_SetAntiRoll(vehicle, antiRoll);
-	const applySteering = () => b3.b3WheeledVehicle_SetSteering(vehicle, steering);
+	const applyDrivetrain = () =>
+		b3.b3WheeledVehicle_SetDrivetrain(vehicle, drivetrain);
+	const applyAntiRoll = () =>
+		b3.b3WheeledVehicle_SetAntiRoll(vehicle, antiRoll);
+	const applySteering = () =>
+		b3.b3WheeledVehicle_SetSteering(vehicle, steering);
 	const applyAssists = () => b3.b3WheeledVehicle_SetAssists(vehicle, assists);
 
 	// Axle proxies: editing one value writes it to both wheels of the axle. Each proxy reads
@@ -563,10 +571,11 @@ export function createWheeledVehicleSettings(
 			const rated = engine.maxTorque * (1 + turboGain(turbo));
 			copyInto(
 				turbo as unknown as Record<string, unknown>,
-				makeWheeledVehicleTurbo(type, engine.maxRpm, rated) as unknown as Record<
-					string,
-					unknown
-				>,
+				makeWheeledVehicleTurbo(
+					type,
+					engine.maxRpm,
+					rated,
+				) as unknown as Record<string, unknown>,
 			);
 			engine.maxTorque = rated / (1 + turboGain(turbo));
 			applyEngine();
@@ -612,13 +621,15 @@ export function createWheeledVehicleSettings(
 		get automatic() {
 			return (
 				transmission.mode.value ===
-				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto.value
+				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto
+					.value
 			);
 		},
 		set automatic(v: boolean) {
 			transmission.mode = v
 				? b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto
-				: b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionManual;
+				: b3.b3WheeledVehicleTransmissionMode
+						.b3_wheeledVehicleTransmissionManual;
 		},
 	};
 	transmissionFolder.add(mode, 'automatic').onChange(applyTransmission);
@@ -937,7 +948,10 @@ export function createWheeledVehicleSettings(
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,
-				b3.b3WheeledVehicle_GetWheel(vehicle, i) as unknown as Record<string, unknown>,
+				b3.b3WheeledVehicle_GetWheel(vehicle, i) as unknown as Record<
+					string,
+					unknown
+				>,
 			);
 		}
 		for (const c of root.controllersRecursive()) c.updateDisplay();

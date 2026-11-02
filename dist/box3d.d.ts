@@ -1829,10 +1829,10 @@ export interface Box3DFacade {
   /** Most wheels a vehicle can have. */
   readonly B3_MAX_VEHICLE_WHEELS: number;
   /** Floats per wheel written by b3WheeledVehicle_GetWheelLocalData (11). */
-  readonly B3_VEHICLE_WHEEL_LOCAL_STRIDE: number;
+  readonly B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE: number;
   /** Every wheel's chassis-space pose and raw spin in one call, for placing wheel meshes under
    * the chassis and interpolating them between physics steps. Writes
-   * B3_VEHICLE_WHEEL_LOCAL_STRIDE (11) floats per wheel, wheels in definition order, at
+   * B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE (11) floats per wheel, wheels in definition order, at
    * out[i * 11]:
    *
    * - [0..2] position: wheel center in chassis space, the attachment point lowered along the
@@ -1846,7 +1846,7 @@ export interface Box3DFacade {
    * - [10] suspensionLength: attachment point to wheel center (m)
    *
    * Returns the wheel count, 0 for an invalid vehicle. Throws a RangeError when out is shorter
-   * than count * 11; a B3_MAX_VEHICLE_WHEELS * B3_VEHICLE_WHEEL_LOCAL_STRIDE array fits any vehicle. */
+   * than count * 11; a B3_MAX_VEHICLE_WHEELS * B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE array fits any vehicle. */
   b3WheeledVehicle_GetWheelLocalData(out: Float32Array | number[], wheeledVehicleId: b3WheeledVehicleId): number;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;

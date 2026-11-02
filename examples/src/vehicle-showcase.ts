@@ -27,7 +27,11 @@ export type ShowcaseHost = {
 	/** The car being driven */
 	current(): { name: WheeledVehiclePresetName; vehicle: b3WheeledVehicleId };
 	/** Replace the car with another preset or turbo where it stands */
-	swap(name: WheeledVehiclePresetName, color: number, turbo: WheeledVehicleTurboName): void;
+	swap(
+		name: WheeledVehiclePresetName,
+		color: number,
+		turbo: WheeledVehicleTurboName,
+	): void;
 	setInfo(title: string, blurb: string, extra?: string): void;
 	/** Key code to handler, for keys the demo does not use itself */
 	onPress: Map<string, () => void>;
@@ -35,17 +39,23 @@ export type ShowcaseHost = {
 
 const realismOrder: WheeledVehicleRealism[] = [100, 75, 50, 25, 0];
 
-const terrains: WheeledVehicleTerrain[] = ['track', 'offroad', 'circuit', 'stage'];
+const terrains: WheeledVehicleTerrain[] = [
+	'track',
+	'offroad',
+	'circuit',
+	'stage',
+];
 
 /**
  * The turbo each car gets unless another is picked, so the showcase plays the turbo sound. All
  * 45 presets pass vehicle-metrics.mjs with these (--car <car> --turbo <type>).
  */
-export const carTurbos: Record<WheeledVehicleCarName, WheeledVehicleTurboName> = {
-	sports: 'twinScroll',
-	rally: 'antiLag',
-	super: 'parallel',
-};
+export const carTurbos: Record<WheeledVehicleCarName, WheeledVehicleTurboName> =
+	{
+		sports: 'twinScroll',
+		rally: 'antiLag',
+		super: 'parallel',
+	};
 
 /** 'car' follows the car (carTurbos), anything else is that turbo type on every car */
 export type ShowcaseTurbo = 'car' | WheeledVehicleTurboName;
@@ -70,7 +80,10 @@ export function showcaseStart(): {
 	const preset = params.get('preset') as WheeledVehiclePresetName | null;
 	const turbo = params.get('turbo') as WheeledVehicleTurboName | null;
 	return {
-		preset: preset && wheeledVehiclePresets[preset]?.matrix ? preset : 'sports-50-rwd',
+		preset:
+			preset && wheeledVehiclePresets[preset]?.matrix
+				? preset
+				: 'sports-50-rwd',
 		terrain: terrains.find((t) => t === params.get('terrain')) ?? 'track',
 		turbo: turbo && turbo in turboTypes ? turbo : 'car',
 	};
