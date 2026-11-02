@@ -449,13 +449,14 @@ function getJointEventAt( out, eb, i )
 }
 
 // --- b3World_CollideMover plane results ---------------------------------------
-// The CollideMover callback receives a packed buffer { count, data: Float32Array }
-// (LAYOUT.plane floats per plane); read it with these instead of a JS array of objects.
+// The CollideMover callback receives a packed buffer { count, data: Float32Array,
+// indices: Int32Array } (LAYOUT.plane floats and LAYOUT.planeIndex ints per plane);
+// read it with these instead of a JS array of objects.
 
 function getNumPlaneResults( buf ) { return buf.count; }
 function createPlaneResult()
 {
-	return { plane: { normal: [ 0, 0, 0 ], offset: 0 }, point: [ 0, 0, 0 ] };
+	return { plane: { normal: [ 0, 0, 0 ], offset: 0 }, point: [ 0, 0, 0 ], triangleIndex: 0, childIndex: 0, materialIndex: 0 };
 }
 function getPlaneResultAt( out, buf, i )
 {
@@ -465,12 +466,15 @@ function getPlaneResultAt( out, buf, i )
 	nrm[ 0 ] = d[ s ]; nrm[ 1 ] = d[ s + 1 ]; nrm[ 2 ] = d[ s + 2 ];
 	out.plane.offset = d[ s + 3 ];
 	out.point[ 0 ] = d[ s + 4 ]; out.point[ 1 ] = d[ s + 5 ]; out.point[ 2 ] = d[ s + 6 ];
+	const idx = buf.indices;
+	const k = i * LAYOUT.planeIndex;
+	out.triangleIndex = idx[ k ]; out.childIndex = idx[ k + 1 ]; out.materialIndex = idx[ k + 2 ];
 	return out;
 }
 
 // --- b3Body_CollideMover plane results -----------------------------------------
-// b3Body_CollideMover returns { count, data, shapeIds }: data has the CollideMover
-// plane layout (so getPlaneResultAt also reads it), shapeIds LAYOUT.shapeId int32
+// b3Body_CollideMover returns { count, data, indices, shapeIds }: data and indices have
+// the CollideMover plane layout (so getPlaneResultAt also reads them), shapeIds LAYOUT.shapeId int32
 // per plane. Mirrors b3BodyPlaneResult: { shapeId, result }.
 
 function getNumBodyPlaneResults( buf ) { return buf.count; }
