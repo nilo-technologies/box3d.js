@@ -1,6 +1,6 @@
-# b3VehicleDef parameters
+# b3WheeledVehicleDef parameters
 
-Each field, its default from `b3DefaultVehicleDef()`, and what the engine actually does with it (from `vendor/box3d/src/vehicle.c` and `vehicle_wheel_joint.c`). Units are SI; angles are radians. Conventions: +z forward, +y up, left is +x; wheels 0-3 are front left, front right, rear left, rear right.
+Each field, its default from `b3DefaultWheeledVehicleDef()`, and what the engine actually does with it (from `vendor/box3d/src/vehicle.c` and `vehicle_wheel_joint.c`). Units are SI; angles are radians. Conventions: +z forward, +y up, left is +x; wheels 0-3 are front left, front right, rear left, rear right.
 
 ## chassis
 
@@ -52,7 +52,7 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 
 Forced induction, all zero (naturally aspirated) by default. The torque curve is multiplied by 1 + boost. Each stage has a shaft spool and a delivered pressure, both 0 to 1 of its `gain`, updated once per step before the engine solve. The pressure is the spool capped by what the pedal asks for: it fills at once and dumps through the blow-off valve with a 0.1 s time constant when the pedal closes, while the shaft spins down with `bleedTime`.
 
-The pedal is a torque request: `min(pedal × (1 + gains), 1 + boost)` times the curve, where `gains` is the sum of `stages[i].gain`. The first `1 / (1 + gains)` of the pedal needs no boost; past it the boost target rises to 1 at full pedal. Without a turbo this is the old `pedal × curve`. `src/vehicles.js` (`box3d.js/vehicles`) has nine ready types in `turboTypes`, plus `none`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
+The pedal is a torque request: `min(pedal × (1 + gains), 1 + boost)` times the curve, where `gains` is the sum of `stages[i].gain`. The first `1 / (1 + gains)` of the pedal needs no boost; past it the boost target rises to 1 at full pedal. Without a turbo this is the old `pedal × curve`. `src/wheeled-vehicles.js` (`box3d.js/wheeled-vehicles`) has nine ready types in `turboTypes`, plus `none`; `applyTurbo(def, type)` fits one and lowers `engine.maxTorque` so the fully boosted peak stays at the car's rated torque, and `vehicle-metrics.mjs --turbo <type>` measures a preset with it.
 
 | Field | Default | Notes |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ Traction control and the clutch launch floor both see the boosted torque. With t
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `mode` | auto | `b3_vehicleTransmissionAuto` or `b3_vehicleTransmissionManual`. In manual mode `b3Vehicle_SetGear` selects the gear. |
+| `mode` | auto | `b3_wheeledVehicleTransmissionAuto` or `b3_wheeledVehicleTransmissionManual`. In manual mode `b3WheeledVehicle_SetGear` selects the gear. |
 | `gearRatios[0..7]`, `gearCount` | 6 gears 3.3…0.78 | |
 | `reverseRatio`, `finalDrive` | 3.2, 3.9 | |
 | `shiftUpRpm`, `shiftDownRpm` | 6000, 2600 | The automatic shifts on the lower of engine rpm and road rpm (wheel speed through the gearing). At full load the clutch slips a few hundred rpm, so road rpm never reaches the limiter: set `shiftUpRpm` about 0.9 × `maxRpm` minus that slip (about 270 rpm on a 400 N·m car, 490 on a 720 N·m one) so the engine shifts at 90% of the limiter, the racing game convention the metrics check. How close to the limiter a setting still fires depends on the load and the clutch slip: at 8200 of 8500 rpm the supercar sat on the limiter, while the sports car at 6900 of 7200 shifted at 99% (findings #6, #24). Upshifts are also blocked while a driven wheel spins past twice its peak slip or is in the air. A downshift only happens if the lower gear lands under 90% of `shiftUpRpm`. |
@@ -105,7 +105,7 @@ Traction control and the clutch launch floor both see the boosted torque. With t
 | `counterSteer` | 0.2 | Adds this fraction of the rear slide angle to the steering target, clamped to `maxAngle` (not the speed reduced angle). It has no dead band, so it also takes lock away in every normal corner, where the rears run at 3-5° of slip angle: at 0.6 the arcade cars used half their grip at full lock and 120 km/h. Above about 0.6 it catches handbrake slides and the car rotates less. |
 | `driftGripScale` | 1 | Lateral grip multiplier on wheels with a handbrake, at full handbrake. |
 | `tractionControl` | true | Caps the engine so no driven wheel gets more than its peak torque. Behind the center of mass it also leaves room for the cornering force (never less than 30%). It is conservative on a launch: see findings. |
-| `launchControl` | true | From a standstill, a slip controller on the driven wheels: each wheel's torque cap follows its slip toward 0.9 of the peak slip (at most 1.1x the tire's peak torque at the wheel, 2x at the engine). Works with `tractionControl` off. Ends when the driver lifts or the engine has not been held back for 0.3 s; the gearbox's shift cut does not end it. `b3VehicleState.isLaunching` reads it. |
+| `launchControl` | true | From a standstill, a slip controller on the driven wheels: each wheel's torque cap follows its slip toward 0.9 of the peak slip (at most 1.1x the tire's peak torque at the wheel, 2x at the engine). Works with `tractionControl` off. Ends when the driver lifts or the engine has not been held back for 0.3 s; the gearbox's shift cut does not end it. `b3WheeledVehicleState.isLaunching` reads it. |
 | `abs` | false | Caps the service brake at the tire's peak torque, times the room the cornering force leaves on the friction ellipse (from the slip angle against the lateral peak angle, never below 30%), so braking in a turn keeps the wheels rolling. A wheel past its peak slip is released to half its sliding torque until it grips again. Engine braking on a driven wheel shares the cap, as engine drag torque control does. Before this, ABS used the straight line peak and could not release a locked wheel, so braking at full lock locked the fronts (findings #7, #30, #34). |
 | `downforce` | 1.5 | Force = downforce × forward speed², applied at the center of mass (no aero balance). Real cars: 0.1-0.3 road, 0.5-1 supercar. |
 | `drag` | 0.6 | Force = drag × speed². Real cars: ½ρ·Cd·A ≈ 0.35-0.45. |

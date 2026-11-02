@@ -2,7 +2,7 @@
 // stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
 // rev, drag the sliders yourself, or let a loop drive it (free revs, a pull through the gears
 // and a stop, a drift). A small engine and turbo model stands in for the physics, using the
-// rpm range, gearing and turbo types from box3d.js/vehicles. A see-through 3D engine
+// rpm range, gearing and turbo types from box3d.js/wheeled-vehicles. A see-through 3D engine
 // (vehicle-engine-model.ts) runs from the same inputs: its pistons, firing flashes, glowing
 // exhaust and spinning turbo follow the rpm, throttle and boost. The scope along the bottom
 // shows the waveform and the spectrum. The tuning is saved in localStorage; to hear it in the
@@ -10,19 +10,19 @@
 
 import {
 	turboTypes,
-	type VehicleCarName,
-	type VehicleTurboName,
-	vehicleCars,
-} from 'box3d.js/vehicles';
+	type WheeledVehicleCarName,
+	type WheeledVehicleTurboName,
+	wheeledVehicleCars,
+} from 'box3d.js/wheeled-vehicles';
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
-	createVehicleAudio,
+	createWheeledVehicleAudio,
 	type EngineVoiceName,
 	engineVoices,
-	type VehicleSound,
+	type WheeledVehicleSound,
 } from './vehicle-audio';
 import {
 	createEngineModel,
@@ -41,11 +41,11 @@ const modes: Record<string, Mode> = {
 	'loop: drift': 'drift',
 };
 
-const audio = createVehicleAudio(0.5);
+const audio = createWheeledVehicleAudio(0.5);
 
 const settings = {
-	car: 'sports' as VehicleCarName,
-	turbo: 'twinScroll' as VehicleTurboName,
+	car: 'sports' as WheeledVehicleCarName,
+	turbo: 'twinScroll' as WheeledVehicleTurboName,
 	cylinders: carEngines.sports.cylinders,
 	volume: audio.volume,
 	mode: 'keys' as Mode,
@@ -54,8 +54,8 @@ audio.setCylinders(settings.cylinders);
 audio.setCarVoice(carEngines.sports.voice);
 audio.setTurbo(settings.turbo);
 
-const sound: VehicleSound & { gear: number } = {
-	engineRpm: vehicleCars.sports.engine.idleRpm,
+const sound: WheeledVehicleSound & { gear: number } = {
+	engineRpm: wheeledVehicleCars.sports.engine.idleRpm,
 	throttle: 0,
 	speed: 0,
 	skid: 0,
@@ -70,13 +70,13 @@ const sound: VehicleSound & { gear: number } = {
 
 const gui = new GUI({ title: 'Sound lab' });
 
-const carOptions: Record<string, VehicleCarName> = {};
-for (const [key, car] of Object.entries(vehicleCars)) {
-	carOptions[car.title] = key as VehicleCarName;
+const carOptions: Record<string, WheeledVehicleCarName> = {};
+for (const [key, car] of Object.entries(wheeledVehicleCars)) {
+	carOptions[car.title] = key as WheeledVehicleCarName;
 }
-const turboOptions: Record<string, VehicleTurboName> = {};
+const turboOptions: Record<string, WheeledVehicleTurboName> = {};
 for (const [key, type] of Object.entries(turboTypes)) {
-	turboOptions[type.title] = key as VehicleTurboName;
+	turboOptions[type.title] = key as WheeledVehicleTurboName;
 }
 
 const playFolder = gui.addFolder('Play');
@@ -129,7 +129,7 @@ const carFolder = gui.addFolder('Car');
 carFolder
 	.add(settings, 'car', carOptions)
 	.name('car (rpm, gears, auto voice)')
-	.onChange((name: VehicleCarName) => {
+	.onChange((name: WheeledVehicleCarName) => {
 		settings.cylinders = carEngines[name]?.cylinders ?? 6;
 		audio.setCylinders(settings.cylinders);
 		audio.setCarVoice(carEngines[name]?.voice ?? 'classic');
@@ -138,7 +138,7 @@ carFolder
 carFolder
 	.add(settings, 'turbo', turboOptions)
 	.name('turbo')
-	.onChange((type: VehicleTurboName) => audio.setTurbo(type));
+	.onChange((type: WheeledVehicleTurboName) => audio.setTurbo(type));
 carFolder
 	.add(settings, 'cylinders', 2, 16, 1)
 	.name('cylinders (classic voice)')
@@ -253,7 +253,7 @@ const smoothstep = (a: number, b: number, x: number) => {
  */
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];
-	const maxRpm = vehicleCars[settings.car].engine.maxRpm;
+	const maxRpm = wheeledVehicleCars[settings.car].engine.maxRpm;
 	const rpm = sound.engineRpm;
 	const full = type.stages.reduce((sum, stage) => sum + stage.gain, 0);
 	const load = full > 0 ? clamp01((sound.throttle * (1 + full) - 1) / full) : 0;
@@ -296,7 +296,7 @@ let limiterCut = false;
 
 /** Out of gear: the rpm climbs on throttle, falls back to idle off it and stutters on the limiter */
 function freeRev(throttle: number, dt: number): void {
-	const { idleRpm, maxRpm } = vehicleCars[settings.car].engine;
+	const { idleRpm, maxRpm } = wheeledVehicleCars[settings.car].engine;
 	sound.throttle += (throttle - sound.throttle) * Math.min(dt * 12, 1);
 	if (sound.engineRpm >= maxRpm) limiterCut = true;
 	else if (sound.engineRpm <= maxRpm - LIMITER_DROP || sound.throttle < 0.05)
@@ -324,7 +324,7 @@ function resetDrive(): void {
 	stageSpool.fill(0);
 	stagePressure.fill(0);
 	limiterCut = false;
-	sound.engineRpm = vehicleCars[settings.car].engine.idleRpm;
+	sound.engineRpm = wheeledVehicleCars[settings.car].engine.idleRpm;
 	sound.throttle = 0;
 	sound.boost = 0;
 	sound.gear = 0;
@@ -342,14 +342,14 @@ function setPhase(next: typeof phase): void {
 
 /** Wheel speed (m/s) to engine rpm in a gear (1 is first) */
 function gearRpm(speed: number, gear: number): number {
-	const car = vehicleCars[settings.car];
+	const car = wheeledVehicleCars[settings.car];
 	const ratio = car.gears[gear - 1] * car.finalDrive;
 	return ((speed / car.wheelRadius) * ratio * 60) / (2 * Math.PI);
 }
 
 /** Launch, pull through every gear with a lift at each shift, brake to a stop, wait, repeat */
 function pull(dt: number): void {
-	const car = vehicleCars[settings.car];
+	const car = wheeledVehicleCars[settings.car];
 	const { idleRpm, maxRpm } = car.engine;
 	const shiftRpm = 0.9 * maxRpm;
 	const top = car.gears.length;
@@ -399,7 +399,7 @@ function pull(dt: number): void {
 
 /** Holding a slide: wavering throttle and slip, a bump every few seconds */
 function drift(dt: number): void {
-	const { maxRpm } = vehicleCars[settings.car].engine;
+	const { maxRpm } = wheeledVehicleCars[settings.car].engine;
 	const t = clock;
 	sound.gear = 3;
 	sound.speed = 17 + 3 * Math.sin(0.4 * t);
@@ -511,7 +511,7 @@ audio.onSound = (name, strength) => {
 const modelFolder = gui.addFolder('Engine model');
 modelFolder.add(engine, 'slowMotion', 0.01, 1, 0.01).name('speed (x real)');
 
-const inductions: Record<VehicleTurboName, EngineInduction> = {
+const inductions: Record<WheeledVehicleTurboName, EngineInduction> = {
 	none: 'none',
 	small: 'single',
 	big: 'single',

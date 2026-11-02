@@ -347,7 +347,7 @@ const fixed = (i) => {
 /** About unit size, about normally distributed */
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;
 
-class VehicleEngineProcessor extends AudioWorkletProcessor {
+class WheeledVehicleEngineProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
 		return [
 			{
@@ -1191,4 +1191,4 @@ class VehicleEngineProcessor extends AudioWorkletProcessor {
 	}
 }
 
-registerProcessor('vehicle-engine', VehicleEngineProcessor);
+registerProcessor('vehicle-engine', WheeledVehicleEngineProcessor);

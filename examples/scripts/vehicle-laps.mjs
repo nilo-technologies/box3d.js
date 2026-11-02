@@ -17,8 +17,8 @@ import { pathToFileURL } from 'node:url';
 
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
-const { vehiclePresets } = await import(
-	new URL('src/vehicles.js', root).href
+const { wheeledVehiclePresets } = await import(
+	new URL('src/wheeled-vehicles.js', root).href
 );
 const { buildRaceTrack, createRaceTrackBodies } = await import(
 	new URL('examples/src/vehicle-tracks.js', root).href
@@ -53,9 +53,9 @@ export function driveLap(trackName, preset, options = {}) {
 	bodyDef.rotation = [0, Math.sin(start.yaw / 2), 0, Math.cos(start.yaw / 2)];
 	const chassis = api.b3CreateBody(world, bodyDef);
 	api.b3CreateBoxShape(chassis, api.b3DefaultShapeDef(), ...preset.halfExtents);
-	const def = preset.apply(api.b3DefaultVehicleDef());
+	const def = preset.apply(api.b3DefaultWheeledVehicleDef());
 	def.chassisId = chassis;
-	const vehicle = api.b3CreateVehicle(world, def);
+	const vehicle = api.b3CreateWheeledVehicle(world, def);
 
 	const grip = def.wheels[0].tire.lateralPeakFriction;
 	const wheelbase = def.wheels[0].position[2] - def.wheels[2].position[2];
@@ -149,11 +149,11 @@ export function driveLap(trackName, preset, options = {}) {
 		let throttle = e > 0 ? Math.min(1, e * 0.5 + 0.2) : 0;
 		const spin = Math.max(
 			...driven.map((i) =>
-				Math.abs(api.b3Vehicle_GetWheelState(vehicle, i).slipRatio),
+				Math.abs(api.b3WheeledVehicle_GetWheelState(vehicle, i).slipRatio),
 			),
 		);
 		if (spin > 0.25) throttle *= 0.4;
-		api.b3Vehicle_SetInput(vehicle, {
+		api.b3WheeledVehicle_SetInput(vehicle, {
 			forward: throttle,
 			brake: e < -1 ? Math.min(1, -e * 0.3) : 0,
 			steer: Math.max(-1, Math.min(1, -err * 2.5)),
@@ -161,7 +161,7 @@ export function driveLap(trackName, preset, options = {}) {
 		});
 		api.b3World_Step(world, dt, 4);
 
-		if (api.b3Vehicle_GetState(vehicle).wheelsInContact === 0 && t > 1) {
+		if (api.b3WheeledVehicle_GetState(vehicle).wheelsInContact === 0 && t > 1) {
 			airtime += dt;
 		}
 		const ay = (vel[1] - prevVy) / dt;
@@ -175,7 +175,7 @@ export function driveLap(trackName, preset, options = {}) {
 			speed: speed * 3.6,
 			up: 1 - 2 * (x * x + z * z),
 			off: Math.sqrt(bestD),
-			contacts: api.b3Vehicle_GetState(vehicle).wheelsInContact,
+			contacts: api.b3WheeledVehicle_GetState(vehicle).wheelsInContact,
 			height: pos[1] - line[index].y,
 		});
 		stopped = speed < 0.5 ? stopped + dt : 0;
@@ -221,8 +221,8 @@ if (isMain) {
 		else throw new Error(`unknown argument ${a}`);
 	}
 	const trackNames = args.tracks.length ? args.tracks : ['circuit', 'stage'];
-	const names = Object.keys(vehiclePresets).filter((name) => {
-		const m = vehiclePresets[name].matrix;
+	const names = Object.keys(wheeledVehiclePresets).filter((name) => {
+		const m = wheeledVehiclePresets[name].matrix;
 		return (
 			args.presets.includes(name) ||
 			(m && (args.all || args.cars.includes(m.car)))
@@ -239,7 +239,7 @@ if (isMain) {
 		for (const name of names) {
 			const r = driveLap(
 				trackName,
-				vehiclePresets[name],
+				wheeledVehiclePresets[name],
 				args.pace === undefined ? {} : { pace: args.pace },
 			);
 			const pass = r.completed && r.minUp > 0.3;

@@ -3,57 +3,57 @@
 // settings as JSON (including anything changed in the Vehicle folder). Each car has a turbo by
 // default (carTurbos), so the showcase plays the turbo whistle, blow-off and stutter.
 
-import type { Box3DModule, b3VehicleId } from 'box3d.js';
+import type { Box3DModule, b3WheeledVehicleId } from 'box3d.js';
 import {
 	drivetrainLayers,
 	realismLevels,
 	turboTypes,
-	type VehicleCarName,
-	type VehicleDrive,
-	type VehiclePresetName,
-	type VehicleRealism,
-	type VehicleTurboName,
-	vehicleCars,
-	vehiclePresetName,
-	vehiclePresets,
-} from 'box3d.js/vehicles';
+	type WheeledVehicleCarName,
+	type WheeledVehicleDrive,
+	type WheeledVehiclePresetName,
+	type WheeledVehicleRealism,
+	type WheeledVehicleTurboName,
+	wheeledVehicleCars,
+	wheeledVehiclePresetName,
+	wheeledVehiclePresets,
+} from 'box3d.js/wheeled-vehicles';
 import type GUI from 'lil-gui';
-import type { VehicleTerrain } from './vehicle-demo';
+import type { WheeledVehicleTerrain } from './vehicle-demo';
 
 export type ShowcaseHost = {
 	gui: GUI;
 	b3: Box3DModule;
-	terrain: VehicleTerrain;
+	terrain: WheeledVehicleTerrain;
 	/** The car being driven */
-	current(): { name: VehiclePresetName; vehicle: b3VehicleId };
+	current(): { name: WheeledVehiclePresetName; vehicle: b3WheeledVehicleId };
 	/** Replace the car with another preset or turbo where it stands */
-	swap(name: VehiclePresetName, color: number, turbo: VehicleTurboName): void;
+	swap(name: WheeledVehiclePresetName, color: number, turbo: WheeledVehicleTurboName): void;
 	setInfo(title: string, blurb: string, extra?: string): void;
 	/** Key code to handler, for keys the demo does not use itself */
 	onPress: Map<string, () => void>;
 };
 
-const realismOrder: VehicleRealism[] = [100, 75, 50, 25, 0];
+const realismOrder: WheeledVehicleRealism[] = [100, 75, 50, 25, 0];
 
-const terrains: VehicleTerrain[] = ['track', 'offroad', 'circuit', 'stage'];
+const terrains: WheeledVehicleTerrain[] = ['track', 'offroad', 'circuit', 'stage'];
 
 /**
  * The turbo each car gets unless another is picked, so the showcase plays the turbo sound. All
  * 45 presets pass vehicle-metrics.mjs with these (--car <car> --turbo <type>).
  */
-export const carTurbos: Record<VehicleCarName, VehicleTurboName> = {
+export const carTurbos: Record<WheeledVehicleCarName, WheeledVehicleTurboName> = {
 	sports: 'twinScroll',
 	rally: 'antiLag',
 	super: 'parallel',
 };
 
 /** 'car' follows the car (carTurbos), anything else is that turbo type on every car */
-export type ShowcaseTurbo = 'car' | VehicleTurboName;
+export type ShowcaseTurbo = 'car' | WheeledVehicleTurboName;
 
 export function showcaseTurbo(
 	choice: ShowcaseTurbo,
-	car: VehicleCarName,
-): VehicleTurboName {
+	car: WheeledVehicleCarName,
+): WheeledVehicleTurboName {
 	return choice === 'car' ? carTurbos[car] : choice;
 }
 
@@ -62,21 +62,21 @@ export function showcaseTurbo(
  * ?preset=rally-50-awd&terrain=stage&turbo=none
  */
 export function showcaseStart(): {
-	preset: VehiclePresetName;
-	terrain: VehicleTerrain;
+	preset: WheeledVehiclePresetName;
+	terrain: WheeledVehicleTerrain;
 	turbo: ShowcaseTurbo;
 } {
 	const params = new URLSearchParams(location.search);
-	const preset = params.get('preset') as VehiclePresetName | null;
-	const turbo = params.get('turbo') as VehicleTurboName | null;
+	const preset = params.get('preset') as WheeledVehiclePresetName | null;
+	const turbo = params.get('turbo') as WheeledVehicleTurboName | null;
 	return {
-		preset: preset && vehiclePresets[preset]?.matrix ? preset : 'sports-50-rwd',
+		preset: preset && wheeledVehiclePresets[preset]?.matrix ? preset : 'sports-50-rwd',
 		terrain: terrains.find((t) => t === params.get('terrain')) ?? 'track',
 		turbo: turbo && turbo in turboTypes ? turbo : 'car',
 	};
 }
 
-function describeRealism(realism: VehicleRealism): string {
+function describeRealism(realism: WheeledVehicleRealism): string {
 	const level = realismLevels[realism];
 	const aids = [
 		level.tractionControl ? 'TC' : '',
@@ -97,28 +97,28 @@ function describeRealism(realism: VehicleRealism): string {
 /** Every live setting of a vehicle as plain JSON, enums by name and 64 bit ids as strings */
 export function vehicleSettingsJson(
 	b3: Box3DModule,
-	vehicle: b3VehicleId,
+	vehicle: b3WheeledVehicleId,
 	name: string,
 ): string {
 	const wheels = [];
-	for (let i = 0; i < b3.b3Vehicle_GetWheelCount(vehicle); i++) {
-		wheels.push(b3.b3Vehicle_GetWheel(vehicle, i));
+	for (let i = 0; i < b3.b3WheeledVehicle_GetWheelCount(vehicle); i++) {
+		wheels.push(b3.b3WheeledVehicle_GetWheel(vehicle, i));
 	}
 	const enums: Record<string, Record<string, { value: number }>> = {
-		mode: b3.b3VehicleTransmissionMode,
-		castType: b3.b3VehicleCastType,
+		mode: b3.b3WheeledVehicleTransmissionMode,
+		castType: b3.b3WheeledVehicleCastType,
 	};
 	const settings = {
 		preset: name,
-		note: 'Angles are in radians. Each object matches the b3Vehicle_Set* call of the same name.',
-		chassis: b3.b3Vehicle_GetChassis(vehicle),
+		note: 'Angles are in radians. Each object matches the b3WheeledVehicle_Set* call of the same name.',
+		chassis: b3.b3WheeledVehicle_GetChassis(vehicle),
 		wheels,
-		engine: b3.b3Vehicle_GetEngine(vehicle),
-		transmission: b3.b3Vehicle_GetTransmission(vehicle),
-		drivetrain: b3.b3Vehicle_GetDrivetrain(vehicle),
-		antiRoll: b3.b3Vehicle_GetAntiRoll(vehicle),
-		steering: b3.b3Vehicle_GetSteering(vehicle),
-		assists: b3.b3Vehicle_GetAssists(vehicle),
+		engine: b3.b3WheeledVehicle_GetEngine(vehicle),
+		transmission: b3.b3WheeledVehicle_GetTransmission(vehicle),
+		drivetrain: b3.b3WheeledVehicle_GetDrivetrain(vehicle),
+		antiRoll: b3.b3WheeledVehicle_GetAntiRoll(vehicle),
+		steering: b3.b3WheeledVehicle_GetSteering(vehicle),
+		assists: b3.b3WheeledVehicle_GetAssists(vehicle),
 	};
 	return JSON.stringify(
 		settings,
@@ -166,10 +166,10 @@ export async function copyText(text: string): Promise<boolean> {
 export function addShowcase(host: ShowcaseHost): void {
 	const { gui, b3 } = host;
 	const start = host.current().name;
-	const matrix = vehiclePresets[start].matrix ?? {
-		car: 'sports' as VehicleCarName,
-		realism: 50 as VehicleRealism,
-		drive: 'rwd' as VehicleDrive,
+	const matrix = wheeledVehiclePresets[start].matrix ?? {
+		car: 'sports' as WheeledVehicleCarName,
+		realism: 50 as WheeledVehicleRealism,
+		drive: 'rwd' as WheeledVehicleDrive,
 	};
 	const params = {
 		car: matrix.car,
@@ -200,17 +200,17 @@ export function addShowcase(host: ShowcaseHost): void {
 		gui.$children.insertBefore(folder.domElement, vehicleFolder.domElement);
 	}
 
-	const carOptions: Record<string, VehicleCarName> = {};
-	for (const [key, car] of Object.entries(vehicleCars)) {
-		carOptions[car.title] = key as VehicleCarName;
+	const carOptions: Record<string, WheeledVehicleCarName> = {};
+	for (const [key, car] of Object.entries(wheeledVehicleCars)) {
+		carOptions[car.title] = key as WheeledVehicleCarName;
 	}
-	const realismOptions: Record<string, VehicleRealism> = {};
+	const realismOptions: Record<string, WheeledVehicleRealism> = {};
 	for (const realism of realismOrder) {
 		realismOptions[realismLevels[realism].title] = realism;
 	}
-	const driveOptions: Record<string, VehicleDrive> = {};
+	const driveOptions: Record<string, WheeledVehicleDrive> = {};
 	for (const [key, layer] of Object.entries(drivetrainLayers)) {
-		driveOptions[layer.title] = key as VehicleDrive;
+		driveOptions[layer.title] = key as WheeledVehicleDrive;
 	}
 
 	const carController = folder
@@ -227,7 +227,7 @@ export function addShowcase(host: ShowcaseHost): void {
 		.onChange(apply);
 	const turboOptions: Record<string, ShowcaseTurbo> = { "Car's own": 'car' };
 	for (const [key, type] of Object.entries(turboTypes)) {
-		turboOptions[type.title] = key as VehicleTurboName;
+		turboOptions[type.title] = key as WheeledVehicleTurboName;
 	}
 	const turboController = folder
 		.add(params, 'turbo', turboOptions)
@@ -248,8 +248,8 @@ export function addShowcase(host: ShowcaseHost): void {
 	folder.add(params, 'copy').name('copy settings JSON');
 	folder.add(params, 'link').name('copy share link');
 
-	function presetName(): VehiclePresetName {
-		return vehiclePresetName(params.car, params.realism, params.drive);
+	function presetName(): WheeledVehiclePresetName {
+		return wheeledVehiclePresetName(params.car, params.realism, params.drive);
 	}
 
 	function updateUrl(): void {
@@ -262,9 +262,9 @@ export function addShowcase(host: ShowcaseHost): void {
 	}
 
 	function updateInfo(): void {
-		const car = vehicleCars[params.car];
+		const car = wheeledVehicleCars[params.car];
 		host.setInfo(
-			vehiclePresets[presetName()].title,
+			wheeledVehiclePresets[presetName()].title,
 			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.realism)}.` +
 				`<br>${turboTypes[showcaseTurbo(params.turbo, params.car)].title}.`,
 			'<br>1/2/3 sports, rally, supercar · [ ] less or more realistic · F/G/H front, rear, all wheel drive · Y turbo',
@@ -273,10 +273,10 @@ export function addShowcase(host: ShowcaseHost): void {
 
 	function apply(): void {
 		// lil-gui hands option values back as given, but a stale string would build a bad name
-		params.realism = Number(params.realism) as VehicleRealism;
+		params.realism = Number(params.realism) as WheeledVehicleRealism;
 		host.swap(
 			presetName(),
-			vehicleCars[params.car].color,
+			wheeledVehicleCars[params.car].color,
 			showcaseTurbo(params.turbo, params.car),
 		);
 		for (const c of [
@@ -290,11 +290,11 @@ export function addShowcase(host: ShowcaseHost): void {
 		updateInfo();
 	}
 
-	const setCar = (car: VehicleCarName) => () => {
+	const setCar = (car: WheeledVehicleCarName) => () => {
 		params.car = car;
 		apply();
 	};
-	const setDrive = (drive: VehicleDrive) => () => {
+	const setDrive = (drive: WheeledVehicleDrive) => () => {
 		params.drive = drive;
 		apply();
 	};

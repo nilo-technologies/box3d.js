@@ -1265,12 +1265,12 @@ function meshRestOffset( b3 )
 }
 
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
-// determinism, live setters, the presets in box3d.js/vehicles (the four originals and the 45 car matrix),
+// determinism, live setters, the presets in box3d.js/wheeled-vehicles (the four originals and the 45 car matrix),
 // the preset layers, and a 50 car perf check.
 async function vehicleScenarios( b3 )
 {
-	const { vehiclePresets, createPresetVehicleDef, realismLevels, vehicleCars, drivetrainLayers, buildVehiclePreset } =
-		await import( '../dist/vehicles.mjs' );
+	const { wheeledVehiclePresets, createPresetWheeledVehicleDef, realismLevels, wheeledVehicleCars, drivetrainLayers, buildWheeledVehiclePreset } =
+		await import( '../dist/wheeled-vehicles.mjs' );
 	const dt = 1 / 60;
 
 	function axisAngle( axis, angle )
@@ -1292,7 +1292,7 @@ async function vehicleScenarios( b3 )
 		return world;
 	}
 
-	function createCar( world, { position = [ 0, 1, 0 ], rotation = [ 0, 0, 0, 1 ], def = b3.b3DefaultVehicleDef(), halfExtents = [ 0.9, 0.3, 2.1 ] } = {} )
+	function createCar( world, { position = [ 0, 1, 0 ], rotation = [ 0, 0, 0, 1 ], def = b3.b3DefaultWheeledVehicleDef(), halfExtents = [ 0.9, 0.3, 2.1 ] } = {} )
 	{
 		const bodyDef = b3.b3DefaultBodyDef();
 		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
@@ -1301,8 +1301,8 @@ async function vehicleScenarios( b3 )
 		const chassis = b3.b3CreateBody( world, bodyDef );
 		b3.b3CreateBoxShape( chassis, b3.b3DefaultShapeDef(), halfExtents[ 0 ], halfExtents[ 1 ], halfExtents[ 2 ] );
 		def.chassisId = chassis;
-		const vehicle = b3.b3CreateVehicle( world, def );
-		assert.ok( b3.b3Vehicle_IsValid( vehicle ), 'vehicle is valid' );
+		const vehicle = b3.b3CreateWheeledVehicle( world, def );
+		assert.ok( b3.b3WheeledVehicle_IsValid( vehicle ), 'vehicle is valid' );
 		return { vehicle, chassis };
 	}
 
@@ -1320,17 +1320,17 @@ async function vehicleScenarios( b3 )
 		return 1 - 2 * ( x * x + z * z ); // world y of the chassis up axis
 	};
 
-	const buf = b3.createVehicleStateBuffer();
-	const state = b3.createVehicleStateRecord();
-	const wheel = b3.createVehicleWheelRecord();
+	const buf = b3.createWheeledVehicleStateBuffer();
+	const state = b3.createWheeledVehicleStateRecord();
+	const wheel = b3.createWheeledVehicleWheelRecord();
 	function readState( vehicle )
 	{
-		b3.getVehicleStateData( buf, vehicle );
-		b3.getVehicleStateAt( state, buf );
+		b3.getWheeledVehicleStateData( buf, vehicle );
+		b3.getWheeledVehicleStateAt( state, buf );
 		const wheels = [];
-		for ( let i = 0; i < b3.getNumVehicleWheels( buf ); i++ )
+		for ( let i = 0; i < b3.getNumWheeledVehicleWheels( buf ); i++ )
 		{
-			b3.getVehicleWheelAt( wheel, buf, i );
+			b3.getWheeledVehicleWheelAt( wheel, buf, i );
 			// The record is reused, so copy its nested arrays and id rather than aliasing them
 			wheels.push( {
 				...wheel,
@@ -1358,7 +1358,7 @@ async function vehicleScenarios( b3 )
 		step( world, 120 );
 		const s = readState( vehicle );
 		assert.ok( s.wheels[ 0 ].position[ 0 ] > 0 && s.wheels[ 1 ].position[ 0 ] < 0, 'each stored wheel keeps its own position' );
-		const sprung = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3Vehicle_GetSprungMass( vehicle, i ), 0 );
+		const sprung = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3WheeledVehicle_GetSprungMass( vehicle, i ), 0 );
 		assert.ok( Math.abs( sprung - 1300 ) < 1, `sprung masses sum to the chassis mass (${sprung.toFixed( 1 )})` );
 		assert.equal( s.wheelsInContact, 4, 'all four wheels touch the ground' );
 		const load = s.wheels.reduce( ( sum, w ) => sum + w.load, 0 );
@@ -1368,7 +1368,7 @@ async function vehicleScenarios( b3 )
 		assert.ok( Math.abs( b3.b3Body_GetLinearVelocity( pos, chassis )[ 1 ] ) < 0.01, 'suspension settled' );
 
 		// Acceleration and shifting
-		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 1 ) );
 		let t = 0;
 		while ( readState( vehicle ).speed < 100 / 3.6 && t < 15 )
 		{
@@ -1382,7 +1382,7 @@ async function vehicleScenarios( b3 )
 
 		// Braking from 100 km/h
 		const start = position( chassis );
-		b3.b3Vehicle_SetInput( vehicle, input( 0, 1 ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 0, 1 ) );
 		let brakeTime = 0;
 		while ( readState( vehicle ).speed > 0.05 && brakeTime < 10 )
 		{
@@ -1394,78 +1394,78 @@ async function vehicleScenarios( b3 )
 		assert.ok( results.braking > 25 && results.braking < 50, `braking distance ${results.braking.toFixed( 1 )} m` );
 
 		// Live setters take effect on the next step
-		const chassisSettings = b3.b3Vehicle_GetChassis( vehicle );
+		const chassisSettings = b3.b3WheeledVehicle_GetChassis( vehicle );
 		chassisSettings.mass = 2000;
-		b3.b3Vehicle_SetChassis( vehicle, chassisSettings );
+		b3.b3WheeledVehicle_SetChassis( vehicle, chassisSettings );
 		step( world, 1 );
-		const heavier = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3Vehicle_GetSprungMass( vehicle, i ), 0 );
+		const heavier = [ 0, 1, 2, 3 ].reduce( ( sum, i ) => sum + b3.b3WheeledVehicle_GetSprungMass( vehicle, i ), 0 );
 		assert.ok( Math.abs( heavier - 2000 ) < 1, `live chassis mass reaches the suspension (${heavier.toFixed( 1 )})` );
 
-		const steering = b3.b3Vehicle_GetSteering( vehicle );
+		const steering = b3.b3WheeledVehicle_GetSteering( vehicle );
 		steering.maxAngle = 0;
-		b3.b3Vehicle_SetSteering( vehicle, steering );
-		b3.b3Vehicle_SetInput( vehicle, input( 0, 0, 1 ) );
+		b3.b3WheeledVehicle_SetSteering( vehicle, steering );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 0, 0, 1 ) );
 		step( world, 30 );
 		assert.ok( Math.abs( readState( vehicle ).steerAngle ) < 1e-4, 'live steering limit applies' );
 
-		const engine = b3.b3Vehicle_GetEngine( vehicle );
+		const engine = b3.b3WheeledVehicle_GetEngine( vehicle );
 		engine.maxTorque = 0;
-		b3.b3Vehicle_SetEngine( vehicle, engine );
-		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		b3.b3WheeledVehicle_SetEngine( vehicle, engine );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 1 ) );
 		step( world, 120 );
 		assert.ok( Math.abs( readState( vehicle ).speed ) < 0.5, 'live engine torque applies' );
-		assert.equal( b3.b3Vehicle_GetEngine( vehicle ).maxTorque, 0, 'engine settings round-trip' );
+		assert.equal( b3.b3WheeledVehicle_GetEngine( vehicle ).maxTorque, 0, 'engine settings round-trip' );
 
-		const wheelDef = b3.b3Vehicle_GetWheel( vehicle, 0 );
+		const wheelDef = b3.b3WheeledVehicle_GetWheel( vehicle, 0 );
 		assert.ok( Math.abs( wheelDef.radius - 0.34 ) < 1e-6, 'wheel settings round-trip' );
-		assert.equal( b3.b3Vehicle_GetDrivetrain( vehicle ).differentials[ 0 ].leftWheel, 2, 'fixed arrays round-trip' );
+		assert.equal( b3.b3WheeledVehicle_GetDrivetrain( vehicle ).differentials[ 0 ].leftWheel, 2, 'fixed arrays round-trip' );
 
-		const [ wheelPos, wheelRot ] = b3.b3Vehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, 0 );
+		const [ wheelPos, wheelRot ] = b3.b3WheeledVehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, 0 );
 		assert.ok( Math.abs( Math.hypot( ...wheelRot ) - 1 ) < 1e-3 && wheelPos.every( Number.isFinite ), 'wheel transform reads' );
 		assertFinite( vehicle, chassis, 'default car' );
 
 		b3.b3Body_SetLinearVelocity( chassis, [ 0, 0, 0 ] );
-		b3.b3Vehicle_Reset( vehicle, [ 0, 1, 0 ], [ 0, 0, 0, 1 ] );
+		b3.b3WheeledVehicle_Reset( vehicle, [ 0, 1, 0 ], [ 0, 0, 0, 1 ] );
 		assert.ok( Math.abs( position( chassis )[ 1 ] - 1 ) < 1e-5, 'reset teleports the chassis' );
 
-		b3.b3DestroyVehicle( vehicle );
-		assert.ok( !b3.b3Vehicle_IsValid( vehicle ), 'destroyed vehicle is invalid' );
-		assert.equal( b3.b3World_GetVehicleCount( world ), 0, 'world has no vehicles left' );
+		b3.b3DestroyWheeledVehicle( vehicle );
+		assert.ok( !b3.b3WheeledVehicle_IsValid( vehicle ), 'destroyed vehicle is invalid' );
+		assert.equal( b3.b3World_GetWheeledVehicleCount( world ), 0, 'world has no vehicles left' );
 		b3.b3DestroyWorld( world );
 	}
 
 	// Turbo: naturally aspirated by default, live settings round-trip, boost builds with lag and
 	// shows in both readouts. Every turbo type keeps the car's rated torque.
 	{
-		const { turboTypes, turboGain, buildVehiclePreset } = await import( '../dist/vehicles.mjs' );
+		const { turboTypes, turboGain, buildWheeledVehiclePreset } = await import( '../dist/wheeled-vehicles.mjs' );
 		const world = createWorld();
 		const { vehicle, chassis } = createCar( world );
-		const na = b3.b3Vehicle_GetTurbo( vehicle );
+		const na = b3.b3WheeledVehicle_GetTurbo( vehicle );
 		assert.equal( na.stages.length, 2, 'turbo stages are a fixed array' );
 		assert.ok( na.stages.every( ( s ) => s.gain === 0 ) && !na.antiLag, 'default car is naturally aspirated' );
-		b3.b3Vehicle_SetTurbo( vehicle, { ...na, stages: [ { gain: 0.5, spoolRpm: 2000, fullBoostRpm: 3500, spoolTime: 0.8, bleedTime: 0.15 }, na.stages[ 1 ] ] } );
-		assert.equal( b3.b3Vehicle_GetTurbo( vehicle ).stages[ 0 ].fullBoostRpm, 3500, 'turbo settings round-trip' );
+		b3.b3WheeledVehicle_SetTurbo( vehicle, { ...na, stages: [ { gain: 0.5, spoolRpm: 2000, fullBoostRpm: 3500, spoolTime: 0.8, bleedTime: 0.15 }, na.stages[ 1 ] ] } );
+		assert.equal( b3.b3WheeledVehicle_GetTurbo( vehicle ).stages[ 0 ].fullBoostRpm, 3500, 'turbo settings round-trip' );
 		step( world, 60 );
-		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 1 ) );
 		step( world, 15 );
 		const early = readState( vehicle ).boost;
 		step( world, 240 );
 		const late = readState( vehicle ).boost;
 		assert.ok( early < late && late > 0.3 && late <= 0.5 + 1e-4, `boost builds with lag (${early.toFixed( 2 )} then ${late.toFixed( 2 )})` );
-		assert.ok( Math.abs( b3.b3Vehicle_GetState( vehicle ).boost - late ) < 1e-6, 'packed and plain readouts agree on boost' );
+		assert.ok( Math.abs( b3.b3WheeledVehicle_GetState( vehicle ).boost - late ) < 1e-6, 'packed and plain readouts agree on boost' );
 		assertFinite( vehicle, chassis, 'turbo car' );
 		b3.b3DestroyWorld( world );
 
-		const base = buildVehiclePreset( b3, 'sports', 100, 'rwd' );
+		const base = buildWheeledVehiclePreset( b3, 'sports', 100, 'rwd' );
 		for ( const type of Object.keys( turboTypes ) )
 		{
-			const def = buildVehiclePreset( b3, 'sports', 100, 'rwd', type );
+			const def = buildWheeledVehiclePreset( b3, 'sports', 100, 'rwd', type );
 			const rated = def.engine.maxTorque * ( 1 + turboGain( def.turbo ) );
 			assert.ok( Math.abs( rated - base.engine.maxTorque ) < 1e-3, `${type}: keeps the rated torque` );
 			const w = createWorld();
-			const car = createCar( w, { def, halfExtents: vehiclePresets[ 'sports-100-rwd' ].halfExtents } );
+			const car = createCar( w, { def, halfExtents: wheeledVehiclePresets[ 'sports-100-rwd' ].halfExtents } );
 			step( w, 60 );
-			b3.b3Vehicle_SetInput( car.vehicle, input( 1 ) );
+			b3.b3WheeledVehicle_SetInput( car.vehicle, input( 1 ) );
 			step( w, 300 );
 			assert.ok( readState( car.vehicle ).speed > 15, `${type}: drives` );
 			assertFinite( car.vehicle, car.chassis, `${type} turbo` );
@@ -1482,7 +1482,7 @@ async function vehicleScenarios( b3 )
 		for ( let i = 0; i < 900; i++ )
 		{
 			const speed = readState( vehicle ).speed;
-			b3.b3Vehicle_SetInput( vehicle, input( Math.min( Math.max( ( 5 - speed ) * 0.5, 0 ), 1 ), 0, -1 ) );
+			b3.b3WheeledVehicle_SetInput( vehicle, input( Math.min( Math.max( ( 5 - speed ) * 0.5, 0 ), 1 ), 0, -1 ) );
 			step( world, 1 );
 			if ( i > 300 )
 			{
@@ -1504,9 +1504,9 @@ async function vehicleScenarios( b3 )
 		const q = axisAngle( [ 1, 0, 0 ], degrees * Math.PI / 180 );
 		const world = createWorld( q );
 		const { vehicle, chassis } = createCar( world, { position: [ 0, 0.7, 0 ], rotation: q } );
-		b3.b3Vehicle_SetInput( vehicle, input( 0, brake, 0, handbrake ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 0, brake, 0, handbrake ) );
 		step( world, 60 );
-		b3.b3Vehicle_SetInput( vehicle, input( 0, 0, 0, handbrake ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 0, 0, 0, handbrake ) );
 		step( world, 60 );
 		const start = position( chassis );
 		step( world, 300 );
@@ -1523,7 +1523,7 @@ async function vehicleScenarios( b3 )
 		const { vehicle, chassis } = createCar( world );
 		for ( let i = 0; i < 400; i++ )
 		{
-			b3.b3Vehicle_SetInput( vehicle, input( 1, 0, Math.sin( i * 0.05 ), i > 300 ? 1 : 0 ) );
+			b3.b3WheeledVehicle_SetInput( vehicle, input( 1, 0, Math.sin( i * 0.05 ), i > 300 ? 1 : 0 ) );
 			step( world, 1 );
 		}
 		const out = [ ...position( chassis ), ...b3.b3Body_GetRotation( rot, chassis ), readState( vehicle ).engineRpm ];
@@ -1534,18 +1534,18 @@ async function vehicleScenarios( b3 )
 
 	// Each example preset settles and drives 200 m without blowing up or flipping
 	results.presets = {};
-	for ( const name of Object.keys( vehiclePresets ) )
+	for ( const name of Object.keys( wheeledVehiclePresets ) )
 	{
 		const world = createWorld();
 		const { vehicle, chassis } = createCar( world, {
-			def: createPresetVehicleDef( b3, name ),
-			halfExtents: vehiclePresets[ name ].halfExtents,
+			def: createPresetWheeledVehicleDef( b3, name ),
+			halfExtents: wheeledVehiclePresets[ name ].halfExtents,
 			position: [ 0, 1.3, 0 ],
 		} );
 		step( world, 120 );
 		assert.equal( readState( vehicle ).wheelsInContact, 4, `${name}: settles on four wheels` );
 		assert.ok( Math.abs( b3.b3Body_GetLinearVelocity( pos, chassis )[ 1 ] ) < 0.02, `${name}: suspension settled` );
-		b3.b3Vehicle_SetInput( vehicle, input( 1 ) );
+		b3.b3WheeledVehicle_SetInput( vehicle, input( 1 ) );
 		let t = 0;
 		while ( position( chassis )[ 2 ] < 200 && t < 30 )
 		{
@@ -1572,26 +1572,26 @@ async function vehicleScenarios( b3 )
 			for ( const key of rising ) assert.ok( b[ key ] >= a[ key ], `realism ${order[ i ]}: ${key} does not fall` );
 			assert.ok( b.driftGripScale <= a.driftGripScale, `realism ${order[ i ]}: drift grip does not rise` );
 		}
-		assert.equal( Object.keys( vehiclePresets ).length, 4 + 45, '4 original presets and 45 matrix presets' );
-		for ( const car of Object.keys( vehicleCars ) )
+		assert.equal( Object.keys( wheeledVehiclePresets ).length, 4 + 45, '4 original presets and 45 matrix presets' );
+		for ( const car of Object.keys( wheeledVehicleCars ) )
 		{
 			for ( const drive of Object.keys( drivetrainLayers ) )
 			{
-				const real = buildVehiclePreset( b3, car, 100, drive );
-				const arcade = buildVehiclePreset( b3, car, 0, drive );
+				const real = buildWheeledVehiclePreset( b3, car, 100, drive );
+				const arcade = buildWheeledVehiclePreset( b3, car, 0, drive );
 				const shares = real.drivetrain.differentials.slice( 0, real.drivetrain.differentialCount );
 				const sum = shares.reduce( ( total, d ) => total + d.torqueRatio, 0 );
 				assert.ok( Math.abs( sum - 1 ) < 1e-6, `${car} ${drive}: torque shares add to 1` );
 				const driven = new Set( shares.flatMap( ( d ) => [ d.leftWheel, d.rightWheel ] ) );
 				const expected = { fwd: [ 0, 1 ], rwd: [ 2, 3 ], awd: [ 0, 1, 2, 3 ] }[ drive ];
 				assert.deepEqual( [ ...driven ].sort(), expected, `${car} ${drive}: drives the right wheels` );
-				assert.equal( real.chassis.mass, vehicleCars[ car ].mass, `${car} ${drive}: car mass` );
+				assert.equal( real.chassis.mass, wheeledVehicleCars[ car ].mass, `${car} ${drive}: car mass` );
 				const ratio = arcade.wheels[ 0 ].tire.lateralPeakFriction / real.wheels[ 0 ].tire.lateralPeakFriction;
 				assert.ok( Math.abs( ratio - realismLevels[ 0 ].tireGrip ) < 1e-5, `${car} ${drive}: arcade grip scale` );
 				assert.ok( arcade.chassis.centerOfMassOffset[ 1 ] < real.chassis.centerOfMassOffset[ 1 ], `${car} ${drive}: arcade center of mass is lower` );
 				// A preset is a pure function of its name
 				assert.deepEqual( JSON.stringify( real, ( _, v ) => typeof v === 'bigint' ? String( v ) : v ),
-					JSON.stringify( createPresetVehicleDef( b3, `${car}-100-${drive}` ), ( _, v ) => typeof v === 'bigint' ? String( v ) : v ),
+					JSON.stringify( createPresetWheeledVehicleDef( b3, `${car}-100-${drive}` ), ( _, v ) => typeof v === 'bigint' ? String( v ) : v ),
 					`${car} ${drive}: presets are reproducible` );
 			}
 		}
@@ -1646,7 +1646,7 @@ async function vehicleScenarios( b3 )
 				}
 			}
 			assert.ok( steepest < 0.4, `${name}: ground within 15 m of the road is drivable (steepest ${( steepest * 100 ).toFixed( 0 )}%)` );
-			const lap = driveLap( name, vehiclePresets[ presetName ], { b3 } );
+			const lap = driveLap( name, wheeledVehiclePresets[ presetName ], { b3 } );
 			assert.ok( lap.completed, `${name}: ${presetName} completes a lap` );
 			assert.ok( lap.minUp > 0.3, `${name}: ${presetName} does not flip (upright ${lap.minUp.toFixed( 2 )})` );
 			results.laps[ name ] = lap.lapTime;
@@ -1660,7 +1660,7 @@ async function vehicleScenarios( b3 )
 		for ( let i = 0; i < 50; i++ )
 		{
 			const car = createCar( world, { position: [ ( i % 10 ) * 20, 1, Math.floor( i / 10 ) * 20 ] } );
-			b3.b3Vehicle_SetInput( car.vehicle, input( 0.6, 0, 0.5 ) );
+			b3.b3WheeledVehicle_SetInput( car.vehicle, input( 0.6, 0, 0.5 ) );
 			cars.push( car );
 		}
 		step( world, 120 );
@@ -1669,13 +1669,13 @@ async function vehicleScenarios( b3 )
 		for ( let i = 0; i < steps; i++ )
 		{
 			b3.b3World_Step( world, dt, 4 );
-			for ( const car of cars ) b3.getVehicleStateData( buf, car.vehicle );
+			for ( const car of cars ) b3.getWheeledVehicleStateData( buf, car.vehicle );
 		}
 		results.perf = ( performance.now() - t0 ) / steps;
 		// Wall-clock time depends on the machine and the build (the multithreaded one pays for its workers), so
 		// this only catches a gross regression. Typical is about 0.5 ms on a desktop.
 		assert.ok( results.perf < 10, `50 vehicles step in ${results.perf.toFixed( 3 )} ms` );
-		assert.equal( b3.b3World_GetVehicleCount( world ), 50, 'world counts its vehicles' );
+		assert.equal( b3.b3World_GetWheeledVehicleCount( world ), 50, 'world counts its vehicles' );
 		b3.b3DestroyWorld( world );
 	}
 
@@ -1705,7 +1705,7 @@ async function vehicleScenarios( b3 )
 		for ( const frame of frames )
 		{
 			const world = createWorld( tilt );
-			const def = b3.b3DefaultVehicleDef();
+			const def = b3.b3DefaultWheeledVehicleDef();
 			def.chassis.up = frame.up;
 			def.chassis.forward = frame.forward;
 			const wheels = def.wheels;
@@ -1715,7 +1715,7 @@ async function vehicleScenarios( b3 )
 				def, position: [ 0, 1, 0 ], rotation: qmul( tilt, frame.rotation ), halfExtents: frame.toChassis( [ 0.9, 0.3, 2.1 ] ),
 			} );
 			step( world, 60 );
-			b3.b3Vehicle_SetInput( vehicle, input( 1, 0, 0.6 ) );
+			b3.b3WheeledVehicle_SetInput( vehicle, input( 1, 0, 0.6 ) );
 			step( world, 90 );
 
 			const s = readState( vehicle );
@@ -1727,13 +1727,13 @@ async function vehicleScenarios( b3 )
 			assert.ok( Math.abs( s.wheels[ 0 ].steerAngle ) > 0.05, `${label}: front wheels steer` );
 
 			const data = new Float32Array( b3.B3_MAX_VEHICLE_WHEELS * stride );
-			assert.equal( b3.b3Vehicle_GetWheelLocalData( data, vehicle ), 4, `${label}: bulk readout reports the wheel count` );
+			assert.equal( b3.b3WheeledVehicle_GetWheelLocalData( data, vehicle ), 4, `${label}: bulk readout reports the wheel count` );
 			const [ cp, cq ] = b3.b3Body_GetTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], chassis );
 			let worstP = 0, worstQ = 0;
 			for ( let i = 0; i < 4; i++ )
 			{
-				const [ lp, lq ] = b3.b3Vehicle_GetWheelLocalTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
-				const [ wp, wq ] = b3.b3Vehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
+				const [ lp, lq ] = b3.b3WheeledVehicle_GetWheelLocalTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
+				const [ wp, wq ] = b3.b3WheeledVehicle_GetWheelTransform( [ 0, 0, 0 ], [ 0, 0, 0, 1 ], vehicle, i );
 				const p = rotate( cq, lp ).map( ( x, k ) => x + cp[ k ] );
 				const q = qmul( cq, lq );
 				worstP = Math.max( worstP, Math.hypot( p[ 0 ] - wp[ 0 ], p[ 1 ] - wp[ 1 ], p[ 2 ] - wp[ 2 ] ) );
@@ -1745,7 +1745,7 @@ async function vehicleScenarios( b3 )
 				assert.deepEqual( [ ...data.subarray( o + 7, o + 11 ) ], [ w.rotationAngle, w.angularVelocity, w.steerAngle, w.suspensionLength ],
 					`${label}: wheel ${i} raw spin, steer and suspension` );
 				// The chassis-space center sits below the attachment point by the suspension length
-				const attach = b3.b3Vehicle_GetWheel( vehicle, i ).position;
+				const attach = b3.b3WheeledVehicle_GetWheel( vehicle, i ).position;
 				const drop = attach.map( ( x, k ) => x - lp[ k ] );
 				assert.ok( Math.hypot( ...drop.map( ( x, k ) => x - w.suspensionLength * frame.up[ k ] ) ) < 1e-6, `${label}: wheel ${i} hangs along chassis up` );
 			}
@@ -1754,11 +1754,11 @@ async function vehicleScenarios( b3 )
 			assert.ok( s.wheels.every( ( w ) => Math.abs( w.angularVelocity ) > 5 ), `${label}: wheels spin` );
 
 			const plain = new Array( 4 * stride ).fill( 0 );
-			assert.equal( b3.b3Vehicle_GetWheelLocalData( plain, vehicle ), 4, `${label}: a plain array works too` );
+			assert.equal( b3.b3WheeledVehicle_GetWheelLocalData( plain, vehicle ), 4, `${label}: a plain array works too` );
 			assert.deepEqual( plain, [ ...data.subarray( 0, 4 * stride ) ], `${label}: plain array matches` );
-			assert.throws( () => b3.b3Vehicle_GetWheelLocalData( new Float32Array( 4 * stride - 1 ), vehicle ), RangeError, `${label}: a short array is refused` );
-			b3.b3DestroyVehicle( vehicle );
-			assert.equal( b3.b3Vehicle_GetWheelLocalData( data, vehicle ), 0, `${label}: destroyed vehicle reports no wheels` );
+			assert.throws( () => b3.b3WheeledVehicle_GetWheelLocalData( new Float32Array( 4 * stride - 1 ), vehicle ), RangeError, `${label}: a short array is refused` );
+			b3.b3DestroyWheeledVehicle( vehicle );
+			assert.equal( b3.b3WheeledVehicle_GetWheelLocalData( data, vehicle ), 0, `${label}: destroyed vehicle reports no wheels` );
 			b3.b3DestroyWorld( world );
 		}
 	}
@@ -1767,27 +1767,27 @@ async function vehicleScenarios( b3 )
 	{
 		const world = createWorld();
 		const { vehicle } = createCar( world );
-		b3.getVehicleStateData( buf, vehicle );
-		assert.equal( b3.getNumVehicleWheels( buf ), 4, 'valid vehicle packs its wheels' );
-		b3.b3DestroyVehicle( vehicle );
-		b3.getVehicleStateData( buf, vehicle );
-		assert.equal( b3.getNumVehicleWheels( buf ), 0, 'destroyed vehicle packs no wheels' );
-		b3.getVehicleStateAt( state, buf );
+		b3.getWheeledVehicleStateData( buf, vehicle );
+		assert.equal( b3.getNumWheeledVehicleWheels( buf ), 4, 'valid vehicle packs its wheels' );
+		b3.b3DestroyWheeledVehicle( vehicle );
+		b3.getWheeledVehicleStateData( buf, vehicle );
+		assert.equal( b3.getNumWheeledVehicleWheels( buf ), 0, 'destroyed vehicle packs no wheels' );
+		b3.getWheeledVehicleStateAt( state, buf );
 		assert.equal( state.wheelsInContact, 0, 'destroyed vehicle reads as empty' );
-		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 0 ), RangeError, 'no wheel to read after destroy' );
-		b3.getVehicleStateData( buf, createCar( world ).vehicle );
-		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
-		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
-		assert.throws( () => b3.getVehicleWheelAt( wheel, buf, 1.5 ), RangeError, 'fractional wheel index is refused' );
+		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 0 ), RangeError, 'no wheel to read after destroy' );
+		b3.getWheeledVehicleStateData( buf, createCar( world ).vehicle );
+		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
+		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
+		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 1.5 ), RangeError, 'fractional wheel index is refused' );
 		b3.b3DestroyWorld( world );
 
-		const spare = b3.createVehicleStateBuffer();
-		b3.destroyVehicleStateBuffer( spare );
-		b3.destroyVehicleStateBuffer( spare );
-		assert.throws( () => b3.getVehicleStateData( spare, vehicle ), /destroyed/, 'a destroyed buffer cannot be refilled' );
+		const spare = b3.createWheeledVehicleStateBuffer();
+		b3.destroyWheeledVehicleStateBuffer( spare );
+		b3.destroyWheeledVehicleStateBuffer( spare );
+		assert.throws( () => b3.getWheeledVehicleStateData( spare, vehicle ), /destroyed/, 'a destroyed buffer cannot be refilled' );
 	}
 
-	b3.destroyVehicleStateBuffer( buf );
+	b3.destroyWheeledVehicleStateBuffer( buf );
 	return results;
 }
 
@@ -1958,7 +1958,7 @@ async function check( label, importPath, decompositionOptions )
 console.log( 'box3d.js smoke test' );
 // The hand-written modules are copied into dist/ by the build. A stale copy ships old code.
 for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 'three.d.ts' ], [ 'character.js', 'character.mjs' ],
-	[ 'character.d.ts', 'character.d.ts' ], [ 'vehicles.js', 'vehicles.mjs' ], [ 'vehicles.d.ts', 'vehicles.d.ts' ] ] )
+	[ 'character.d.ts', 'character.d.ts' ], [ 'wheeled-vehicles.js', 'wheeled-vehicles.mjs' ], [ 'wheeled-vehicles.d.ts', 'wheeled-vehicles.d.ts' ] ] )
 {
 	assert.equal( readFileSync( new URL( `../dist/${built}`, import.meta.url ), 'utf8' ), readFileSync( new URL( `../src/${source}`, import.meta.url ), 'utf8' ),
 		`dist/${built} differs from src/${source}: run pnpm build` );

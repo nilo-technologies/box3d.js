@@ -1,6 +1,6 @@
 // Drives vehicle presets with a keyboard (WASD) driver on a flat test course and reports how fast
 // a keyboard player can corner before the car leaves the road, and how it fails above that pace.
-// Runs against dist/, with the presets from src/vehicles.js so a tuning edit needs no rebuild.
+// Runs against dist/, with the presets from src/wheeled-vehicles.js so a tuning edit needs no rebuild.
 //
 //   node examples/scripts/vehicle-wasd.mjs --preset sports-50-rwd
 //   node examples/scripts/vehicle-wasd.mjs --car sports           all 15 sports car presets
@@ -30,8 +30,8 @@ import { pathToFileURL } from 'node:url';
 
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
-const { vehiclePresets, createSteeringLimiter } = await import(
-	new URL('src/vehicles.js', root).href
+const { wheeledVehiclePresets, createSteeringLimiter } = await import(
+	new URL('src/wheeled-vehicles.js', root).href
 );
 
 const b3 = await Box3D();
@@ -89,11 +89,11 @@ export function driveLap(preset, pace, style = driverStyles[1], options = {}) {
 	bodyDef.position = [0, 1.2, 0];
 	const chassis = b3.b3CreateBody(world, bodyDef);
 	b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), ...preset.halfExtents);
-	const def = preset.apply(b3.b3DefaultVehicleDef());
+	const def = preset.apply(b3.b3DefaultWheeledVehicleDef());
 	def.chassisId = chassis;
-	const vehicle = b3.b3CreateVehicle(world, def);
+	const vehicle = b3.b3CreateWheeledVehicle(world, def);
 	const limitSteer = createSteeringLimiter(b3);
-	const steering = b3.b3Vehicle_GetSteering(vehicle);
+	const steering = b3.b3WheeledVehicle_GetSteering(vehicle);
 	const wheels = def.wheels.slice(0, def.wheelCount);
 
 	const cornerSpeed = line.map((p) => (p.k === 0 ? Number.POSITIVE_INFINITY : Math.sqrt((pace * 9.81) / Math.abs(p.k))));
@@ -152,7 +152,7 @@ export function driveLap(preset, pace, style = driverStyles[1], options = {}) {
 		}
 		const throttle = speed < want - 0.5 ? 1 : 0;
 		const brake = speed > want + 1.5 ? 1 : 0;
-		b3.b3Vehicle_SetInput(vehicle, {
+		b3.b3WheeledVehicle_SetInput(vehicle, {
 			forward: throttle - brake,
 			brake: 0,
 			steer: limit ? limitSteer(chassis, steering, wheels, steer, brake) : steer,
@@ -220,8 +220,8 @@ if (isMain) {
 			if (!(args.pace > 0)) throw new Error(`--pace needs a number above 0, got ${argv[i]}`);
 		} else throw new Error(`unknown argument ${a}`);
 	}
-	const names = Object.keys(vehiclePresets).filter((name) => {
-		const m = vehiclePresets[name].matrix;
+	const names = Object.keys(wheeledVehiclePresets).filter((name) => {
+		const m = wheeledVehiclePresets[name].matrix;
 		return args.presets.includes(name) || (m && (args.all || args.cars.includes(m.car)));
 	});
 	if (names.length === 0) {
@@ -230,7 +230,7 @@ if (isMain) {
 	}
 	const rows = [];
 	for (const name of names) {
-		const preset = vehiclePresets[name];
+		const preset = wheeledVehiclePresets[name];
 		if (args.pace) {
 			const r = driveLap(preset, args.pace, driverStyles[1], { limit: args.limit, log: args.json ? undefined : console.log });
 			rows.push({ preset: name, pace: args.pace, ...r });

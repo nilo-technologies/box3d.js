@@ -1,6 +1,6 @@
 # Archetypes
 
-Starting ranges for the car layer at 100% realism, and the targets the metrics script checks (`archetypes` in `examples/scripts/vehicle-metrics.mjs`). Pick values inside the ranges that fit the brief, then measure. Any field not listed here stays at its `b3DefaultVehicleDef()` default. How the targets move with the realism level is in realism.md. Targets are from published figures for real cars of each class; 0-100 figures are launch control runs, and so is the test: `assists.launchControl` is on by default.
+Starting ranges for the car layer at 100% realism, and the targets the metrics script checks (`archetypes` in `examples/scripts/vehicle-metrics.mjs`). Pick values inside the ranges that fit the brief, then measure. Any field not listed here stays at its `b3DefaultWheeledVehicleDef()` default. How the targets move with the realism level is in realism.md. Targets are from published figures for real cars of each class; 0-100 figures are launch control runs, and so is the test: `assists.launchControl` is on by default.
 
 ## Targets (100% realism)
 

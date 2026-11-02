@@ -147,7 +147,7 @@ const fixed = (i) => {
 	return 2 * (x - Math.floor(x)) - 1;
 };
 
-class VehicleTurboProcessor extends AudioWorkletProcessor {
+class WheeledVehicleTurboProcessor extends AudioWorkletProcessor {
 	static get parameterDescriptors() {
 		return [
 			// Shaft speed, 0 stopped to 1 at full boost, before the idle spin is added
@@ -383,4 +383,4 @@ class VehicleTurboProcessor extends AudioWorkletProcessor {
 	}
 }
 
-registerProcessor('vehicle-turbo', VehicleTurboProcessor);
+registerProcessor('vehicle-turbo', WheeledVehicleTurboProcessor);

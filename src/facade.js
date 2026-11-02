@@ -1094,41 +1094,41 @@ function getDebugTransformAt( out, buf, i )
 
 // --- vehicle readout (reusable, wasm-backed; zero JS alloc per frame) ---------
 //
-//   const vb = b3.createVehicleStateBuffer();     // allocate once
-//   const state = b3.createVehicleStateRecord();  // reusable records, once
-//   const wheel = b3.createVehicleWheelRecord();
+//   const vb = b3.createWheeledVehicleStateBuffer();     // allocate once
+//   const state = b3.createWheeledVehicleStateRecord();  // reusable records, once
+//   const wheel = b3.createWheeledVehicleWheelRecord();
 //   // each frame, after stepping:
-//   b3.getVehicleStateData( vb, vehicleId );      // one crossing for the vehicle and all wheels
-//   b3.getVehicleStateAt( state, vb );
-//   for ( let i = 0, n = b3.getNumVehicleWheels( vb ); i < n; i++ )
+//   b3.getWheeledVehicleStateData( vb, wheeledVehicleId );      // one crossing for the vehicle and all wheels
+//   b3.getWheeledVehicleStateAt( state, vb );
+//   for ( let i = 0, n = b3.getNumWheeledVehicleWheels( vb ); i < n; i++ )
 //   {
-//     b3.getVehicleWheelAt( wheel, vb, i );       // wheel.position, wheel.rotation, wheel.load, ...
+//     b3.getWheeledVehicleWheelAt( wheel, vb, i );       // wheel.position, wheel.rotation, wheel.load, ...
 //   }
-//   b3.destroyVehicleStateBuffer( vb );
+//   b3.destroyWheeledVehicleStateBuffer( vb );
 //
-// The field read order below must match the VehicleStateBuffer packing order in src/bindings.cpp.
+// The field read order below must match the WheeledVehicleStateBuffer packing order in src/bindings.cpp.
 
-const VEHICLE_I32 = LAYOUT.vehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
-const VEHICLE_F32 = LAYOUT.vehicleF32; //            speed engineRpm throttle brake steerAngle boost
-const VEHICLE_WHEEL_I32 = LAYOUT.vehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
-const VEHICLE_WHEEL_F32 = LAYOUT.vehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
-const VEHICLE_WHEEL_F64 = LAYOUT.vehicleWheelF64; // position(3) contactPoint(3)
+const VEHICLE_I32 = LAYOUT.wheeledVehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
+const VEHICLE_F32 = LAYOUT.wheeledVehicleF32; //            speed engineRpm throttle brake steerAngle boost
+const VEHICLE_WHEEL_I32 = LAYOUT.wheeledVehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
+const VEHICLE_WHEEL_F32 = LAYOUT.wheeledVehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
+const VEHICLE_WHEEL_F64 = LAYOUT.wheeledVehicleWheelF64; // position(3) contactPoint(3)
 
-// Chassis-space wheel readout, b3Vehicle_GetWheelLocalData(out, vehicleId) below: per wheel
+// Chassis-space wheel readout, b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId) below: per wheel
 // position(3) rotation(4) rotationAngle angularVelocity steerAngle suspensionLength.
-const VEHICLE_WHEEL_LOCAL = LAYOUT.vehicleWheelLocal;
-const MAX_VEHICLE_WHEELS = LAYOUT.maxVehicleWheels;
+const VEHICLE_WHEEL_LOCAL = LAYOUT.wheeledVehicleWheelLocal;
+const MAX_VEHICLE_WHEELS = LAYOUT.maxWheeledVehicleWheels;
 
-function createVehicleStateBuffer()
+function createWheeledVehicleStateBuffer()
 {
-	return { _impl: new Module.VehicleStateBufferImpl(), wheelCount: 0, i32: null, f32: null, f64: null, i32Base: 0, f32Base: 0, f64Base: 0 };
+	return { _impl: new Module.WheeledVehicleStateBufferImpl(), wheelCount: 0, i32: null, f32: null, f64: null, i32Base: 0, f32Base: 0, f64Base: 0 };
 }
 
-function getVehicleStateData( buf, vehicleId )
+function getWheeledVehicleStateData( buf, wheeledVehicleId )
 {
 	const impl = buf._impl;
-	if ( impl === null ) throw new Error( 'getVehicleStateData: the vehicle state buffer was destroyed' );
-	impl.load( vehicleId );
+	if ( impl === null ) throw new Error( 'getWheeledVehicleStateData: the vehicle state buffer was destroyed' );
+	impl.load( wheeledVehicleId );
 	buf.wheelCount = impl.wheelCount();
 	buf.i32 = HEAP32; buf.i32Base = impl.i32Ptr() >> 2;
 	buf.f32 = HEAPF32; buf.f32Base = impl.f32Ptr() >> 2;
@@ -1136,7 +1136,7 @@ function getVehicleStateData( buf, vehicleId )
 	return buf;
 }
 
-function destroyVehicleStateBuffer( buf )
+function destroyWheeledVehicleStateBuffer( buf )
 {
 	if ( buf._impl === null ) return;
 	buf._impl.delete();
@@ -1145,16 +1145,16 @@ function destroyVehicleStateBuffer( buf )
 	buf.i32 = null; buf.f32 = null; buf.f64 = null;
 }
 
-function getNumVehicleWheels( buf ) { return buf.wheelCount; }
+function getNumWheeledVehicleWheels( buf ) { return buf.wheelCount; }
 
-function createVehicleStateRecord()
+function createWheeledVehicleStateRecord()
 {
 	return { speed: 0, engineRpm: 0, boost: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false, isLaunching: false };
 }
 
-function getVehicleStateAt( out, buf )
+function getWheeledVehicleStateAt( out, buf )
 {
-	if ( buf.i32 === null ) throw new Error( 'getVehicleStateAt: call getVehicleStateData first' );
+	if ( buf.i32 === null ) throw new Error( 'getWheeledVehicleStateAt: call getWheeledVehicleStateData first' );
 	const a = buf.i32; const is = buf.i32Base;
 	const f = buf.f32; const fs = buf.f32Base;
 	out.gear = a[ is ];
@@ -1171,7 +1171,7 @@ function getVehicleStateAt( out, buf )
 	return out;
 }
 
-function createVehicleWheelRecord()
+function createWheeledVehicleWheelRecord()
 {
 	return {
 		position: [ 0, 0, 0 ], rotation: [ 0, 0, 0, 1 ],
@@ -1184,10 +1184,10 @@ function createVehicleWheelRecord()
 	};
 }
 
-function getVehicleWheelAt( out, buf, i )
+function getWheeledVehicleWheelAt( out, buf, i )
 {
 	// Only wheelCount records were packed, so any other index would read unrelated wasm memory
-	if ( !( Number.isInteger( i ) && i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
+	if ( !( Number.isInteger( i ) && i >= 0 && i < buf.wheelCount ) ) throw new RangeError( `getWheeledVehicleWheelAt: wheel ${i} is out of range, the buffer holds ${buf.wheelCount} wheels` );
 	const a = buf.i32; const is = buf.i32Base + VEHICLE_I32 + i * VEHICLE_WHEEL_I32;
 	const f = buf.f32; const fs = buf.f32Base + VEHICLE_F32 + i * VEHICLE_WHEEL_F32;
 	const d = buf.f64; const ds = buf.f64Base + i * VEHICLE_WHEEL_F64;
@@ -1307,15 +1307,15 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	// Every wheel's chassis-space pose and raw spin in one call. The raw writer packs the records
 	// into a static wasm scratch (stable address, so resolved once); copy them into the caller's
 	// array with a plain loop, which allocates nothing. Returns the wheel count.
-	const WHEEL_LOCAL_F32 = Module.b3_getVehicleWheelLocalScratch() >>> 2;
-	delete Module.b3_getVehicleWheelLocalScratch;
-	const rawWheelLocal = Module.b3Vehicle_GetWheelLocalDataInto;
-	delete Module.b3Vehicle_GetWheelLocalDataInto;
-	Module.b3Vehicle_GetWheelLocalData = ( out, vehicleId ) =>
+	const WHEEL_LOCAL_F32 = Module.b3_getWheeledVehicleWheelLocalScratch() >>> 2;
+	delete Module.b3_getWheeledVehicleWheelLocalScratch;
+	const rawWheelLocal = Module.b3WheeledVehicle_GetWheelLocalDataInto;
+	delete Module.b3WheeledVehicle_GetWheelLocalDataInto;
+	Module.b3WheeledVehicle_GetWheelLocalData = ( out, wheeledVehicleId ) =>
 	{
-		const count = rawWheelLocal( vehicleId );
+		const count = rawWheelLocal( wheeledVehicleId );
 		const n = count * VEHICLE_WHEEL_LOCAL;
-		if ( !( out.length >= n ) ) throw new RangeError( `b3Vehicle_GetWheelLocalData: out holds ${out.length} floats, ${count} wheels need ${n}` );
+		if ( !( out.length >= n ) ) throw new RangeError( `b3WheeledVehicle_GetWheelLocalData: out holds ${out.length} floats, ${count} wheels need ${n}` );
 		const h = HEAPF32;
 		for ( let k = 0; k < n; k++ ) out[ k ] = h[ WHEEL_LOCAL_F32 + k ];
 		return count;
@@ -1349,8 +1349,8 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createDebugBoxPrimitive, getDebugBoxAt,
 		createDebugBoundsPrimitive, getDebugBoundsAt,
 		createDebugTransformPrimitive, getDebugTransformAt,
-		createVehicleStateBuffer, getVehicleStateData, destroyVehicleStateBuffer, getNumVehicleWheels,
-		createVehicleStateRecord, getVehicleStateAt, createVehicleWheelRecord, getVehicleWheelAt,
+		createWheeledVehicleStateBuffer, getWheeledVehicleStateData, destroyWheeledVehicleStateBuffer, getNumWheeledVehicleWheels,
+		createWheeledVehicleStateRecord, getWheeledVehicleStateAt, createWheeledVehicleWheelRecord, getWheeledVehicleWheelAt,
 		B3_MAX_VEHICLE_WHEELS: MAX_VEHICLE_WHEELS, B3_VEHICLE_WHEEL_LOCAL_STRIDE: VEHICLE_WHEEL_LOCAL,
 		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,

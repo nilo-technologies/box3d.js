@@ -2,39 +2,39 @@ import type {
 	Box3DModule,
 	b3BodyId,
 	b3Vec3,
-	b3VehicleDef,
-	b3VehicleSteering,
-	b3VehicleTurbo,
-	b3VehicleWheelDef,
+	b3WheeledVehicleDef,
+	b3WheeledVehicleSteering,
+	b3WheeledVehicleTurbo,
+	b3WheeledVehicleWheelDef,
 } from 'box3d.js';
 
-export type VehicleCarName = 'sports' | 'rally' | 'super';
-export type VehicleRealism = 100 | 75 | 50 | 25 | 0;
-export type VehicleDrive = 'fwd' | 'rwd' | 'awd';
-export type VehicleMatrixPresetName =
-	`${VehicleCarName}-${VehicleRealism}-${VehicleDrive}`;
-export type VehiclePresetName =
+export type WheeledVehicleCarName = 'sports' | 'rally' | 'super';
+export type WheeledVehicleRealism = 100 | 75 | 50 | 25 | 0;
+export type WheeledVehicleDrive = 'fwd' | 'rwd' | 'awd';
+export type WheeledVehicleMatrixPresetName =
+	`${WheeledVehicleCarName}-${WheeledVehicleRealism}-${WheeledVehicleDrive}`;
+export type WheeledVehiclePresetName =
 	| 'fwd'
 	| 'rwd'
 	| 'awd'
 	| 'offroad'
-	| VehicleMatrixPresetName;
+	| WheeledVehicleMatrixPresetName;
 
-export interface VehiclePreset {
+export interface WheeledVehiclePreset {
 	title: string;
 	/** Half extents of the chassis collision box (m) */
 	halfExtents: b3Vec3;
 	/** Where a matrix preset sits in the matrix. Absent on the four original presets. */
 	matrix?: {
-		car: VehicleCarName;
-		realism: VehicleRealism;
-		drive: VehicleDrive;
+		car: WheeledVehicleCarName;
+		realism: WheeledVehicleRealism;
+		drive: WheeledVehicleDrive;
 	};
-	/** Tunes a b3DefaultVehicleDef() in place and returns it */
-	apply(def: b3VehicleDef): b3VehicleDef;
+	/** Tunes a b3DefaultWheeledVehicleDef() in place and returns it */
+	apply(def: b3WheeledVehicleDef): b3WheeledVehicleDef;
 }
 
-export interface VehicleTire {
+export interface WheeledVehicleTire {
 	peakSlip: number;
 	longPeak: number;
 	slideSlip: number;
@@ -48,18 +48,18 @@ export interface VehicleTire {
 	rolling: number;
 }
 
-export interface VehicleAxle {
+export interface WheeledVehicleAxle {
 	width: number;
 	/** Brake torque at full brake (N·m) */
 	brake: number;
 	/** Ride frequency (Hz) */
 	frequency: number;
 	/** Tire values for this axle that differ from the car's `tire` */
-	tire?: Partial<VehicleTire>;
+	tire?: Partial<WheeledVehicleTire>;
 }
 
 /** A car at 100% realism, the first preset layer */
-export interface VehicleCar {
+export interface WheeledVehicleCar {
 	title: string;
 	blurb: string;
 	/** Body paint for the examples */
@@ -74,8 +74,8 @@ export interface VehicleCar {
 	layout: [number, number, number, number];
 	wheelRadius: number;
 	wheelInertia: number;
-	front: VehicleAxle;
-	rear: VehicleAxle;
+	front: WheeledVehicleAxle;
+	rear: WheeledVehicleAxle;
 	handbrake: number;
 	suspension: {
 		minLength: number;
@@ -83,7 +83,7 @@ export interface VehicleCar {
 		compressionDamping: number;
 		reboundDamping: number;
 	};
-	tire: VehicleTire;
+	tire: WheeledVehicleTire;
 	engine: {
 		maxTorque: number;
 		peakTorqueRpm: number;
@@ -120,13 +120,13 @@ export interface VehicleCar {
 }
 
 /** The second preset layer */
-export interface VehicleDrivetrainLayer {
+export interface WheeledVehicleDrivetrainLayer {
 	title: string;
-	apply(def: b3VehicleDef, car: VehicleCar): void;
+	apply(def: b3WheeledVehicleDef, car: WheeledVehicleCar): void;
 }
 
 /** The third preset layer */
-export interface VehicleRealismLevel {
+export interface WheeledVehicleRealismLevel {
 	title: string;
 	/** Multiplies every tire friction coefficient, and the rear brake torque */
 	tireGrip: number;
@@ -149,7 +149,7 @@ export interface VehicleRealismLevel {
 	abs: boolean | null;
 }
 
-export type VehicleTurboName =
+export type WheeledVehicleTurboName =
 	| 'none'
 	| 'small'
 	| 'big'
@@ -162,7 +162,7 @@ export type VehicleTurboName =
 	| 'antiLag';
 
 /** One compressor stage. Rpm points are fractions of the engine's max rpm. */
-export interface VehicleTurboStageType {
+export interface WheeledVehicleTurboStageType {
 	gain: number;
 	spool: number;
 	full: number;
@@ -173,88 +173,88 @@ export interface VehicleTurboStageType {
 }
 
 /** The optional fourth preset layer */
-export interface VehicleTurboType {
+export interface WheeledVehicleTurboType {
 	title: string;
 	blurb: string;
-	stages: VehicleTurboStageType[];
+	stages: WheeledVehicleTurboStageType[];
 	instantFraction?: number;
 	/** Fraction of the rated torque spent driving the compressor at full boost */
 	parasitic?: number;
 	antiLag?: boolean;
 }
 
-export const vehicleCars: Record<VehicleCarName, VehicleCar>;
-export const drivetrainLayers: Record<VehicleDrive, VehicleDrivetrainLayer>;
-export const realismLevels: Record<VehicleRealism, VehicleRealismLevel>;
-export const turboTypes: Record<VehicleTurboName, VehicleTurboType>;
-export const vehiclePresets: Record<VehiclePresetName, VehiclePreset>;
+export const wheeledVehicleCars: Record<WheeledVehicleCarName, WheeledVehicleCar>;
+export const drivetrainLayers: Record<WheeledVehicleDrive, WheeledVehicleDrivetrainLayer>;
+export const realismLevels: Record<WheeledVehicleRealism, WheeledVehicleRealismLevel>;
+export const turboTypes: Record<WheeledVehicleTurboName, WheeledVehicleTurboType>;
+export const wheeledVehiclePresets: Record<WheeledVehiclePresetName, WheeledVehiclePreset>;
 
-export function vehiclePresetName(
-	car: VehicleCarName,
-	realism: VehicleRealism,
-	drive: VehicleDrive,
-): VehicleMatrixPresetName;
+export function wheeledVehiclePresetName(
+	car: WheeledVehicleCarName,
+	realism: WheeledVehicleRealism,
+	drive: WheeledVehicleDrive,
+): WheeledVehicleMatrixPresetName;
 
 /** Summed stage gain: the engine makes 1 + this times its torque curve at full boost */
-export function turboGain(turbo: b3VehicleTurbo): number;
+export function turboGain(turbo: b3WheeledVehicleTurbo): number;
 
-/** A b3VehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
-export function makeVehicleTurbo(
-	type: VehicleTurboName,
+/** A b3WheeledVehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
+export function makeWheeledVehicleTurbo(
+	type: WheeledVehicleTurboName,
 	maxRpm: number,
 	ratedTorque: number,
-): b3VehicleTurbo;
+): b3WheeledVehicleTurbo;
 
 /**
  * The type in turboTypes this turbo was fitted from, for an engine with this max rpm and base
  * peak torque, or null for a custom turbo
  */
 export function findTurboType(
-	turbo: b3VehicleTurbo,
+	turbo: b3WheeledVehicleTurbo,
 	maxRpm: number,
 	maxTorque: number,
-): VehicleTurboName | null;
+): WheeledVehicleTurboName | null;
 
 /** Swaps the forced induction, keeping the engine's rated peak torque */
 export function applyTurbo(
-	def: b3VehicleDef,
-	type: VehicleTurboName,
-): b3VehicleDef;
+	def: b3WheeledVehicleDef,
+	type: WheeledVehicleTurboName,
+): b3WheeledVehicleDef;
 
-/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism, then turbo */
-export function applyVehiclePreset(
-	def: b3VehicleDef,
-	car: VehicleCarName,
-	realism: VehicleRealism,
-	drive: VehicleDrive,
-	turbo?: VehicleTurboName,
-): b3VehicleDef;
+/** Tunes a b3DefaultWheeledVehicleDef() in place: car, then drivetrain, then realism, then turbo */
+export function applyWheeledVehiclePreset(
+	def: b3WheeledVehicleDef,
+	car: WheeledVehicleCarName,
+	realism: WheeledVehicleRealism,
+	drive: WheeledVehicleDrive,
+	turbo?: WheeledVehicleTurboName,
+): b3WheeledVehicleDef;
 
-export function buildVehiclePreset(
+export function buildWheeledVehiclePreset(
 	b3: Box3DModule,
-	car: VehicleCarName,
-	realism: VehicleRealism,
-	drive: VehicleDrive,
-	turbo?: VehicleTurboName,
-): b3VehicleDef;
+	car: WheeledVehicleCarName,
+	realism: WheeledVehicleRealism,
+	drive: WheeledVehicleDrive,
+	turbo?: WheeledVehicleTurboName,
+): b3WheeledVehicleDef;
 
-export function createPresetVehicleDef(
+export function createPresetWheeledVehicleDef(
 	b3: Box3DModule,
-	name: VehiclePresetName,
-): b3VehicleDef;
+	name: WheeledVehiclePresetName,
+): b3WheeledVehicleDef;
 
 /** Grip limited steer input for a keyboard or other full lock input. Returns the limited steer. */
-export type VehicleSteeringLimiter = (
+export type WheeledVehicleSteeringLimiter = (
 	chassis: b3BodyId,
-	steering: b3VehicleSteering,
-	wheels: b3VehicleWheelDef[],
+	steering: b3WheeledVehicleSteering,
+	wheels: b3WheeledVehicleWheelDef[],
 	steer: number,
 	/** Brake input, 0 to 1. While braking the cap moves to brakingPeakScale. */
 	braking?: number,
 ) => number;
 
 /**
- * A driver aid applied to the input before b3Vehicle_SetInput: caps the steer angle at
+ * A driver aid applied to the input before b3WheeledVehicle_SetInput: caps the steer angle at
  * `peakScale` (default 1.5) times the front tires' peak slip angle from the direction the front
  * axle travels, and at `brakingPeakScale` (default 1) while braking. The presets are tuned to be
  * driven with it.
@@ -262,4 +262,4 @@ export type VehicleSteeringLimiter = (
 export function createSteeringLimiter(
 	b3: Box3DModule,
 	options?: { peakScale?: number; brakingPeakScale?: number },
-): VehicleSteeringLimiter;
+): WheeledVehicleSteeringLimiter;

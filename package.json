@@ -28,9 +28,9 @@
       "types": "./dist/character.d.ts",
       "import": "./dist/character.mjs"
     },
-    "./vehicles": {
-      "types": "./dist/vehicles.d.ts",
-      "import": "./dist/vehicles.mjs"
+    "./wheeled-vehicles": {
+      "types": "./dist/wheeled-vehicles.d.ts",
+      "import": "./dist/wheeled-vehicles.mjs"
     }
   },
   "files": [
