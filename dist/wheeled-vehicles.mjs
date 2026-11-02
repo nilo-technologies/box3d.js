@@ -1,5 +1,15 @@
-// Vehicle presets shared by the vehicle examples and test/smoke.mjs. Plain JS so Node can
-// import it without a TypeScript step; types live in vehicle-presets.d.ts.
+// Vehicle presets for box3d.js: the four original cars and a 45 car matrix (sports, rally,
+// super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers: car, then drivetrain, then
+// realism level, then an optional turbo. Each preset tunes a b3DefaultWheeledVehicleDef() in place.
+//
+//   import { createPresetWheeledVehicleDef, wheeledVehiclePresets } from 'box3d.js/wheeled-vehicles';
+//   const [hx, hy, hz] = wheeledVehiclePresets['rally-50-awd'].halfExtents; // chassis box
+//   const def = createPresetWheeledVehicleDef(b3, 'rally-50-awd');
+//   def.chassisId = chassis;
+//   const vehicle = b3.b3CreateWheeledVehicle(worldId, def);
+//
+// Plain JS so Node can import it without a TypeScript step; types live in wheeled-vehicles.d.ts.
+// Shipped as dist/wheeled-vehicles.mjs, and used by the examples, test/smoke.mjs and the vehicle scripts.
 
 const deg = (degrees) => (degrees * Math.PI) / 180;
 
@@ -200,7 +210,7 @@ function offroad(def) {
 // ---------------------------------------------------------------------------
 // Preset matrix: 3 cars x 5 realism levels x 3 drivetrains.
 //
-// A preset is built in three layers on top of b3DefaultVehicleDef():
+// A preset is built in three layers on top of b3DefaultWheeledVehicleDef():
 //   1. the car: body, wheels, suspension, real tires, engine, gearbox, brakes, aero. This is
 //      the car as it would be at 100% realism, with no driving assists beyond its own.
 //   2. the drivetrain layer: which wheels are driven, the differentials, and the anti-roll
@@ -250,7 +260,7 @@ function applyCar(def, car) {
 			wheel.suspension.frequency = axleSettings.frequency;
 			wheel.suspension.compressionDamping = car.suspension.compressionDamping;
 			wheel.suspension.reboundDamping = car.suspension.reboundDamping;
-			setTire(wheel, car.tire);
+			setTire(wheel, axleSettings.tire ? { ...car.tire, ...axleSettings.tire } : car.tire);
 		},
 	);
 	Object.assign(def.engine, car.engine);
@@ -275,7 +285,7 @@ function applyCar(def, car) {
  * The three cars, as they would be at 100% realism. `drive` holds the per car numbers the
  * drivetrain layers read: limited slip ratios and the AWD front torque share.
  */
-export const vehicleCars = {
+export const wheeledVehicleCars = {
 	sports: {
 		title: 'Sports car',
 		blurb: 'Front engine coupe: 1400 kg, 420 N·m, road tires, six gears.',
@@ -287,8 +297,17 @@ export const vehicleCars = {
 		layout: [0.8, -0.02, 1.3, -1.25],
 		wheelRadius: 0.33,
 		wheelInertia: 1.0,
+		// About 26% of the braking on the rear, near the ideal split at full braking. More rear brake
+		// locks the inside rear when braking in a turn, and ABS does not catch it while cornering.
 		front: { width: 0.245, brake: 2600, frequency: 2.0 },
-		rear: { width: 0.275, brake: 1500, frequency: 2.2 },
+		// The wider rear tires grip 5% more sideways. With the steering limiter holding the fronts
+		// near their best grip, a rear no grippier than the front lets go first and the car spins.
+		rear: {
+			width: 0.275,
+			brake: 900,
+			frequency: 2.2,
+			tire: { latPeak: 1.155, latSlide: 1.071 },
+		},
 		handbrake: 2500,
 		suspension: {
 			minLength: 0.17,
@@ -306,7 +325,7 @@ export const vehicleCars = {
 			latPeakAngle: 7,
 			latPeak: 1.1,
 			latSlideAngle: 18,
-			latSlide: 0.94,
+			latSlide: 1.02,
 			rolling: 0.013,
 		},
 		engine: {
@@ -327,13 +346,15 @@ export const vehicleCars = {
 		antiRoll: [16000, 13000],
 		steering: {
 			maxAngle: 34,
-			speedReference: 11,
+			speedReference: 14,
 			steerSpeed: 4,
 			returnSpeed: 6,
 		},
 		downforce: 0.25,
 		drag: 0.4,
-		tractionControl: false,
+		// Stability and traction control, as the real cars have. A keyboard throttle is all or nothing,
+		// and without it the rear steps out on every corner exit.
+		tractionControl: true,
 		abs: true,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
 		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4 },
@@ -353,7 +374,15 @@ export const vehicleCars = {
 		wheelRadius: 0.37,
 		wheelInertia: 1.13,
 		front: { width: 0.235, brake: 2580, frequency: 1.5 },
-		rear: { width: 0.235, brake: 1680, frequency: 1.6 },
+		// The rear tires grip sooner (9 degrees against 11) and 5% more, and hold on past their peak,
+		// so a keyboard driver lifting or braking mid corner through the steering limiter does not
+		// swing the rear out
+		rear: {
+			width: 0.235,
+			brake: 1680,
+			frequency: 1.6,
+			tire: { latPeak: 1.05, latSlide: 1.05, latPeakAngle: 9 },
+		},
 		handbrake: 4480,
 		suspension: {
 			minLength: 0.12,
@@ -369,7 +398,7 @@ export const vehicleCars = {
 			latPeakAngle: 11,
 			latPeak: 1.0,
 			latSlideAngle: 28,
-			latSlide: 0.9,
+			latSlide: 0.96,
 			rolling: 0.018,
 		},
 		engine: {
@@ -387,7 +416,7 @@ export const vehicleCars = {
 		antiRoll: [16000, 12000],
 		steering: {
 			maxAngle: 38,
-			speedReference: 12,
+			speedReference: 15,
 			steerSpeed: 5,
 			returnSpeed: 7,
 		},
@@ -395,7 +424,9 @@ export const vehicleCars = {
 		drag: 0.45,
 		tractionControl: false,
 		abs: false,
-		drive: { frontLsd: 1.3, rearLsd: 1.6, centerLsd: 1.4, awdFront: 0.5 },
+		// A strongly locking rear differential spins the inside rear wheel up on power and swings the
+		// tail out (1.6 read 1.21 g in the lateral test on gravel tires); 1.1 drives straight and stays put
+		drive: { frontLsd: 1.3, rearLsd: 1.1, centerLsd: 1.4, awdFront: 0.5 },
 	},
 	super: {
 		title: 'Supercar',
@@ -412,7 +443,16 @@ export const vehicleCars = {
 		// About 1.15x what the front tires carry at peak grip. A much stronger brake overshoots the
 		// peak slip on a full brake step, and ABS cannot release a wheel once it is past the peak.
 		front: { width: 0.255, brake: 2400, frequency: 2.5 },
-		rear: { width: 0.325, brake: 2200, frequency: 2.7 },
+		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
+		// braking on the rear (2200 was 48% and spun the car braking into a turn). The wider rear tires
+		// grip 5% more sideways, so lifting mid corner through the steering limiter does not swing
+		// the tail out.
+		rear: {
+			width: 0.325,
+			brake: 1500,
+			frequency: 2.7,
+			tire: { latPeak: 1.3125, latSlide: 1.2075 },
+		},
 		handbrake: 2000,
 		suspension: {
 			minLength: 0.18,
@@ -430,7 +470,7 @@ export const vehicleCars = {
 			latPeakAngle: 6.5,
 			latPeak: 1.25,
 			latSlideAngle: 16,
-			latSlide: 1.0,
+			latSlide: 1.15,
 			rolling: 0.012,
 		},
 		engine: {
@@ -450,7 +490,7 @@ export const vehicleCars = {
 		antiRoll: [30000, 26000],
 		steering: {
 			maxAngle: 32,
-			speedReference: 13,
+			speedReference: 15,
 			steerSpeed: 4,
 			returnSpeed: 6,
 		},
@@ -502,6 +542,17 @@ export const drivetrainLayers = {
  * Realism levels, from a car as it would really drive (100) to a full arcade car (0).
  * `tireGrip` and `downforceScale` multiply the car's values; `comDrop` lowers the center of
  * mass below the car's own (m). `tractionControl` and `abs` of null keep the car's own setting.
+ * The rear brakes scale with `tireGrip` too, so the brake balance stays the same share of the
+ * grip at every level.
+ *
+ * The less realistic levels are forgiving for a keyboard player, who only ever uses full lock,
+ * full brake and full throttle. Every level below 100% has more grip on all four tires, which keeps
+ * the car's balance (and its handbrake drifts). `rearGrip` multiplies the rear tires' side grip
+ * on top: just under 1 from 25% down, so a corner taken too fast slides the rear instead of
+ * running wide, as an arcade car should. `counterSteer` stays low: it acts in every corner,
+ * not only in slides, so a high value takes lock away and the car turns less.
+ * `rollInfluence` stays low too: lifting the cornering forces toward the center of mass takes load
+ * off the outside rear wheel, which then locks under braking in a turn and spins the car.
  */
 export const realismLevels = {
 	100: {
@@ -509,6 +560,7 @@ export const realismLevels = {
 		tireGrip: 1.0,
 		rollInfluence: 0,
 		counterSteer: 0,
+		rearGrip: 1,
 		driftGripScale: 1,
 		downforceScale: 1,
 		comDrop: 0,
@@ -521,9 +573,10 @@ export const realismLevels = {
 	},
 	75: {
 		title: '75% realistic',
-		tireGrip: 1.1,
-		rollInfluence: 0.15,
+		tireGrip: 1.15,
+		rollInfluence: 0.1,
 		counterSteer: 0.15,
+		rearGrip: 1,
 		driftGripScale: 0.85,
 		downforceScale: 1.5,
 		comDrop: 0.05,
@@ -536,39 +589,42 @@ export const realismLevels = {
 	},
 	50: {
 		title: '50% realistic',
-		tireGrip: 1.2,
-		rollInfluence: 0.35,
-		counterSteer: 0.3,
+		tireGrip: 1.3,
+		rollInfluence: 0.15,
+		counterSteer: 0.2,
+		rearGrip: 1,
 		driftGripScale: 0.7,
 		downforceScale: 2.5,
 		comDrop: 0.1,
-		selfRighting: 4,
+		selfRighting: 6,
 		airControl: 1.5,
-		airAngularDamping: 1.5,
+		airAngularDamping: 2.5,
 		maxTiltAngle: 0,
 		tractionControl: true,
 		abs: true,
 	},
 	25: {
 		title: '25% realistic',
-		tireGrip: 1.32,
-		rollInfluence: 0.55,
-		counterSteer: 0.5,
+		tireGrip: 1.45,
+		rollInfluence: 0.2,
+		counterSteer: 0.2,
+		rearGrip: 0.985,
 		driftGripScale: 0.55,
 		downforceScale: 4,
 		comDrop: 0.17,
-		selfRighting: 6,
+		selfRighting: 8,
 		airControl: 2.5,
-		airAngularDamping: 2.5,
+		airAngularDamping: 3,
 		maxTiltAngle: 70,
 		tractionControl: true,
 		abs: true,
 	},
 	0: {
 		title: 'Arcade',
-		tireGrip: 1.45,
-		rollInfluence: 0.75,
-		counterSteer: 0.6,
+		tireGrip: 1.6,
+		rollInfluence: 0.25,
+		counterSteer: 0.2,
+		rearGrip: 0.975,
 		driftGripScale: 0.4,
 		downforceScale: 6,
 		comDrop: 0.25,
@@ -590,8 +646,14 @@ const tireFrictionKeys = [
 
 function applyRealism(def, level) {
 	for (let i = 0; i < def.wheelCount; i++) {
-		const tire = def.wheels[i].tire;
-		for (const key of tireFrictionKeys) tire[key] *= level.tireGrip;
+		const wheel = def.wheels[i];
+		for (const key of tireFrictionKeys) wheel.tire[key] *= level.tireGrip;
+		// Front brakes are capped by ABS at the tires' peak anyway; the rears set the balance
+		if (wheel.steerFactor === 0) {
+			wheel.maxBrakeTorque *= level.tireGrip;
+			wheel.tire.lateralPeakFriction *= level.rearGrip;
+			wheel.tire.lateralSlideFriction *= level.rearGrip;
+		}
 	}
 	const [x, y, z] = def.chassis.centerOfMassOffset;
 	def.chassis.centerOfMassOffset = [x, y - level.comDrop, z];
@@ -710,8 +772,8 @@ const turboStage = (stage, maxRpm) =>
 export const turboGain = (turbo) =>
 	turbo.stages.reduce((sum, stage) => sum + stage.gain, 0);
 
-/** A b3VehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
-export function makeVehicleTurbo(type, maxRpm, ratedTorque) {
+/** A b3WheeledVehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
+export function makeWheeledVehicleTurbo(type, maxRpm, ratedTorque) {
 	const t = turboTypes[type];
 	return {
 		stages: [turboStage(t.stages[0], maxRpm), turboStage(t.stages[1], maxRpm)],
@@ -730,7 +792,7 @@ const close = (a, b) => Math.abs(a - b) <= 1e-3 * Math.max(1, Math.abs(b));
 export function findTurboType(turbo, maxRpm, maxTorque) {
 	const rated = maxTorque * (1 + turboGain(turbo));
 	for (const type of Object.keys(turboTypes)) {
-		const t = makeVehicleTurbo(type, maxRpm, rated);
+		const t = makeWheeledVehicleTurbo(type, maxRpm, rated);
 		const same =
 			turbo.stages.every((stage, i) =>
 				Object.keys(stage).every((key) => close(stage[key], t.stages[i][key])),
@@ -746,23 +808,23 @@ export function findTurboType(turbo, maxRpm, maxTorque) {
 /** Swaps the forced induction, keeping the engine's rated peak torque */
 export function applyTurbo(def, type) {
 	const rated = def.engine.maxTorque * (1 + turboGain(def.turbo));
-	def.turbo = makeVehicleTurbo(type, def.engine.maxRpm, rated);
+	def.turbo = makeWheeledVehicleTurbo(type, def.engine.maxRpm, rated);
 	def.engine.maxTorque = rated / (1 + turboGain(def.turbo));
 	return def;
 }
 
-/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism, then turbo */
-export function applyVehiclePreset(def, car, realism, drive, turbo = 'none') {
-	applyCar(def, vehicleCars[car]);
-	drivetrainLayers[drive].apply(def, vehicleCars[car]);
+/** Tunes a b3DefaultWheeledVehicleDef() in place: car, then drivetrain, then realism, then turbo */
+export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'none') {
+	applyCar(def, wheeledVehicleCars[car]);
+	drivetrainLayers[drive].apply(def, wheeledVehicleCars[car]);
 	applyRealism(def, realismLevels[realism]);
 	if (turbo !== 'none') applyTurbo(def, turbo);
 	return def;
 }
 
-export function buildVehiclePreset(b3, car, realism, drive, turbo = 'none') {
-	return applyVehiclePreset(
-		b3.b3DefaultVehicleDef(),
+export function buildWheeledVehiclePreset(b3, car, realism, drive, turbo = 'none') {
+	return applyWheeledVehiclePreset(
+		b3.b3DefaultWheeledVehicleDef(),
 		car,
 		realism,
 		drive,
@@ -770,24 +832,24 @@ export function buildVehiclePreset(b3, car, realism, drive, turbo = 'none') {
 	);
 }
 
-export const vehiclePresetName = (car, realism, drive) =>
+export const wheeledVehiclePresetName = (car, realism, drive) =>
 	`${car}-${realism}-${drive}`;
 
 const matrixPresets = {};
-for (const car of Object.keys(vehicleCars)) {
+for (const car of Object.keys(wheeledVehicleCars)) {
 	for (const realism of Object.keys(realismLevels)) {
 		for (const drive of Object.keys(drivetrainLayers)) {
-			matrixPresets[vehiclePresetName(car, realism, drive)] = {
-				title: `${vehicleCars[car].title}, ${drivetrainLayers[drive].title}, ${realismLevels[realism].title}`,
-				halfExtents: vehicleCars[car].halfExtents,
+			matrixPresets[wheeledVehiclePresetName(car, realism, drive)] = {
+				title: `${wheeledVehicleCars[car].title}, ${drivetrainLayers[drive].title}, ${realismLevels[realism].title}`,
+				halfExtents: wheeledVehicleCars[car].halfExtents,
 				matrix: { car, realism: Number(realism), drive },
-				apply: (def) => applyVehiclePreset(def, car, realism, drive),
+				apply: (def) => applyWheeledVehiclePreset(def, car, realism, drive),
 			};
 		}
 	}
 }
 
-export const vehiclePresets = {
+export const wheeledVehiclePresets = {
 	fwd: { title: 'FWD hatchback', halfExtents: [0.66, 0.32, 1.95], apply: fwd },
 	rwd: { title: 'RWD sports car', halfExtents: [0.7, 0.28, 2.15], apply: rwd },
 	awd: { title: 'AWD road car', halfExtents: [0.7, 0.32, 2.15], apply: awd },
@@ -799,6 +861,76 @@ export const vehiclePresets = {
 	...matrixPresets,
 };
 
-export function createPresetVehicleDef(b3, name) {
-	return vehiclePresets[name].apply(b3.b3DefaultVehicleDef());
+// Steering limit: a driver aid applied to the input before it reaches the vehicle. A keyboard
+// gives only full lock or nothing, and the speed falloff in b3WheeledVehicleSteering is one curve for
+// every speed and grip, so full lock at speed would turn the front wheels well past the angle
+// where their tires grip best: the fronts plough, the rears follow, and the car slides or spins.
+// This caps the steer angle at `peakScale` times the front tires' peak slip angle, measured from
+// the direction the front axle travels. It only ever takes steering away, never adds or reverses
+// it. The presets are tuned to be driven with it: their speed falloff leaves more lock at speed
+// than full lock without it could take. A cap right at the peak (peakScale 1) holds the fronts
+// where they grip best but cannot rotate the car, so a corner taken too fast ploughs wide; 1.5
+// lets the car turn in harder and slide when overdone. Braking, the cap returns to the peak.
+const STEER_LIMIT_MIN_SPEED = 3;
+
+/**
+ * Returns limitSteer(chassis, steering, wheels, steer, braking): the steer input (1 full right,
+ * -1 full left) with the grip limit applied. `steering` is b3WheeledVehicle_GetSteering(vehicle) and
+ * `wheels` the vehicle's wheel defs. While braking (0 to 1) the cap moves to `brakingPeakScale`:
+ * under braking the weight is on the front and extra lock past the peak spins the car, while off
+ * the brake it helps the car turn in. Cars face +z with +x to their left, as the presets do.
+ */
+export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 1 } = {}) {
+	const center = [0, 0, 0];
+	const point = [0, 0, 0];
+	const velocity = [0, 0, 0];
+	const forward = [0, 0, 0];
+	const left = [0, 0, 0];
+	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+	return function limitSteer(chassis, steering, wheels, steer, braking = 0) {
+		if (steer === 0) return 0;
+		const scale = peakScale + (brakingPeakScale - peakScale) * Math.min(Math.max(braking, 0), 1);
+
+		// The front axle center and the smallest peak slip angle among the steered wheels
+		let count = 0;
+		let peakAngle = Number.POSITIVE_INFINITY;
+		center[0] = center[1] = center[2] = 0;
+		for (const wheel of wheels) {
+			if (wheel.steerFactor === 0) continue;
+			center[0] += wheel.position[0];
+			center[1] += wheel.position[1];
+			center[2] += wheel.position[2];
+			peakAngle = Math.min(peakAngle, wheel.tire.lateralPeakAngle * scale);
+			count++;
+		}
+		if (count === 0) return steer;
+		center[0] /= count;
+		center[1] /= count;
+		center[2] /= count;
+
+		b3.b3Body_GetWorldPoint(point, chassis, center);
+		b3.b3Body_GetWorldPointVelocity(velocity, chassis, point);
+		b3.b3Body_GetWorldVector(forward, chassis, [0, 0, 1]);
+		b3.b3Body_GetWorldVector(left, chassis, [1, 0, 0]);
+		const vForward = dot(velocity, forward);
+		if (vForward < STEER_LIMIT_MIN_SPEED) return steer;
+
+		// The steer angle the vehicle would aim for (positive is left), with its speed falloff
+		const x = steering.speedReference > 0 ? vForward / steering.speedReference : 0;
+		const maxAngle = steering.maxAngle / (1 + x * x);
+		if (maxAngle <= 0) return steer;
+		let angle = -steer * maxAngle;
+
+		// The direction the front axle travels, measured as the vehicle measures slip angle:
+		// atan2(lateral, |forward| + 1 m/s). The tire's peak angle is defined on that measure.
+		const travel = Math.atan2(dot(velocity, left), vForward + 1);
+		if (angle > 0) angle = Math.min(angle, Math.max(travel + peakAngle, 0));
+		else angle = Math.max(angle, Math.min(travel - peakAngle, 0));
+		return -angle / maxAngle;
+	};
+}
+
+export function createPresetWheeledVehicleDef(b3, name) {
+	return wheeledVehiclePresets[name].apply(b3.b3DefaultWheeledVehicleDef());
 }

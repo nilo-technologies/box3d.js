@@ -1,37 +1,37 @@
-// Reusable lil-gui panel for any b3Vehicle. It reads the live settings from the vehicle and
-// writes every change back through the b3Vehicle_Set* setters, which apply on the next step.
+// Reusable lil-gui panel for any b3WheeledVehicle. It reads the live settings from the vehicle and
+// writes every change back through the b3WheeledVehicle_Set* setters, which apply on the next step.
 // Wheels are edited per axle (consecutive wheel pairs) and angles are shown in degrees.
 
 import type {
 	Box3DModule,
-	b3VehicleAntiRoll,
-	b3VehicleAssists,
-	b3VehicleChassis,
-	b3VehicleDef,
-	b3VehicleDrivetrain,
-	b3VehicleEngine,
-	b3VehicleId,
-	b3VehicleSteering,
-	b3VehicleTransmission,
-	b3VehicleTurbo,
-	b3VehicleWheelDef,
-	VehicleStateBuffer,
-	VehicleStateRecord,
-	VehicleWheelRecord,
+	b3WheeledVehicleAntiRoll,
+	b3WheeledVehicleAssists,
+	b3WheeledVehicleChassis,
+	b3WheeledVehicleDef,
+	b3WheeledVehicleDrivetrain,
+	b3WheeledVehicleEngine,
+	b3WheeledVehicleId,
+	b3WheeledVehicleSteering,
+	b3WheeledVehicleTransmission,
+	b3WheeledVehicleTurbo,
+	b3WheeledVehicleWheelDef,
+	WheeledVehicleStateBuffer,
+	WheeledVehicleStateRecord,
+	WheeledVehicleWheelRecord,
 } from 'box3d.js';
-import type GUI from 'lil-gui';
 import {
 	findTurboType,
-	makeVehicleTurbo,
+	makeWheeledVehicleTurbo,
 	turboGain,
 	turboTypes,
-	type VehicleTurboName,
-} from './vehicle-presets';
+	type WheeledVehicleTurboName,
+} from 'box3d.js/wheeled-vehicles';
+import type GUI from 'lil-gui';
 
-export type VehicleSettings = {
+export type WheeledVehicleSettings = {
 	/** Refresh the telemetry readout. Call after stepping. */
 	update(): void;
-	/** Restore the defaults passed to createVehicleSettings */
+	/** Restore the defaults passed to createWheeledVehicleSettings */
 	reset(): void;
 	/** Re-read the live settings after changing them outside the panel */
 	sync(): void;
@@ -218,7 +218,7 @@ const controllerTips: Record<string, Record<string, string>> = {
 	Assists: {
 		tractionControl:
 			'Limits the throttle so no driven wheel gets more torque than its tire can transmit. On rear wheels it also leaves grip for cornering, so full throttle mid corner does not spin the car.',
-		abs: 'Caps the brake torque at what the tire can transmit, so the wheels do not lock and the car still steers while braking',
+		abs: 'Caps the brake torque at what the tire can transmit, leaving room for cornering, so the wheels do not lock and the car still steers while braking in a turn. It also caps engine braking on the driven wheels.',
 		launchControl:
 			'Pulling away from a stop, holds the driven tires at their peak slip, so full throttle neither spins them nor wastes grip. Ends when you lift or the tires grip at full throttle. Works with traction control off.',
 		stickyTire:
@@ -266,44 +266,62 @@ function applyTips(root: GUI): void {
 	}
 }
 
-export function createVehicleSettings(
+/**
+ * The boost as a gauge reads it: the share of full boost, and the pressure in bar. An engine's
+ * torque goes with its manifold's absolute pressure, so `boost` (the torque added, as a fraction
+ * of the curve) is about the gauge pressure in atmospheres.
+ */
+export function formatBoost(boost: number, fullBoost: number): string {
+	const share = fullBoost > 0 ? boost / fullBoost : 0;
+	return `${(share * 100).toFixed(0)}% (${(boost * 1.013).toFixed(2)} bar)`;
+}
+
+export function createWheeledVehicleSettings(
 	gui: GUI,
 	b3: Box3DModule,
-	vehicle: b3VehicleId,
-	defaults: b3VehicleDef,
-	stateBuffer: VehicleStateBuffer,
-): VehicleSettings {
+	vehicle: b3WheeledVehicleId,
+	defaults: b3WheeledVehicleDef,
+	stateBuffer: WheeledVehicleStateBuffer,
+): WheeledVehicleSettings {
 	const root = gui.addFolder('Vehicle');
-	const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
+	const wheelCount = b3.b3WheeledVehicle_GetWheelCount(vehicle);
 
-	const chassis: b3VehicleChassis = b3.b3Vehicle_GetChassis(vehicle);
-	const engine: b3VehicleEngine = b3.b3Vehicle_GetEngine(vehicle);
-	const turbo: b3VehicleTurbo = b3.b3Vehicle_GetTurbo(vehicle);
-	const transmission: b3VehicleTransmission =
-		b3.b3Vehicle_GetTransmission(vehicle);
-	const drivetrain: b3VehicleDrivetrain = b3.b3Vehicle_GetDrivetrain(vehicle);
-	const antiRoll: b3VehicleAntiRoll = b3.b3Vehicle_GetAntiRoll(vehicle);
-	const steering: b3VehicleSteering = b3.b3Vehicle_GetSteering(vehicle);
-	const assists: b3VehicleAssists = b3.b3Vehicle_GetAssists(vehicle);
-	const wheels: b3VehicleWheelDef[] = [];
+	const chassis: b3WheeledVehicleChassis =
+		b3.b3WheeledVehicle_GetChassis(vehicle);
+	const engine: b3WheeledVehicleEngine = b3.b3WheeledVehicle_GetEngine(vehicle);
+	const turbo: b3WheeledVehicleTurbo = b3.b3WheeledVehicle_GetTurbo(vehicle);
+	const transmission: b3WheeledVehicleTransmission =
+		b3.b3WheeledVehicle_GetTransmission(vehicle);
+	const drivetrain: b3WheeledVehicleDrivetrain =
+		b3.b3WheeledVehicle_GetDrivetrain(vehicle);
+	const antiRoll: b3WheeledVehicleAntiRoll =
+		b3.b3WheeledVehicle_GetAntiRoll(vehicle);
+	const steering: b3WheeledVehicleSteering =
+		b3.b3WheeledVehicle_GetSteering(vehicle);
+	const assists: b3WheeledVehicleAssists =
+		b3.b3WheeledVehicle_GetAssists(vehicle);
+	const wheels: b3WheeledVehicleWheelDef[] = [];
 	for (let i = 0; i < wheelCount; i++)
-		wheels.push(b3.b3Vehicle_GetWheel(vehicle, i));
+		wheels.push(b3.b3WheeledVehicle_GetWheel(vehicle, i));
 
-	const applyChassis = () => b3.b3Vehicle_SetChassis(vehicle, chassis);
-	const applyEngine = () => b3.b3Vehicle_SetEngine(vehicle, engine);
-	const applyTurbo = () => b3.b3Vehicle_SetTurbo(vehicle, turbo);
+	const applyChassis = () => b3.b3WheeledVehicle_SetChassis(vehicle, chassis);
+	const applyEngine = () => b3.b3WheeledVehicle_SetEngine(vehicle, engine);
+	const applyTurbo = () => b3.b3WheeledVehicle_SetTurbo(vehicle, turbo);
 	const applyTransmission = () =>
-		b3.b3Vehicle_SetTransmission(vehicle, transmission);
-	const applyDrivetrain = () => b3.b3Vehicle_SetDrivetrain(vehicle, drivetrain);
-	const applyAntiRoll = () => b3.b3Vehicle_SetAntiRoll(vehicle, antiRoll);
-	const applySteering = () => b3.b3Vehicle_SetSteering(vehicle, steering);
-	const applyAssists = () => b3.b3Vehicle_SetAssists(vehicle, assists);
+		b3.b3WheeledVehicle_SetTransmission(vehicle, transmission);
+	const applyDrivetrain = () =>
+		b3.b3WheeledVehicle_SetDrivetrain(vehicle, drivetrain);
+	const applyAntiRoll = () =>
+		b3.b3WheeledVehicle_SetAntiRoll(vehicle, antiRoll);
+	const applySteering = () =>
+		b3.b3WheeledVehicle_SetSteering(vehicle, steering);
+	const applyAssists = () => b3.b3WheeledVehicle_SetAssists(vehicle, assists);
 
 	// Axle proxies: editing one value writes it to both wheels of the axle. Each proxy reads
 	// from the axle's first wheel so it stays in sync after a reset.
 	type AxleField = {
-		get(w: b3VehicleWheelDef): number | boolean;
-		set(w: b3VehicleWheelDef, v: never): void;
+		get(w: b3WheeledVehicleWheelDef): number | boolean;
+		set(w: b3WheeledVehicleWheelDef, v: never): void;
 	};
 	function axleProxy(
 		first: number,
@@ -317,7 +335,7 @@ export function createVehicleSettings(
 				set: (value: never) => {
 					for (let i = first; i < first + count; i++) {
 						field.set(wheels[i], value);
-						b3.b3Vehicle_SetWheel(vehicle, i, wheels[i]);
+						b3.b3WheeledVehicle_SetWheel(vehicle, i, wheels[i]);
 					}
 				},
 				enumerable: true,
@@ -325,14 +343,14 @@ export function createVehicleSettings(
 		}
 		return proxy;
 	}
-	const wheelField = (key: keyof b3VehicleWheelDef): AxleField => ({
+	const wheelField = (key: keyof b3WheeledVehicleWheelDef): AxleField => ({
 		get: (w) => w[key] as number,
 		set: (w, v) => {
 			(w as Record<string, unknown>)[key] = v;
 		},
 	});
 	const suspensionField = (
-		key: keyof b3VehicleWheelDef['suspension'],
+		key: keyof b3WheeledVehicleWheelDef['suspension'],
 		scale = 1,
 	): AxleField => ({
 		get: (w) =>
@@ -345,7 +363,7 @@ export function createVehicleSettings(
 		},
 	});
 	const tireField = (
-		key: keyof b3VehicleWheelDef['tire'],
+		key: keyof b3WheeledVehicleWheelDef['tire'],
 		scale = 1,
 	): AxleField => ({
 		get: (w) => w.tire[key] * scale,
@@ -404,14 +422,14 @@ export function createVehicleSettings(
 	const suspensionFolder = root.addFolder('Suspension').close();
 	const tiresFolder = root.addFolder('Tires').close();
 	const castTypes = {
-		cylinder: b3.b3VehicleCastType.b3_vehicleCastCylinder.value,
-		sphere: b3.b3VehicleCastType.b3_vehicleCastSphere.value,
-		ray: b3.b3VehicleCastType.b3_vehicleCastRay.value,
+		cylinder: b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastCylinder.value,
+		sphere: b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastSphere.value,
+		ray: b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastRay.value,
 	};
 	const castTypeByValue = [
-		b3.b3VehicleCastType.b3_vehicleCastCylinder,
-		b3.b3VehicleCastType.b3_vehicleCastSphere,
-		b3.b3VehicleCastType.b3_vehicleCastRay,
+		b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastCylinder,
+		b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastSphere,
+		b3.b3WheeledVehicleCastType.b3_wheeledVehicleCastRay,
 	];
 	for (const { name, first, count } of axles) {
 		const s = suspensionFolder.addFolder(name);
@@ -539,7 +557,7 @@ export function createVehicleSettings(
 	// The dropdown names the type the live turbo matches, or Custom
 	const turboTypeOf = () =>
 		findTurboType(turbo, engine.maxRpm, engine.maxTorque) ?? 'custom';
-	const turboChoice: { type: VehicleTurboName | 'custom' } = {
+	const turboChoice: { type: WheeledVehicleTurboName | 'custom' } = {
 		type: turboTypeOf(),
 	};
 	const turboOptions: Record<string, string> = { Custom: 'custom' };
@@ -547,16 +565,17 @@ export function createVehicleSettings(
 		turboOptions[t.title] = key;
 	turboFolder
 		.add(turboChoice, 'type', turboOptions)
-		.onChange((type: VehicleTurboName | 'custom') => {
+		.onChange((type: WheeledVehicleTurboName | 'custom') => {
 			if (type === 'custom') return;
 			// Keep the rated torque: the peak with full boost
 			const rated = engine.maxTorque * (1 + turboGain(turbo));
 			copyInto(
 				turbo as unknown as Record<string, unknown>,
-				makeVehicleTurbo(type, engine.maxRpm, rated) as unknown as Record<
-					string,
-					unknown
-				>,
+				makeWheeledVehicleTurbo(
+					type,
+					engine.maxRpm,
+					rated,
+				) as unknown as Record<string, unknown>,
 			);
 			engine.maxTorque = rated / (1 + turboGain(turbo));
 			applyEngine();
@@ -602,13 +621,15 @@ export function createVehicleSettings(
 		get automatic() {
 			return (
 				transmission.mode.value ===
-				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto.value
+				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto
+					.value
 			);
 		},
 		set automatic(v: boolean) {
 			transmission.mode = v
-				? b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto
-				: b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual;
+				? b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto
+				: b3.b3WheeledVehicleTransmissionMode
+						.b3_wheeledVehicleTransmissionManual;
 		},
 	};
 	transmissionFolder.add(mode, 'automatic').onChange(applyTransmission);
@@ -812,23 +833,23 @@ export function createVehicleSettings(
 
 	root.add({ reset }, 'reset').name('reset to defaults');
 
-	const state: VehicleStateRecord = b3.createVehicleStateRecord();
-	const wheel: VehicleWheelRecord = b3.createVehicleWheelRecord();
+	const state: WheeledVehicleStateRecord = b3.createWheeledVehicleStateRecord();
+	const wheel: WheeledVehicleWheelRecord = b3.createWheeledVehicleWheelRecord();
 	const pad = (v: number, digits: number, width: number) =>
 		v.toFixed(digits).padStart(width);
 
 	function update(): void {
-		b3.getVehicleStateAt(state, stateBuffer);
+		b3.getWheeledVehicleStateAt(state, stateBuffer);
 		const gear =
 			state.gear < 0 ? 'R' : state.gear === 0 ? 'N' : String(state.gear);
 		let text = `${pad(state.speed * 3.6, 0, 4)} km/h  ${pad(state.engineRpm, 0, 5)} rpm  gear ${gear}${state.isShifting ? '*' : ''}\n`;
 		if (turboGain(turbo) > 0)
-			text += `boost +${pad(state.boost * 100, 0, 3)}% of +${(turboGain(turbo) * 100).toFixed(0)}%\n`;
+			text += `boost ${formatBoost(state.boost, turboGain(turbo)).padStart(15)}  torque +${pad(state.boost * 100, 0, 2)}% of +${(turboGain(turbo) * 100).toFixed(0)}%\n`;
 		text += `thr ${pad(state.throttle, 2, 4)} brk ${pad(state.brake, 2, 4)} steer ${pad(state.steerAngle * toDeg, 1, 5)}°\n`;
 		text += '      load   slip  angle  comp\n';
-		const count = b3.getNumVehicleWheels(stateBuffer);
+		const count = b3.getNumWheeledVehicleWheels(stateBuffer);
 		for (let i = 0; i < count; i++) {
-			b3.getVehicleWheelAt(wheel, stateBuffer, i);
+			b3.getWheeledVehicleWheelAt(wheel, stateBuffer, i);
 			const name = (wheelNames[i] ?? `W${i}`).padEnd(3);
 			if (!wheel.hasContact) {
 				text += `${name}     airborne\n`;
@@ -883,7 +904,7 @@ export function createVehicleSettings(
 
 	function copyAll(
 		source: Pick<
-			b3VehicleDef,
+			b3WheeledVehicleDef,
 			| 'chassis'
 			| 'engine'
 			| 'turbo'
@@ -914,20 +935,23 @@ export function createVehicleSettings(
 
 	function sync(): void {
 		copyAll({
-			chassis: b3.b3Vehicle_GetChassis(vehicle),
-			engine: b3.b3Vehicle_GetEngine(vehicle),
-			turbo: b3.b3Vehicle_GetTurbo(vehicle),
-			transmission: b3.b3Vehicle_GetTransmission(vehicle),
-			drivetrain: b3.b3Vehicle_GetDrivetrain(vehicle),
-			antiRoll: b3.b3Vehicle_GetAntiRoll(vehicle),
-			steering: b3.b3Vehicle_GetSteering(vehicle),
-			assists: b3.b3Vehicle_GetAssists(vehicle),
+			chassis: b3.b3WheeledVehicle_GetChassis(vehicle),
+			engine: b3.b3WheeledVehicle_GetEngine(vehicle),
+			turbo: b3.b3WheeledVehicle_GetTurbo(vehicle),
+			transmission: b3.b3WheeledVehicle_GetTransmission(vehicle),
+			drivetrain: b3.b3WheeledVehicle_GetDrivetrain(vehicle),
+			antiRoll: b3.b3WheeledVehicle_GetAntiRoll(vehicle),
+			steering: b3.b3WheeledVehicle_GetSteering(vehicle),
+			assists: b3.b3WheeledVehicle_GetAssists(vehicle),
 		});
 		turboChoice.type = turboTypeOf();
 		for (let i = 0; i < wheelCount; i++) {
 			copyInto(
 				wheels[i] as unknown as Record<string, unknown>,
-				b3.b3Vehicle_GetWheel(vehicle, i) as unknown as Record<string, unknown>,
+				b3.b3WheeledVehicle_GetWheel(vehicle, i) as unknown as Record<
+					string,
+					unknown
+				>,
 			);
 		}
 		for (const c of root.controllersRecursive()) c.updateDisplay();
@@ -942,7 +966,7 @@ export function createVehicleSettings(
 				wheels[i] as unknown as Record<string, unknown>,
 				defaults.wheels[i] as unknown as Record<string, unknown>,
 			);
-			b3.b3Vehicle_SetWheel(vehicle, i, wheels[i]);
+			b3.b3WheeledVehicle_SetWheel(vehicle, i, wheels[i]);
 		}
 		applyChassis();
 		applyEngine();

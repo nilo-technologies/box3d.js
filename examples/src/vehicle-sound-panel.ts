@@ -1,9 +1,9 @@
-// Sound tuning panel for the vehicle examples: a lil-gui folder with every setting in
-// VehicleSoundParams (engine voice and character, tires, turbo, wind, bump stop), buttons that
-// play the blow-off, the stutter (flutter) and the bump, hotkeys for the first two (V and C),
-// and copy, paste and reset. Changes apply live and are saved in localStorage (only what differs
-// from the defaults), so the sound lab and the driving examples share one tuning. Add it to any
-// page with
+// Sound tuning panel for the sound lab (example-vehicle-sound.ts): a lil-gui folder with every
+// setting in WheeledVehicleSoundParams (engine voice and character, listener, tires, turbo, bump stop),
+// buttons that play the blow-off, the stutter (flutter) and the bump, hotkeys for the first two
+// (V and C), and copy, paste and reset. Changes apply live and are saved in localStorage (only
+// what differs from the defaults). The driving examples don't read it: they play
+// defaultSoundParams with an engine voice picker. Add it to any page with
 //
 //   addSoundPanel(gui, audio);
 //
@@ -12,16 +12,21 @@
 import type GUI from 'lil-gui';
 import {
 	assignSoundParams,
+	type BrapStyle,
+	brapStyles,
 	cloneSoundParams,
 	defaultSoundParams,
 	diffSoundParams,
+	type EngineExhaust,
 	type EngineVoiceChoice,
 	type EngineVoiceName,
 	engineVoices,
+	type ListenerPosition,
+	listenerPositions,
 	type SoundWave,
 	type TurboValve,
-	type VehicleAudio,
-	type VehicleSoundParams,
+	type WheeledVehicleAudio,
+	type WheeledVehicleSoundParams,
 } from './vehicle-audio';
 import { copyText, toast } from './vehicle-showcase';
 
@@ -32,8 +37,6 @@ export type SoundPanelOptions = {
 	open?: boolean;
 	/** localStorage key for the tuning, or null to not save it */
 	storageKey?: string | null;
-	/** Adds a button that opens the sound lab example */
-	labLink?: boolean;
 	/** V plays the blow-off and C the stutter (compressor flutter). On unless false. */
 	hotkeys?: boolean;
 };
@@ -48,20 +51,6 @@ const STORAGE_KEY = 'box3d.vehicle-sound.v2';
 /** Before v2 every field was saved, defaults included */
 const OLD_STORAGE_KEY = 'box3d.vehicle-sound';
 
-/** The engine of each example car and matrix car: its cylinder count and the voice 'auto' plays */
-export const carEngines: Record<
-	string,
-	{ cylinders: number; voice: EngineVoiceName }
-> = {
-	fwd: { cylinders: 4, voice: 'inline4' },
-	rwd: { cylinders: 6, voice: 'inline6' },
-	awd: { cylinders: 6, voice: 'inline6' },
-	offroad: { cylinders: 8, voice: 'v8' },
-	sports: { cylinders: 6, voice: 'inline6' },
-	rally: { cylinders: 4, voice: 'boxer4' },
-	super: { cylinders: 8, voice: 'flatplaneV8' },
-};
-
 const waves: SoundWave[] = ['sine', 'triangle', 'square', 'sawtooth'];
 
 const voiceOptions: Record<string, EngineVoiceChoice> = {
@@ -70,6 +59,21 @@ const voiceOptions: Record<string, EngineVoiceChoice> = {
 };
 for (const [key, voice] of Object.entries(engineVoices)) {
 	voiceOptions[voice.title] = key as EngineVoiceName;
+}
+
+const exhaustOptions: Record<string, EngineExhaust> = {
+	'Exhaust pipes': 'pipes',
+	'Two resonances (older)': 'resonances',
+};
+
+const brapOptions: Record<string, BrapStyle> = {};
+for (const [key, title] of Object.entries(brapStyles)) {
+	brapOptions[title] = key as BrapStyle;
+}
+
+const listenerOptions: Record<string, ListenerPosition> = {};
+for (const [key, position] of Object.entries(listenerPositions)) {
+	listenerOptions[position.title] = key as ListenerPosition;
 }
 
 const valveOptions: Record<string, TurboValve> = {
@@ -82,7 +86,7 @@ const valveOptions: Record<string, TurboValve> = {
 /** [field, min, max, step, label] */
 type Slider<G> = [keyof G & string, number, number, number, string];
 
-type EngineParams = VehicleSoundParams['engine'];
+type EngineParams = WheeledVehicleSoundParams['engine'];
 
 const engineVolumeSliders: Slider<EngineParams>[] = [
 	['idleVolume', 0, 0.5, 0.005, 'volume at idle'],
@@ -98,6 +102,7 @@ const characterSliders: Slider<EngineParams>[] = [
 	['grit', 0, 2.5, 0.01, 'grit (combustion noise)'],
 	['drive', 0.3, 2.5, 0.01, 'drive (saturation)'],
 	['crackle', 0, 5, 0.01, 'overrun crackle'],
+	['intake', 0, 3, 0.01, 'intake roar'],
 ];
 
 const classicSliders: Slider<EngineParams>[] = [
@@ -110,7 +115,7 @@ const classicSliders: Slider<EngineParams>[] = [
 	['resonance', 0.1, 20, 0.1, 'tone resonance (Q)'],
 ];
 
-const tireSliders: Slider<VehicleSoundParams['tires']>[] = [
+const tireSliders: Slider<WheeledVehicleSoundParams['tires']>[] = [
 	['volume', 0, 4, 0.05, 'squeal volume'],
 	['pitch', 200, 4000, 10, 'pitch (Hz)'],
 	['pitchSkid', 0, 3000, 10, 'pitch added at full slide'],
@@ -119,7 +124,7 @@ const tireSliders: Slider<VehicleSoundParams['tires']>[] = [
 	['fullSpeed', 0.5, 40, 0.5, 'full volume at (m/s)'],
 ];
 
-type TurboParams = VehicleSoundParams['turbo'];
+type TurboParams = WheeledVehicleSoundParams['turbo'];
 
 const whineSliders: Slider<TurboParams>[] = [
 	['whineVolume', 0, 0.2, 0.001, 'whistle volume'],
@@ -143,15 +148,12 @@ const valveSliders: Slider<TurboParams>[] = [
 	['flutterRate', 5, 40, 0.5, 'flutter rate (Hz)'],
 	['flutterPitch', 200, 3000, 10, 'flutter pitch (Hz)'],
 	['flutterLength', 0.1, 1.4, 0.01, 'flutter length (s)'],
+	['antiLagVolume', 0, 3, 0.01, 'anti-lag bangs'],
+	['antiLagRate', 1, 40, 0.5, 'anti-lag bangs per second'],
+	['antiLagMinRpm', 1000, 8000, 50, 'anti-lag above rpm'],
 ];
 
-const windSliders: Slider<VehicleSoundParams['wind']>[] = [
-	['volume', 0, 2, 0.01, 'volume'],
-	['fullSpeed', 5, 150, 1, 'full volume at (m/s)'],
-	['cutoff', 50, 4000, 10, 'cutoff (Hz)'],
-];
-
-const bumpSliders: Slider<VehicleSoundParams['bump']>[] = [
+const bumpSliders: Slider<WheeledVehicleSoundParams['bump']>[] = [
 	['volume', 0, 3, 0.01, 'volume'],
 	['cutoff', 30, 1000, 5, 'cutoff (Hz)'],
 	['length', 0.02, 1.4, 0.01, 'length (s)'],
@@ -179,7 +181,7 @@ function loadSaved(key: string): unknown {
 	}
 }
 
-function save(key: string, params: VehicleSoundParams): void {
+function save(key: string, params: WheeledVehicleSoundParams): void {
 	try {
 		localStorage.setItem(key, JSON.stringify(diffSoundParams(params)));
 	} catch {
@@ -189,7 +191,7 @@ function save(key: string, params: VehicleSoundParams): void {
 
 export function addSoundPanel(
 	gui: GUI,
-	audio: VehicleAudio,
+	audio: WheeledVehicleAudio,
 	options: SoundPanelOptions = {},
 ): SoundPanel {
 	const params = audio.params;
@@ -215,6 +217,8 @@ export function addSoundPanel(
 		.add(params.engine, 'voice', voiceOptions)
 		.name('voice')
 		.onChange(() => showVoiceControls());
+	engine.add(params.engine, 'exhaust', exhaustOptions).name('exhaust model');
+	engine.add(params.engine, 'brap', brapOptions).name('rotary idle (brap)');
 	sliders(engine, params.engine, engineVolumeSliders);
 	const character = engine.addFolder('Character');
 	sliders(character, params.engine, characterSliders);
@@ -246,6 +250,10 @@ export function addSoundPanel(
 	}
 	showVoiceControls();
 
+	const listener = folder.addFolder('Listener');
+	listener.add(params.listener, 'position', listenerOptions).name('heard from');
+	listener.add(params.listener, 'room', 0, 3, 0.01).name('room reflections');
+
 	const tires = folder.addFolder('Tires').close();
 	sliders(tires, params.tires, tireSliders);
 
@@ -264,9 +272,6 @@ export function addSoundPanel(
 		.name('play on every lift, even without a turbo');
 	sliders(turbo, params.turbo, whineSliders);
 	sliders(turbo, params.turbo, valveSliders);
-
-	const wind = folder.addFolder('Wind').close();
-	sliders(wind, params.wind, windSliders);
 
 	const bump = folder.addFolder('Bump stop').close();
 	sliders(bump, params.bump, bumpSliders);
@@ -310,14 +315,10 @@ export function addSoundPanel(
 			changed();
 			toast('Sound back to defaults');
 		},
-		lab: () => {
-			window.open('./example-vehicle-sound.html', '_blank');
-		},
 	};
 	folder.add(actions, 'copy').name('copy as JSON');
 	folder.add(actions, 'paste').name('paste JSON');
 	folder.add(actions, 'reset').name('reset to defaults');
-	if (options.labLink) folder.add(actions, 'lab').name('open sound lab ↗');
 
 	if (options.hotkeys !== false) {
 		window.addEventListener('keydown', (e) => {

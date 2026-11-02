@@ -321,13 +321,16 @@ constexpr int debugTransformF64 = 3 + 4;       // position rotation
 constexpr int debugTransformI32 = 1;           // role
 
 // vehicle state buffer: one vehicle record, then one record per wheel
-constexpr int vehicleI32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: gear isShifting wheelsInContact stuck isLaunching wheelCount
-constexpr int vehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle boost
-constexpr int vehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
-constexpr int vehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
+constexpr int wheeledVehicleI32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: gear isShifting wheelsInContact stuck isLaunching wheelCount
+constexpr int wheeledVehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle boost
+constexpr int wheeledVehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
+constexpr int wheeledVehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
                                                           //     longitudinalForce lateralForce slipRatio slipAngle angularVelocity
                                                           //     rotationAngle steerAngle driveTorque brakeTorque
-constexpr int vehicleWheelF64 = 3 + 3;                    // 6: position contactPoint
+constexpr int wheeledVehicleWheelF64 = 3 + 3;                    // 6: position contactPoint
+// chassis-space wheel readout (b3WheeledVehicle_GetWheelLocalData), one record per wheel
+constexpr int wheeledVehicleWheelLocal = 3 + 4 + 1 + 1 + 1 + 1;  // 11: position rotation(x,y,z,w) rotationAngle angularVelocity
+                                                          //     steerAngle suspensionLength
 
 // Tripwires: pin each stride to its known total, so changing a field width is a
 // deliberate, compile-checked edit (and a nudge to reconcile the facade's field reads
@@ -348,8 +351,10 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
 	&& debugTransformF64 == 7 && debugTransformI32 == 1,
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
-static_assert( vehicleI32 == 6 && vehicleF32 == 6 && vehicleWheelI32 == 7 && vehicleWheelF32 == 19 && vehicleWheelF64 == 6,
+static_assert( wheeledVehicleI32 == 6 && wheeledVehicleF32 == 6 && wheeledVehicleWheelI32 == 7 && wheeledVehicleWheelF32 == 19 && wheeledVehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
+static_assert( wheeledVehicleWheelLocal == 11,
+	"vehicle wheel local stride changed — update the facade, the typings + _layoutMeta" );
 }
 
 // Fill flat typed-array tiers from b3ContactData[] (CSR: contacts -> manifolds
@@ -1869,39 +1874,39 @@ bool setShapeBakedHull( b3ShapeId shapeId, const b3HullData* hull, b3Transform t
 	return true;
 }
 
-// Reusable, wasm-backed vehicle readout. load(vehicleId) packs the vehicle state
+// Reusable, wasm-backed vehicle readout. load(wheeledVehicleId) packs the vehicle state
 // and every wheel's state and world transform in one boundary crossing, so a
 // frame's visuals and HUD allocate nothing. Strides are in namespace layout; the
 // packing order below must match the facade's field reads.
-struct VehicleStateBuffer
+struct WheeledVehicleStateBuffer
 {
 	std::vector<int32_t> i32;
 	std::vector<float> f32;
 	std::vector<double> f64;
 	int wheelCount = 0;
 
-	void load( b3VehicleId vehicleId )
+	void load( b3WheeledVehicleId wheeledVehicleId )
 	{
 		i32.clear();
 		f32.clear();
 		f64.clear();
 		wheelCount = 0;
-		if ( !b3Vehicle_IsValid( vehicleId ) )
+		if ( !b3WheeledVehicle_IsValid( wheeledVehicleId ) )
 		{
-			i32.resize( layout::vehicleI32, 0 );
-			f32.resize( layout::vehicleF32, 0.0f );
+			i32.resize( layout::wheeledVehicleI32, 0 );
+			f32.resize( layout::wheeledVehicleF32, 0.0f );
 			return;
 		}
 
-		b3VehicleState s = b3Vehicle_GetState( vehicleId );
-		wheelCount = b3Vehicle_GetWheelCount( vehicleId );
+		b3WheeledVehicleState s = b3WheeledVehicle_GetState( wheeledVehicleId );
+		wheelCount = b3WheeledVehicle_GetWheelCount( wheeledVehicleId );
 		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, s.isLaunching ? 1 : 0, wheelCount } );
 		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle, s.boost } );
 
 		for ( int i = 0; i < wheelCount; ++i )
 		{
-			b3VehicleWheelState w = b3Vehicle_GetWheelState( vehicleId, i );
-			b3WorldTransform xf = b3Vehicle_GetWheelTransform( vehicleId, i );
+			b3WheeledVehicleWheelState w = b3WheeledVehicle_GetWheelState( wheeledVehicleId, i );
+			b3WorldTransform xf = b3WheeledVehicle_GetWheelTransform( wheeledVehicleId, i );
 			i32.insert( i32.end(), { w.hasContact ? 1 : 0, w.isSticky ? 1 : 0, w.groundShapeId.index1, w.groundShapeId.world0,
 				w.groundShapeId.generation, (int32_t)( w.userMaterialId & 0xffffffffu ), (int32_t)( w.userMaterialId >> 32 ) } );
 			f32.insert( f32.end(), { xf.q.v.x, xf.q.v.y, xf.q.v.z, xf.q.s, w.contactNormal.x, w.contactNormal.y, w.contactNormal.z,
@@ -1917,6 +1922,45 @@ struct VehicleStateBuffer
 	unsigned f32Ptr() const { return (unsigned)(size_t)f32.data(); }
 	unsigned f64Ptr() const { return (unsigned)(size_t)f64.data(); }
 };
+
+// A wheel's pose in chassis space: b3GetWheelTransform in vendor/box3d/src/wheeled_vehicle.c before it
+// composes with the chassis transform. The center is the attachment point lowered along the
+// chassis up axis by the suspension length; the rotation is steer about up, then spin about the
+// axle (up x forward). The chassis body transform composed with it gives
+// b3WheeledVehicle_GetWheelTransform. Built from the public chassis, wheel def and wheel state, so
+// box3d needs no new API.
+b3Transform getWheelLocalTransform( b3WheeledVehicleChassis chassis, b3Vec3 attachment, const b3WheeledVehicleWheelState& w )
+{
+	b3Vec3 up = chassis.up;
+	b3Vec3 axle = b3Cross( up, chassis.forward );
+	b3Transform t;
+	t.p = b3MulSub( attachment, w.suspensionLength, up );
+	t.q = b3MulQuat( b3MakeQuatFromAxisAngle( up, w.steerAngle ), b3MakeQuatFromAxisAngle( axle, w.rotationAngle ) );
+	return t;
+}
+
+// Static scratch for b3WheeledVehicle_GetWheelLocalData: the raw writer fills it, the facade copies it
+// into the caller's Float32Array. Sized for the most wheels a vehicle can have.
+float g_wheeledVehicleWheelLocalScratch[B3_MAX_VEHICLE_WHEELS * layout::wheeledVehicleWheelLocal];
+
+// Packs every wheel's chassis-space pose and raw spin into the scratch, in layout::wheeledVehicleWheelLocal
+// order. Returns the wheel count, 0 for an invalid vehicle.
+int packWheeledVehicleWheelLocal( b3WheeledVehicleId wheeledVehicleId )
+{
+	if ( !b3WheeledVehicle_IsValid( wheeledVehicleId ) ) return 0;
+	b3WheeledVehicleChassis chassis = b3WheeledVehicle_GetChassis( wheeledVehicleId );
+	int wheelCount = b3WheeledVehicle_GetWheelCount( wheeledVehicleId );
+	for ( int i = 0; i < wheelCount; ++i )
+	{
+		b3WheeledVehicleWheelState w = b3WheeledVehicle_GetWheelState( wheeledVehicleId, i );
+		b3Transform t = getWheelLocalTransform( chassis, b3WheeledVehicle_GetWheel( wheeledVehicleId, i ).position, w );
+		float* o = g_wheeledVehicleWheelLocalScratch + i * layout::wheeledVehicleWheelLocal;
+		o[0] = t.p.x; o[1] = t.p.y; o[2] = t.p.z;
+		o[3] = t.q.v.x; o[4] = t.q.v.y; o[5] = t.q.v.z; o[6] = t.q.s;
+		o[7] = w.rotationAngle; o[8] = w.angularVelocity; o[9] = w.steerAngle; o[10] = w.suspensionLength;
+	}
+	return wheelCount;
+}
 
 // Fixed C arrays bind as fixed length JS arrays (std::array value_arrays)
 template<typename T, std::size_t... I>
@@ -1990,7 +2034,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.value( "b3_wheelJoint", b3_wheelJoint )
 		.value( "b3_moverJoint", b3_moverJoint )
 		.value( "b3_pogoJoint", b3_pogoJoint )
-		.value( "b3_vehicleWheelJoint", b3_vehicleWheelJoint )
+		.value( "b3_wheeledVehicleWheelJoint", b3_wheeledVehicleWheelJoint )
 		.value( "b3_cylindricalJoint", b3_cylindricalJoint );
 
 	// Math value types are mathcat-shaped plain arrays (see file header).
@@ -2103,11 +2147,13 @@ EMSCRIPTEN_BINDINGS( box3d )
 		o.set( "debugBoundsI32", layout::debugBoundsI32 );
 		o.set( "debugTransformF64", layout::debugTransformF64 );
 		o.set( "debugTransformI32", layout::debugTransformI32 );
-		o.set( "vehicleI32", layout::vehicleI32 );
-		o.set( "vehicleF32", layout::vehicleF32 );
-		o.set( "vehicleWheelI32", layout::vehicleWheelI32 );
-		o.set( "vehicleWheelF32", layout::vehicleWheelF32 );
-		o.set( "vehicleWheelF64", layout::vehicleWheelF64 );
+		o.set( "wheeledVehicleI32", layout::wheeledVehicleI32 );
+		o.set( "wheeledVehicleF32", layout::wheeledVehicleF32 );
+		o.set( "wheeledVehicleWheelI32", layout::wheeledVehicleWheelI32 );
+		o.set( "wheeledVehicleWheelF32", layout::wheeledVehicleWheelF32 );
+		o.set( "wheeledVehicleWheelF64", layout::wheeledVehicleWheelF64 );
+		o.set( "wheeledVehicleWheelLocal", layout::wheeledVehicleWheelLocal );
+		o.set( "maxWheeledVehicleWheels", B3_MAX_VEHICLE_WHEELS );
 		return o;
 	} );
 
@@ -3875,254 +3921,267 @@ EMSCRIPTEN_BINDINGS( box3d )
 
 	// ---- Vehicle ----
 	// Every sub-def is a value_object, so the JS side reads, edits and writes back whole
-	// settings blocks through the live b3Vehicle_Set* setters. Fixed C arrays (gear ratios,
+	// settings blocks through the live b3WheeledVehicle_Set* setters. Fixed C arrays (gear ratios,
 	// wheels, differentials, anti-roll bars) are fixed length JS arrays of the C capacity;
 	// the matching *Count field says how many are in use. userData is not registered.
-	enum_<b3VehicleCastType>( "b3VehicleCastType" )
-		.value( "b3_vehicleCastCylinder", b3_vehicleCastCylinder )
-		.value( "b3_vehicleCastSphere", b3_vehicleCastSphere )
-		.value( "b3_vehicleCastRay", b3_vehicleCastRay );
+	enum_<b3WheeledVehicleCastType>( "b3WheeledVehicleCastType" )
+		.value( "b3_wheeledVehicleCastCylinder", b3_wheeledVehicleCastCylinder )
+		.value( "b3_wheeledVehicleCastSphere", b3_wheeledVehicleCastSphere )
+		.value( "b3_wheeledVehicleCastRay", b3_wheeledVehicleCastRay );
 
-	enum_<b3VehicleTransmissionMode>( "b3VehicleTransmissionMode" )
-		.value( "b3_vehicleTransmissionAuto", b3_vehicleTransmissionAuto )
-		.value( "b3_vehicleTransmissionManual", b3_vehicleTransmissionManual );
+	enum_<b3WheeledVehicleTransmissionMode>( "b3WheeledVehicleTransmissionMode" )
+		.value( "b3_wheeledVehicleTransmissionAuto", b3_wheeledVehicleTransmissionAuto )
+		.value( "b3_wheeledVehicleTransmissionManual", b3_wheeledVehicleTransmissionManual );
 
-	value_object<b3VehicleId>( "b3VehicleId" )
-		.field( "index1", &b3VehicleId::index1 )
-		.field( "world0", &b3VehicleId::world0 )
-		.field( "generation", &b3VehicleId::generation );
+	value_object<b3WheeledVehicleId>( "b3WheeledVehicleId" )
+		.field( "index1", &b3WheeledVehicleId::index1 )
+		.field( "world0", &b3WheeledVehicleId::world0 )
+		.field( "generation", &b3WheeledVehicleId::generation );
 
-	value_object<b3VehicleSuspension>( "b3VehicleSuspension" )
-		.field( "minLength", &b3VehicleSuspension::minLength )
-		.field( "maxLength", &b3VehicleSuspension::maxLength )
-		.field( "preload", &b3VehicleSuspension::preload )
-		.field( "frequency", &b3VehicleSuspension::frequency )
-		.field( "compressionDamping", &b3VehicleSuspension::compressionDamping )
-		.field( "reboundDamping", &b3VehicleSuspension::reboundDamping )
-		.field( "enableBumpStop", &b3VehicleSuspension::enableBumpStop );
+	value_object<b3WheeledVehicleSuspension>( "b3WheeledVehicleSuspension" )
+		.field( "minLength", &b3WheeledVehicleSuspension::minLength )
+		.field( "maxLength", &b3WheeledVehicleSuspension::maxLength )
+		.field( "preload", &b3WheeledVehicleSuspension::preload )
+		.field( "frequency", &b3WheeledVehicleSuspension::frequency )
+		.field( "compressionDamping", &b3WheeledVehicleSuspension::compressionDamping )
+		.field( "reboundDamping", &b3WheeledVehicleSuspension::reboundDamping )
+		.field( "enableBumpStop", &b3WheeledVehicleSuspension::enableBumpStop );
 
-	value_object<b3VehicleTire>( "b3VehicleTire" )
-		.field( "longitudinalPeakSlip", &b3VehicleTire::longitudinalPeakSlip )
-		.field( "longitudinalPeakFriction", &b3VehicleTire::longitudinalPeakFriction )
-		.field( "longitudinalSlideSlip", &b3VehicleTire::longitudinalSlideSlip )
-		.field( "longitudinalSlideFriction", &b3VehicleTire::longitudinalSlideFriction )
-		.field( "lateralPeakAngle", &b3VehicleTire::lateralPeakAngle )
-		.field( "lateralPeakFriction", &b3VehicleTire::lateralPeakFriction )
-		.field( "lateralSlideAngle", &b3VehicleTire::lateralSlideAngle )
-		.field( "lateralSlideFriction", &b3VehicleTire::lateralSlideFriction )
-		.field( "rollingResistance", &b3VehicleTire::rollingResistance )
-		.field( "longitudinalRelaxationLength", &b3VehicleTire::longitudinalRelaxationLength );
+	value_object<b3WheeledVehicleTire>( "b3WheeledVehicleTire" )
+		.field( "longitudinalPeakSlip", &b3WheeledVehicleTire::longitudinalPeakSlip )
+		.field( "longitudinalPeakFriction", &b3WheeledVehicleTire::longitudinalPeakFriction )
+		.field( "longitudinalSlideSlip", &b3WheeledVehicleTire::longitudinalSlideSlip )
+		.field( "longitudinalSlideFriction", &b3WheeledVehicleTire::longitudinalSlideFriction )
+		.field( "lateralPeakAngle", &b3WheeledVehicleTire::lateralPeakAngle )
+		.field( "lateralPeakFriction", &b3WheeledVehicleTire::lateralPeakFriction )
+		.field( "lateralSlideAngle", &b3WheeledVehicleTire::lateralSlideAngle )
+		.field( "lateralSlideFriction", &b3WheeledVehicleTire::lateralSlideFriction )
+		.field( "rollingResistance", &b3WheeledVehicleTire::rollingResistance )
+		.field( "longitudinalRelaxationLength", &b3WheeledVehicleTire::longitudinalRelaxationLength );
 
-	value_object<b3VehicleWheelDef>( "b3VehicleWheelDef" )
-		.field( "position", &b3VehicleWheelDef::position )
-		.field( "radius", &b3VehicleWheelDef::radius )
-		.field( "width", &b3VehicleWheelDef::width )
-		.field( "inertia", &b3VehicleWheelDef::inertia )
-		.field( "steerFactor", &b3VehicleWheelDef::steerFactor )
-		.field( "maxBrakeTorque", &b3VehicleWheelDef::maxBrakeTorque )
-		.field( "maxHandBrakeTorque", &b3VehicleWheelDef::maxHandBrakeTorque )
-		.field( "angularDamping", &b3VehicleWheelDef::angularDamping )
-		.field( "castType", &b3VehicleWheelDef::castType )
-		.field( "suspension", &b3VehicleWheelDef::suspension )
-		.field( "tire", &b3VehicleWheelDef::tire );
+	value_object<b3WheeledVehicleWheelDef>( "b3WheeledVehicleWheelDef" )
+		.field( "position", &b3WheeledVehicleWheelDef::position )
+		.field( "radius", &b3WheeledVehicleWheelDef::radius )
+		.field( "width", &b3WheeledVehicleWheelDef::width )
+		.field( "inertia", &b3WheeledVehicleWheelDef::inertia )
+		.field( "steerFactor", &b3WheeledVehicleWheelDef::steerFactor )
+		.field( "maxBrakeTorque", &b3WheeledVehicleWheelDef::maxBrakeTorque )
+		.field( "maxHandBrakeTorque", &b3WheeledVehicleWheelDef::maxHandBrakeTorque )
+		.field( "angularDamping", &b3WheeledVehicleWheelDef::angularDamping )
+		.field( "castType", &b3WheeledVehicleWheelDef::castType )
+		.field( "suspension", &b3WheeledVehicleWheelDef::suspension )
+		.field( "tire", &b3WheeledVehicleWheelDef::tire );
 
-	value_object<b3VehicleChassis>( "b3VehicleChassis" )
-		.field( "mass", &b3VehicleChassis::mass )
-		.field( "autoCenterOfMass", &b3VehicleChassis::autoCenterOfMass )
-		.field( "centerOfMassOffset", &b3VehicleChassis::centerOfMassOffset )
-		.field( "forward", &b3VehicleChassis::forward )
-		.field( "up", &b3VehicleChassis::up )
-		.field( "maxSlopeAngle", &b3VehicleChassis::maxSlopeAngle )
-		.field( "castFilter", &b3VehicleChassis::castFilter );
+	value_object<b3WheeledVehicleChassis>( "b3WheeledVehicleChassis" )
+		.field( "mass", &b3WheeledVehicleChassis::mass )
+		.field( "autoCenterOfMass", &b3WheeledVehicleChassis::autoCenterOfMass )
+		.field( "centerOfMassOffset", &b3WheeledVehicleChassis::centerOfMassOffset )
+		.field( "forward", &b3WheeledVehicleChassis::forward )
+		.field( "up", &b3WheeledVehicleChassis::up )
+		.field( "maxSlopeAngle", &b3WheeledVehicleChassis::maxSlopeAngle )
+		.field( "castFilter", &b3WheeledVehicleChassis::castFilter );
 
-	value_object<b3VehicleEngine>( "b3VehicleEngine" )
-		.field( "maxTorque", &b3VehicleEngine::maxTorque )
-		.field( "peakTorqueRpm", &b3VehicleEngine::peakTorqueRpm )
-		.field( "idleTorqueScale", &b3VehicleEngine::idleTorqueScale )
-		.field( "maxRpmTorqueScale", &b3VehicleEngine::maxRpmTorqueScale )
-		.field( "idleRpm", &b3VehicleEngine::idleRpm )
-		.field( "maxRpm", &b3VehicleEngine::maxRpm )
-		.field( "inertia", &b3VehicleEngine::inertia )
-		.field( "angularDamping", &b3VehicleEngine::angularDamping );
+	value_object<b3WheeledVehicleEngine>( "b3WheeledVehicleEngine" )
+		.field( "maxTorque", &b3WheeledVehicleEngine::maxTorque )
+		.field( "peakTorqueRpm", &b3WheeledVehicleEngine::peakTorqueRpm )
+		.field( "idleTorqueScale", &b3WheeledVehicleEngine::idleTorqueScale )
+		.field( "maxRpmTorqueScale", &b3WheeledVehicleEngine::maxRpmTorqueScale )
+		.field( "idleRpm", &b3WheeledVehicleEngine::idleRpm )
+		.field( "maxRpm", &b3WheeledVehicleEngine::maxRpm )
+		.field( "inertia", &b3WheeledVehicleEngine::inertia )
+		.field( "angularDamping", &b3WheeledVehicleEngine::angularDamping );
 
-	value_object<b3VehicleTurboStage>( "b3VehicleTurboStage" )
-		.field( "gain", &b3VehicleTurboStage::gain )
-		.field( "spoolRpm", &b3VehicleTurboStage::spoolRpm )
-		.field( "fullBoostRpm", &b3VehicleTurboStage::fullBoostRpm )
-		.field( "spoolTime", &b3VehicleTurboStage::spoolTime )
-		.field( "bleedTime", &b3VehicleTurboStage::bleedTime );
+	value_object<b3WheeledVehicleTurboStage>( "b3WheeledVehicleTurboStage" )
+		.field( "gain", &b3WheeledVehicleTurboStage::gain )
+		.field( "spoolRpm", &b3WheeledVehicleTurboStage::spoolRpm )
+		.field( "fullBoostRpm", &b3WheeledVehicleTurboStage::fullBoostRpm )
+		.field( "spoolTime", &b3WheeledVehicleTurboStage::spoolTime )
+		.field( "bleedTime", &b3WheeledVehicleTurboStage::bleedTime );
 
-	registerFixedArray<std::array<b3VehicleTurboStage, B3_MAX_VEHICLE_TURBO_STAGES>>( "b3VehicleTurboStages", std::make_index_sequence<B3_MAX_VEHICLE_TURBO_STAGES>{} );
+	registerFixedArray<std::array<b3WheeledVehicleTurboStage, B3_MAX_VEHICLE_TURBO_STAGES>>( "b3WheeledVehicleTurboStages", std::make_index_sequence<B3_MAX_VEHICLE_TURBO_STAGES>{} );
 
-	value_object<b3VehicleTurbo>( "b3VehicleTurbo" )
-		.field( "stages", &b3VehicleTurbo::stages )
-		.field( "instantFraction", &b3VehicleTurbo::instantFraction )
-		.field( "parasiticTorque", &b3VehicleTurbo::parasiticTorque )
-		.field( "antiLag", &b3VehicleTurbo::antiLag );
+	value_object<b3WheeledVehicleTurbo>( "b3WheeledVehicleTurbo" )
+		.field( "stages", &b3WheeledVehicleTurbo::stages )
+		.field( "instantFraction", &b3WheeledVehicleTurbo::instantFraction )
+		.field( "parasiticTorque", &b3WheeledVehicleTurbo::parasiticTorque )
+		.field( "antiLag", &b3WheeledVehicleTurbo::antiLag );
 
-	registerFixedArray<std::array<float, B3_MAX_VEHICLE_GEARS>>( "b3VehicleGearRatios", std::make_index_sequence<B3_MAX_VEHICLE_GEARS>{} );
+	registerFixedArray<std::array<float, B3_MAX_VEHICLE_GEARS>>( "b3WheeledVehicleGearRatios", std::make_index_sequence<B3_MAX_VEHICLE_GEARS>{} );
 
-	value_object<b3VehicleTransmission>( "b3VehicleTransmission" )
-		.field( "mode", &b3VehicleTransmission::mode )
-		.field( "gearRatios", &b3VehicleTransmission::gearRatios )
-		.field( "gearCount", &b3VehicleTransmission::gearCount )
-		.field( "reverseRatio", &b3VehicleTransmission::reverseRatio )
-		.field( "finalDrive", &b3VehicleTransmission::finalDrive )
-		.field( "shiftUpRpm", &b3VehicleTransmission::shiftUpRpm )
-		.field( "shiftDownRpm", &b3VehicleTransmission::shiftDownRpm )
-		.field( "shiftTime", &b3VehicleTransmission::shiftTime )
-		.field( "clutchReleaseTime", &b3VehicleTransmission::clutchReleaseTime )
-		.field( "shiftLatency", &b3VehicleTransmission::shiftLatency )
-		.field( "clutchStrength", &b3VehicleTransmission::clutchStrength );
+	value_object<b3WheeledVehicleTransmission>( "b3WheeledVehicleTransmission" )
+		.field( "mode", &b3WheeledVehicleTransmission::mode )
+		.field( "gearRatios", &b3WheeledVehicleTransmission::gearRatios )
+		.field( "gearCount", &b3WheeledVehicleTransmission::gearCount )
+		.field( "reverseRatio", &b3WheeledVehicleTransmission::reverseRatio )
+		.field( "finalDrive", &b3WheeledVehicleTransmission::finalDrive )
+		.field( "shiftUpRpm", &b3WheeledVehicleTransmission::shiftUpRpm )
+		.field( "shiftDownRpm", &b3WheeledVehicleTransmission::shiftDownRpm )
+		.field( "shiftTime", &b3WheeledVehicleTransmission::shiftTime )
+		.field( "clutchReleaseTime", &b3WheeledVehicleTransmission::clutchReleaseTime )
+		.field( "shiftLatency", &b3WheeledVehicleTransmission::shiftLatency )
+		.field( "clutchStrength", &b3WheeledVehicleTransmission::clutchStrength );
 
-	value_object<b3VehicleDifferential>( "b3VehicleDifferential" )
-		.field( "leftWheel", &b3VehicleDifferential::leftWheel )
-		.field( "rightWheel", &b3VehicleDifferential::rightWheel )
-		.field( "torqueRatio", &b3VehicleDifferential::torqueRatio )
-		.field( "leftRightSplit", &b3VehicleDifferential::leftRightSplit )
-		.field( "limitedSlipRatio", &b3VehicleDifferential::limitedSlipRatio );
+	value_object<b3WheeledVehicleDifferential>( "b3WheeledVehicleDifferential" )
+		.field( "leftWheel", &b3WheeledVehicleDifferential::leftWheel )
+		.field( "rightWheel", &b3WheeledVehicleDifferential::rightWheel )
+		.field( "torqueRatio", &b3WheeledVehicleDifferential::torqueRatio )
+		.field( "leftRightSplit", &b3WheeledVehicleDifferential::leftRightSplit )
+		.field( "limitedSlipRatio", &b3WheeledVehicleDifferential::limitedSlipRatio );
 
-	registerFixedArray<std::array<b3VehicleDifferential, B3_MAX_VEHICLE_DIFFERENTIALS>>( "b3VehicleDifferentials", std::make_index_sequence<B3_MAX_VEHICLE_DIFFERENTIALS>{} );
+	registerFixedArray<std::array<b3WheeledVehicleDifferential, B3_MAX_VEHICLE_DIFFERENTIALS>>( "b3WheeledVehicleDifferentials", std::make_index_sequence<B3_MAX_VEHICLE_DIFFERENTIALS>{} );
 
-	value_object<b3VehicleDrivetrain>( "b3VehicleDrivetrain" )
-		.field( "differentials", &b3VehicleDrivetrain::differentials )
-		.field( "differentialCount", &b3VehicleDrivetrain::differentialCount )
-		.field( "centerLimitedSlipRatio", &b3VehicleDrivetrain::centerLimitedSlipRatio );
+	value_object<b3WheeledVehicleDrivetrain>( "b3WheeledVehicleDrivetrain" )
+		.field( "differentials", &b3WheeledVehicleDrivetrain::differentials )
+		.field( "differentialCount", &b3WheeledVehicleDrivetrain::differentialCount )
+		.field( "centerLimitedSlipRatio", &b3WheeledVehicleDrivetrain::centerLimitedSlipRatio );
 
-	value_object<b3VehicleAntiRollBar>( "b3VehicleAntiRollBar" )
-		.field( "leftWheel", &b3VehicleAntiRollBar::leftWheel )
-		.field( "rightWheel", &b3VehicleAntiRollBar::rightWheel )
-		.field( "stiffness", &b3VehicleAntiRollBar::stiffness );
+	value_object<b3WheeledVehicleAntiRollBar>( "b3WheeledVehicleAntiRollBar" )
+		.field( "leftWheel", &b3WheeledVehicleAntiRollBar::leftWheel )
+		.field( "rightWheel", &b3WheeledVehicleAntiRollBar::rightWheel )
+		.field( "stiffness", &b3WheeledVehicleAntiRollBar::stiffness );
 
-	registerFixedArray<std::array<b3VehicleAntiRollBar, B3_MAX_VEHICLE_ANTI_ROLL_BARS>>( "b3VehicleAntiRollBars", std::make_index_sequence<B3_MAX_VEHICLE_ANTI_ROLL_BARS>{} );
+	registerFixedArray<std::array<b3WheeledVehicleAntiRollBar, B3_MAX_VEHICLE_ANTI_ROLL_BARS>>( "b3WheeledVehicleAntiRollBars", std::make_index_sequence<B3_MAX_VEHICLE_ANTI_ROLL_BARS>{} );
 
-	value_object<b3VehicleAntiRoll>( "b3VehicleAntiRoll" )
-		.field( "bars", &b3VehicleAntiRoll::bars )
-		.field( "barCount", &b3VehicleAntiRoll::barCount );
+	value_object<b3WheeledVehicleAntiRoll>( "b3WheeledVehicleAntiRoll" )
+		.field( "bars", &b3WheeledVehicleAntiRoll::bars )
+		.field( "barCount", &b3WheeledVehicleAntiRoll::barCount );
 
-	value_object<b3VehicleSteering>( "b3VehicleSteering" )
-		.field( "maxAngle", &b3VehicleSteering::maxAngle )
-		.field( "speedReference", &b3VehicleSteering::speedReference )
-		.field( "steerSpeed", &b3VehicleSteering::steerSpeed )
-		.field( "returnSpeed", &b3VehicleSteering::returnSpeed )
-		.field( "ackermann", &b3VehicleSteering::ackermann );
+	value_object<b3WheeledVehicleSteering>( "b3WheeledVehicleSteering" )
+		.field( "maxAngle", &b3WheeledVehicleSteering::maxAngle )
+		.field( "speedReference", &b3WheeledVehicleSteering::speedReference )
+		.field( "steerSpeed", &b3WheeledVehicleSteering::steerSpeed )
+		.field( "returnSpeed", &b3WheeledVehicleSteering::returnSpeed )
+		.field( "ackermann", &b3WheeledVehicleSteering::ackermann );
 
-	value_object<b3VehicleAssists>( "b3VehicleAssists" )
-		.field( "counterSteer", &b3VehicleAssists::counterSteer )
-		.field( "driftGripScale", &b3VehicleAssists::driftGripScale )
-		.field( "tractionControl", &b3VehicleAssists::tractionControl )
-		.field( "abs", &b3VehicleAssists::abs )
-		.field( "downforce", &b3VehicleAssists::downforce )
-		.field( "drag", &b3VehicleAssists::drag )
-		.field( "rollInfluence", &b3VehicleAssists::rollInfluence )
-		.field( "airControl", &b3VehicleAssists::airControl )
-		.field( "airAngularDamping", &b3VehicleAssists::airAngularDamping )
-		.field( "selfRighting", &b3VehicleAssists::selfRighting )
-		.field( "maxTiltAngle", &b3VehicleAssists::maxTiltAngle )
-		.field( "stickyTire", &b3VehicleAssists::stickyTire )
-		.field( "stickySpeed", &b3VehicleAssists::stickySpeed )
-		.field( "stickyTime", &b3VehicleAssists::stickyTime )
-		.field( "brakeReverse", &b3VehicleAssists::brakeReverse )
-		.field( "launchControl", &b3VehicleAssists::launchControl );
+	value_object<b3WheeledVehicleAssists>( "b3WheeledVehicleAssists" )
+		.field( "counterSteer", &b3WheeledVehicleAssists::counterSteer )
+		.field( "driftGripScale", &b3WheeledVehicleAssists::driftGripScale )
+		.field( "tractionControl", &b3WheeledVehicleAssists::tractionControl )
+		.field( "abs", &b3WheeledVehicleAssists::abs )
+		.field( "downforce", &b3WheeledVehicleAssists::downforce )
+		.field( "drag", &b3WheeledVehicleAssists::drag )
+		.field( "rollInfluence", &b3WheeledVehicleAssists::rollInfluence )
+		.field( "airControl", &b3WheeledVehicleAssists::airControl )
+		.field( "airAngularDamping", &b3WheeledVehicleAssists::airAngularDamping )
+		.field( "selfRighting", &b3WheeledVehicleAssists::selfRighting )
+		.field( "maxTiltAngle", &b3WheeledVehicleAssists::maxTiltAngle )
+		.field( "stickyTire", &b3WheeledVehicleAssists::stickyTire )
+		.field( "stickySpeed", &b3WheeledVehicleAssists::stickySpeed )
+		.field( "stickyTime", &b3WheeledVehicleAssists::stickyTime )
+		.field( "brakeReverse", &b3WheeledVehicleAssists::brakeReverse )
+		.field( "launchControl", &b3WheeledVehicleAssists::launchControl );
 
-	registerFixedArray<std::array<b3VehicleWheelDef, B3_MAX_VEHICLE_WHEELS>>( "b3VehicleWheels", std::make_index_sequence<B3_MAX_VEHICLE_WHEELS>{} );
+	registerFixedArray<std::array<b3WheeledVehicleWheelDef, B3_MAX_VEHICLE_WHEELS>>( "b3WheeledVehicleWheels", std::make_index_sequence<B3_MAX_VEHICLE_WHEELS>{} );
 
-	value_object<b3VehicleDef>( "b3VehicleDef" )
-		.field( "chassisId", &b3VehicleDef::chassisId )
-		.field( "chassis", &b3VehicleDef::chassis )
-		.field( "wheels", &b3VehicleDef::wheels )
-		.field( "wheelCount", &b3VehicleDef::wheelCount )
-		.field( "engine", &b3VehicleDef::engine )
-		.field( "turbo", &b3VehicleDef::turbo )
-		.field( "transmission", &b3VehicleDef::transmission )
-		.field( "drivetrain", &b3VehicleDef::drivetrain )
-		.field( "antiRoll", &b3VehicleDef::antiRoll )
-		.field( "steering", &b3VehicleDef::steering )
-		.field( "assists", &b3VehicleDef::assists )
-		.field( "internalValue", &b3VehicleDef::internalValue );
+	value_object<b3WheeledVehicleDef>( "b3WheeledVehicleDef" )
+		.field( "chassisId", &b3WheeledVehicleDef::chassisId )
+		.field( "chassis", &b3WheeledVehicleDef::chassis )
+		.field( "wheels", &b3WheeledVehicleDef::wheels )
+		.field( "wheelCount", &b3WheeledVehicleDef::wheelCount )
+		.field( "engine", &b3WheeledVehicleDef::engine )
+		.field( "turbo", &b3WheeledVehicleDef::turbo )
+		.field( "transmission", &b3WheeledVehicleDef::transmission )
+		.field( "drivetrain", &b3WheeledVehicleDef::drivetrain )
+		.field( "antiRoll", &b3WheeledVehicleDef::antiRoll )
+		.field( "steering", &b3WheeledVehicleDef::steering )
+		.field( "assists", &b3WheeledVehicleDef::assists )
+		.field( "internalValue", &b3WheeledVehicleDef::internalValue );
 
-	value_object<b3VehicleInput>( "b3VehicleInput" )
-		.field( "forward", &b3VehicleInput::forward )
-		.field( "brake", &b3VehicleInput::brake )
-		.field( "steer", &b3VehicleInput::steer )
-		.field( "handbrake", &b3VehicleInput::handbrake );
+	value_object<b3WheeledVehicleInput>( "b3WheeledVehicleInput" )
+		.field( "forward", &b3WheeledVehicleInput::forward )
+		.field( "brake", &b3WheeledVehicleInput::brake )
+		.field( "steer", &b3WheeledVehicleInput::steer )
+		.field( "handbrake", &b3WheeledVehicleInput::handbrake );
 
-	value_object<b3VehicleState>( "b3VehicleState" )
-		.field( "speed", &b3VehicleState::speed )
-		.field( "engineRpm", &b3VehicleState::engineRpm )
-		.field( "boost", &b3VehicleState::boost )
-		.field( "gear", &b3VehicleState::gear )
-		.field( "isShifting", &b3VehicleState::isShifting )
-		.field( "throttle", &b3VehicleState::throttle )
-		.field( "brake", &b3VehicleState::brake )
-		.field( "steerAngle", &b3VehicleState::steerAngle )
-		.field( "wheelsInContact", &b3VehicleState::wheelsInContact )
-		.field( "stuck", &b3VehicleState::stuck )
-		.field( "isLaunching", &b3VehicleState::isLaunching );
+	value_object<b3WheeledVehicleState>( "b3WheeledVehicleState" )
+		.field( "speed", &b3WheeledVehicleState::speed )
+		.field( "engineRpm", &b3WheeledVehicleState::engineRpm )
+		.field( "boost", &b3WheeledVehicleState::boost )
+		.field( "gear", &b3WheeledVehicleState::gear )
+		.field( "isShifting", &b3WheeledVehicleState::isShifting )
+		.field( "throttle", &b3WheeledVehicleState::throttle )
+		.field( "brake", &b3WheeledVehicleState::brake )
+		.field( "steerAngle", &b3WheeledVehicleState::steerAngle )
+		.field( "wheelsInContact", &b3WheeledVehicleState::wheelsInContact )
+		.field( "stuck", &b3WheeledVehicleState::stuck )
+		.field( "isLaunching", &b3WheeledVehicleState::isLaunching );
 
-	value_object<b3VehicleWheelState>( "b3VehicleWheelState" )
-		.field( "hasContact", &b3VehicleWheelState::hasContact )
-		.field( "contactPoint", &b3VehicleWheelState::contactPoint )
-		.field( "contactNormal", &b3VehicleWheelState::contactNormal )
-		.field( "groundShapeId", &b3VehicleWheelState::groundShapeId )
-		.field( "userMaterialId", &b3VehicleWheelState::userMaterialId )
-		.field( "suspensionLength", &b3VehicleWheelState::suspensionLength )
-		.field( "compression", &b3VehicleWheelState::compression )
-		.field( "load", &b3VehicleWheelState::load )
-		.field( "longitudinalForce", &b3VehicleWheelState::longitudinalForce )
-		.field( "lateralForce", &b3VehicleWheelState::lateralForce )
-		.field( "slipRatio", &b3VehicleWheelState::slipRatio )
-		.field( "slipAngle", &b3VehicleWheelState::slipAngle )
-		.field( "angularVelocity", &b3VehicleWheelState::angularVelocity )
-		.field( "rotationAngle", &b3VehicleWheelState::rotationAngle )
-		.field( "steerAngle", &b3VehicleWheelState::steerAngle )
-		.field( "driveTorque", &b3VehicleWheelState::driveTorque )
-		.field( "brakeTorque", &b3VehicleWheelState::brakeTorque )
-		.field( "isSticky", &b3VehicleWheelState::isSticky );
+	value_object<b3WheeledVehicleWheelState>( "b3WheeledVehicleWheelState" )
+		.field( "hasContact", &b3WheeledVehicleWheelState::hasContact )
+		.field( "contactPoint", &b3WheeledVehicleWheelState::contactPoint )
+		.field( "contactNormal", &b3WheeledVehicleWheelState::contactNormal )
+		.field( "groundShapeId", &b3WheeledVehicleWheelState::groundShapeId )
+		.field( "userMaterialId", &b3WheeledVehicleWheelState::userMaterialId )
+		.field( "suspensionLength", &b3WheeledVehicleWheelState::suspensionLength )
+		.field( "compression", &b3WheeledVehicleWheelState::compression )
+		.field( "load", &b3WheeledVehicleWheelState::load )
+		.field( "longitudinalForce", &b3WheeledVehicleWheelState::longitudinalForce )
+		.field( "lateralForce", &b3WheeledVehicleWheelState::lateralForce )
+		.field( "slipRatio", &b3WheeledVehicleWheelState::slipRatio )
+		.field( "slipAngle", &b3WheeledVehicleWheelState::slipAngle )
+		.field( "angularVelocity", &b3WheeledVehicleWheelState::angularVelocity )
+		.field( "rotationAngle", &b3WheeledVehicleWheelState::rotationAngle )
+		.field( "steerAngle", &b3WheeledVehicleWheelState::steerAngle )
+		.field( "driveTorque", &b3WheeledVehicleWheelState::driveTorque )
+		.field( "brakeTorque", &b3WheeledVehicleWheelState::brakeTorque )
+		.field( "isSticky", &b3WheeledVehicleWheelState::isSticky );
 
-	function( "b3DefaultVehicleDef()", &b3DefaultVehicleDef );
-	function( "b3DefaultVehicleWheelDef()", &b3DefaultVehicleWheelDef );
-	function( "b3CreateVehicle(worldId, vehicleDef)", +[]( b3WorldId worldId, b3VehicleDef def ) { return b3CreateVehicle( worldId, &def ); } );
-	function( "b3DestroyVehicle(vehicleId)", &b3DestroyVehicle );
-	function( "b3Vehicle_IsValid(vehicleId)", &b3Vehicle_IsValid );
-	function( "b3Vehicle_GetChassisBody(vehicleId)", &b3Vehicle_GetChassisBody );
-	function( "b3Vehicle_GetWheelCount(vehicleId)", &b3Vehicle_GetWheelCount );
-	function( "b3Vehicle_SetInput(vehicleId, input)", &b3Vehicle_SetInput );
-	function( "b3Vehicle_GetInput(vehicleId)", &b3Vehicle_GetInput );
-	function( "b3Vehicle_SetGear(vehicleId, gear)", &b3Vehicle_SetGear );
-	function( "b3Vehicle_Reset(vehicleId, position, rotation)", &b3Vehicle_Reset );
-	function( "b3Vehicle_SetChassis(vehicleId, chassis)", &b3Vehicle_SetChassis );
-	function( "b3Vehicle_GetChassis(vehicleId)", &b3Vehicle_GetChassis );
-	function( "b3Vehicle_SetWheel(vehicleId, wheelIndex, wheel)", &b3Vehicle_SetWheel );
-	function( "b3Vehicle_GetWheel(vehicleId, wheelIndex)", &b3Vehicle_GetWheel );
-	function( "b3Vehicle_SetEngine(vehicleId, engine)", &b3Vehicle_SetEngine );
-	function( "b3Vehicle_GetEngine(vehicleId)", &b3Vehicle_GetEngine );
-	function( "b3Vehicle_SetTurbo(vehicleId, turbo)", &b3Vehicle_SetTurbo );
-	function( "b3Vehicle_GetTurbo(vehicleId)", &b3Vehicle_GetTurbo );
-	function( "b3Vehicle_SetTransmission(vehicleId, transmission)", &b3Vehicle_SetTransmission );
-	function( "b3Vehicle_GetTransmission(vehicleId)", &b3Vehicle_GetTransmission );
-	function( "b3Vehicle_SetDrivetrain(vehicleId, drivetrain)", &b3Vehicle_SetDrivetrain );
-	function( "b3Vehicle_GetDrivetrain(vehicleId)", &b3Vehicle_GetDrivetrain );
-	function( "b3Vehicle_SetAntiRoll(vehicleId, antiRoll)", &b3Vehicle_SetAntiRoll );
-	function( "b3Vehicle_GetAntiRoll(vehicleId)", &b3Vehicle_GetAntiRoll );
-	function( "b3Vehicle_SetSteering(vehicleId, steering)", &b3Vehicle_SetSteering );
-	function( "b3Vehicle_GetSteering(vehicleId)", &b3Vehicle_GetSteering );
-	function( "b3Vehicle_SetAssists(vehicleId, assists)", &b3Vehicle_SetAssists );
-	function( "b3Vehicle_GetAssists(vehicleId)", &b3Vehicle_GetAssists );
-	function( "b3Vehicle_GetState(vehicleId)", &b3Vehicle_GetState );
-	function( "b3Vehicle_GetWheelState(vehicleId, wheelIndex)", &b3Vehicle_GetWheelState );
-	function( "b3Vehicle_GetSprungMass(vehicleId, wheelIndex)", &b3Vehicle_GetSprungMass );
-	function( "b3World_GetVehicleCount(worldId)", &b3World_GetVehicleCount );
-	out_function( "b3Vehicle_GetWheelTransform(outPosition, outRotation, vehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
-		+[]( uintptr_t outPos, uintptr_t outRot, b3VehicleId id, int wheelIndex ) { b3WorldTransform t = b3Vehicle_GetWheelTransform( id, wheelIndex ); writeVec3( outPos, t.p ); writeQuat( outRot, t.q ); } );
+	function( "b3DefaultWheeledVehicleDef()", &b3DefaultWheeledVehicleDef );
+	function( "b3DefaultWheeledVehicleWheelDef()", &b3DefaultWheeledVehicleWheelDef );
+	function( "b3CreateWheeledVehicle(worldId, wheeledVehicleDef)", +[]( b3WorldId worldId, b3WheeledVehicleDef def ) { return b3CreateWheeledVehicle( worldId, &def ); } );
+	function( "b3DestroyWheeledVehicle(wheeledVehicleId)", &b3DestroyWheeledVehicle );
+	function( "b3WheeledVehicle_IsValid(wheeledVehicleId)", &b3WheeledVehicle_IsValid );
+	function( "b3WheeledVehicle_GetChassisBody(wheeledVehicleId)", &b3WheeledVehicle_GetChassisBody );
+	function( "b3WheeledVehicle_GetWheelCount(wheeledVehicleId)", &b3WheeledVehicle_GetWheelCount );
+	function( "b3WheeledVehicle_SetInput(wheeledVehicleId, input)", &b3WheeledVehicle_SetInput );
+	function( "b3WheeledVehicle_GetInput(wheeledVehicleId)", &b3WheeledVehicle_GetInput );
+	function( "b3WheeledVehicle_SetGear(wheeledVehicleId, gear)", &b3WheeledVehicle_SetGear );
+	function( "b3WheeledVehicle_Reset(wheeledVehicleId, position, rotation)", &b3WheeledVehicle_Reset );
+	function( "b3WheeledVehicle_SetChassis(wheeledVehicleId, chassis)", &b3WheeledVehicle_SetChassis );
+	function( "b3WheeledVehicle_GetChassis(wheeledVehicleId)", &b3WheeledVehicle_GetChassis );
+	function( "b3WheeledVehicle_SetWheel(wheeledVehicleId, wheelIndex, wheel)", &b3WheeledVehicle_SetWheel );
+	function( "b3WheeledVehicle_GetWheel(wheeledVehicleId, wheelIndex)", &b3WheeledVehicle_GetWheel );
+	function( "b3WheeledVehicle_SetEngine(wheeledVehicleId, engine)", &b3WheeledVehicle_SetEngine );
+	function( "b3WheeledVehicle_GetEngine(wheeledVehicleId)", &b3WheeledVehicle_GetEngine );
+	function( "b3WheeledVehicle_SetTurbo(wheeledVehicleId, turbo)", &b3WheeledVehicle_SetTurbo );
+	function( "b3WheeledVehicle_GetTurbo(wheeledVehicleId)", &b3WheeledVehicle_GetTurbo );
+	function( "b3WheeledVehicle_SetTransmission(wheeledVehicleId, transmission)", &b3WheeledVehicle_SetTransmission );
+	function( "b3WheeledVehicle_GetTransmission(wheeledVehicleId)", &b3WheeledVehicle_GetTransmission );
+	function( "b3WheeledVehicle_SetDrivetrain(wheeledVehicleId, drivetrain)", &b3WheeledVehicle_SetDrivetrain );
+	function( "b3WheeledVehicle_GetDrivetrain(wheeledVehicleId)", &b3WheeledVehicle_GetDrivetrain );
+	function( "b3WheeledVehicle_SetAntiRoll(wheeledVehicleId, antiRoll)", &b3WheeledVehicle_SetAntiRoll );
+	function( "b3WheeledVehicle_GetAntiRoll(wheeledVehicleId)", &b3WheeledVehicle_GetAntiRoll );
+	function( "b3WheeledVehicle_SetSteering(wheeledVehicleId, steering)", &b3WheeledVehicle_SetSteering );
+	function( "b3WheeledVehicle_GetSteering(wheeledVehicleId)", &b3WheeledVehicle_GetSteering );
+	function( "b3WheeledVehicle_SetAssists(wheeledVehicleId, assists)", &b3WheeledVehicle_SetAssists );
+	function( "b3WheeledVehicle_GetAssists(wheeledVehicleId)", &b3WheeledVehicle_GetAssists );
+	function( "b3WheeledVehicle_GetState(wheeledVehicleId)", &b3WheeledVehicle_GetState );
+	function( "b3WheeledVehicle_GetWheelState(wheeledVehicleId, wheelIndex)", &b3WheeledVehicle_GetWheelState );
+	function( "b3WheeledVehicle_GetSprungMass(wheeledVehicleId, wheelIndex)", &b3WheeledVehicle_GetSprungMass );
+	function( "b3World_GetWheeledVehicleCount(worldId)", &b3World_GetWheeledVehicleCount );
+	out_function( "b3WheeledVehicle_GetWheelTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
+		+[]( uintptr_t outPos, uintptr_t outRot, b3WheeledVehicleId id, int wheelIndex ) { b3WorldTransform t = b3WheeledVehicle_GetWheelTransform( id, wheelIndex ); writeVec3( outPos, t.p ); writeQuat( outRot, t.q ); } );
+	out_function( "b3WheeledVehicle_GetWheelLocalTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)", out_desc::Vec3, out_desc::Quat, out_desc::Pass, out_desc::Pass,
+		+[]( uintptr_t outPos, uintptr_t outRot, b3WheeledVehicleId id, int wheelIndex )
+		{
+			b3Transform t = getWheelLocalTransform( b3WheeledVehicle_GetChassis( id ), b3WheeledVehicle_GetWheel( id, wheelIndex ).position, b3WheeledVehicle_GetWheelState( id, wheelIndex ) );
+			writeVec3( outPos, t.p );
+			writeQuat( outRot, t.q );
+		} );
 
-	// Packed per-frame readout, wrapped by the facade as createVehicleStateBuffer /
-	// getVehicleStateData / getVehicleWheelAt / destroyVehicleStateBuffer.
-	class_<VehicleStateBuffer>( "VehicleStateBufferImpl" )
+	// Raw writer and scratch pointer behind the facade's b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId),
+	// which copies the packed records into the caller's Float32Array. Both are stripped from the
+	// public module and its typings.
+	function( "b3WheeledVehicle_GetWheelLocalDataInto(wheeledVehicleId)", &packWheeledVehicleWheelLocal );
+	function( "b3_getWheeledVehicleWheelLocalScratch", +[]() -> uintptr_t { return reinterpret_cast<uintptr_t>( g_wheeledVehicleWheelLocalScratch ); } );
+
+	// Packed per-frame readout, wrapped by the facade as createWheeledVehicleStateBuffer /
+	// getWheeledVehicleStateData / getWheeledVehicleWheelAt / destroyWheeledVehicleStateBuffer.
+	class_<WheeledVehicleStateBuffer>( "WheeledVehicleStateBufferImpl" )
 		.constructor<>()
-		.function( "load", &VehicleStateBuffer::load )
-		.function( "wheelCount", &VehicleStateBuffer::getWheelCount )
-		.function( "i32Ptr", &VehicleStateBuffer::i32Ptr )
-		.function( "f32Ptr", &VehicleStateBuffer::f32Ptr )
-		.function( "f64Ptr", &VehicleStateBuffer::f64Ptr );
+		.function( "load", &WheeledVehicleStateBuffer::load )
+		.function( "wheelCount", &WheeledVehicleStateBuffer::getWheelCount )
+		.function( "i32Ptr", &WheeledVehicleStateBuffer::i32Ptr )
+		.function( "f32Ptr", &WheeledVehicleStateBuffer::f32Ptr )
+		.function( "f64Ptr", &WheeledVehicleStateBuffer::f64Ptr );
 }

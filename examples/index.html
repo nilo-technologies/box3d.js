@@ -17,6 +17,8 @@
                 sans-serif;
             background: #222;
             height: 100vh;
+            /* the visible height on phones, so the bottom of the example is not under the browser bars */
+            height: 100dvh;
             display: flex;
             overflow: hidden;
 
@@ -55,6 +57,10 @@
             position: sticky;
             top: 0;
             z-index: 1001;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
 
         .sidebar-header h1 {
@@ -197,6 +203,10 @@
             font-size: 16px;
             color: #fff;
             flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .example-frame {
@@ -205,20 +215,17 @@
             background: #fff;
         }
 
-        /* source link positioned relative to content, accounts for sidebar */
-        #source-link {
-            position: fixed;
-            left: 20px;
-            bottom: 20px;
-            z-index: 2000;
+        /* source links sit in the top bar and the sidebar header, so they never cover an
+           example's own controls, such as the vehicle touch controls at the bottom */
+        .source-link {
+            flex: none;
             background: #222;
             color: #fff;
             border: 1px solid #555;
             border-radius: 6px;
-            padding: 8px 14px;
-            font-size: 15px;
+            padding: 5px 10px;
+            font-size: 13px;
             text-decoration: none;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             display: flex;
             align-items: center;
             gap: 6px;
@@ -226,10 +233,8 @@
             transition: opacity 0.2s;
         }
 
-        @media (min-width: 769px) {
-            #source-link {
-                left: calc(300px + 20px);
-            }
+        .source-link:hover {
+            opacity: 1;
         }
 
         .sidebar-overlay {
@@ -283,6 +288,14 @@
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h1>box3d.js</h1>
+            <a class="source-link" href="#" target="_blank" title="View source code on GitHub">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle">
+                    <path d="M9 18v-6h6v6M9 6h6" />
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+                <span>Source</span>
+            </a>
         </div>
         <div class="search-container">
             <input type="text" id="search-input" class="search-input" placeholder="Search examples..." />
@@ -294,18 +307,17 @@
         <div class="content-header">
             <button class="hamburger" id="hamburger">☰</button>
             <h2 id="example-title">Select an example</h2>
+            <a class="source-link" href="#" target="_blank" title="View source code on GitHub">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle">
+                    <path d="M9 18v-6h6v6M9 6h6" />
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+                <span>Source</span>
+            </a>
         </div>
         <iframe class="example-frame" id="example-frame"></iframe>
     </div>
-
-        <a id="source-link" href="#" target="_blank" title="View source code on GitHub">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle">
-                <path d="M9 18v-6h6v6M9 6h6" />
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
-            <span>Source</span>
-        </a>
 
     <script type="module">
         import examples from "./src/examples.json";
@@ -430,9 +442,10 @@
             // update URL
             window.location.hash = exampleKey;
 
-            // update source link
-            const sourceLink = document.getElementById("source-link");
-            sourceLink.href = `https://github.com/nilo-technologies/box3d.js/blob/main/examples/src/${exampleKey}.ts`;
+            // update source links
+            for (const sourceLink of document.querySelectorAll(".source-link")) {
+                sourceLink.href = `https://github.com/nilo-technologies/box3d.js/blob/main/examples/src/${exampleKey}.ts`;
+            }
 
             // close mobile sidebar
             sidebar.classList.remove("open");

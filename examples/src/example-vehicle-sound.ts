@@ -1,20 +1,35 @@
-// Vehicle: sound lab. Tunes the vehicle examples' procedural sound (engine, tires, turbo, wind,
-// bump stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
+// Vehicle: sound lab. Tunes the vehicle examples' procedural sound (engine, tires, turbo, bump
+// stop) without driving a car. The Drive folder feeds the sound: hold W or the up arrow to
 // rev, drag the sliders yourself, or let a loop drive it (free revs, a pull through the gears
 // and a stop, a drift). A small engine and turbo model stands in for the physics, using the
-// rpm range, gearing and turbo types from vehicle-presets.js. The scope shows the waveform and
-// the spectrum. The tuning is saved and shared with the driving examples, whose Sound folder
-// has the same settings.
+// rpm range, gearing and turbo types from box3d.js/wheeled-vehicles. A see-through 3D engine
+// (vehicle-engine-model.ts) runs from the same inputs: its pistons, firing flashes, glowing
+// exhaust and spinning turbo follow the rpm, throttle and boost. The scope along the bottom
+// shows the waveform and the spectrum. The tuning is saved in localStorage; to hear it in the
+// driving examples, copy it over defaultSoundParams in vehicle-audio.ts.
 
-import GUI from 'lil-gui';
-import { createVehicleAudio, type VehicleSound } from './vehicle-audio';
 import {
 	turboTypes,
-	type VehicleCarName,
-	type VehicleTurboName,
-	vehicleCars,
-} from './vehicle-presets';
-import { addSoundPanel, carEngines } from './vehicle-sound-panel';
+	type WheeledVehicleCarName,
+	type WheeledVehicleTurboName,
+	wheeledVehicleCars,
+} from 'box3d.js/wheeled-vehicles';
+import GUI from 'lil-gui';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import {
+	createWheeledVehicleAudio,
+	type EngineVoiceName,
+	engineVoices,
+	type WheeledVehicleSound,
+} from './vehicle-audio';
+import {
+	createEngineModel,
+	type EngineInduction,
+} from './vehicle-engine-model';
+import { carEngines } from './vehicle-engine-voice';
+import { addSoundPanel } from './vehicle-sound-panel';
 
 type Mode = 'keys' | 'manual' | 'rev' | 'pull' | 'drift';
 
@@ -26,20 +41,21 @@ const modes: Record<string, Mode> = {
 	'loop: drift': 'drift',
 };
 
-const audio = createVehicleAudio(0.5);
+const audio = createWheeledVehicleAudio(0.5);
 
 const settings = {
-	car: 'sports' as VehicleCarName,
-	turbo: 'twinScroll' as VehicleTurboName,
+	car: 'sports' as WheeledVehicleCarName,
+	turbo: 'twinScroll' as WheeledVehicleTurboName,
 	cylinders: carEngines.sports.cylinders,
 	volume: audio.volume,
 	mode: 'keys' as Mode,
 };
 audio.setCylinders(settings.cylinders);
 audio.setCarVoice(carEngines.sports.voice);
+audio.setTurbo(settings.turbo);
 
-const sound: VehicleSound & { gear: number } = {
-	engineRpm: vehicleCars.sports.engine.idleRpm,
+const sound: WheeledVehicleSound & { gear: number } = {
+	engineRpm: wheeledVehicleCars.sports.engine.idleRpm,
 	throttle: 0,
 	speed: 0,
 	skid: 0,
@@ -54,13 +70,13 @@ const sound: VehicleSound & { gear: number } = {
 
 const gui = new GUI({ title: 'Sound lab' });
 
-const carOptions: Record<string, VehicleCarName> = {};
-for (const [key, car] of Object.entries(vehicleCars)) {
-	carOptions[car.title] = key as VehicleCarName;
+const carOptions: Record<string, WheeledVehicleCarName> = {};
+for (const [key, car] of Object.entries(wheeledVehicleCars)) {
+	carOptions[car.title] = key as WheeledVehicleCarName;
 }
-const turboOptions: Record<string, VehicleTurboName> = {};
+const turboOptions: Record<string, WheeledVehicleTurboName> = {};
 for (const [key, type] of Object.entries(turboTypes)) {
-	turboOptions[type.title] = key as VehicleTurboName;
+	turboOptions[type.title] = key as WheeledVehicleTurboName;
 }
 
 const playFolder = gui.addFolder('Play');
@@ -68,17 +84,61 @@ playFolder.add({ play: () => audio.blowOff(1) }, 'play').name('▶ blow-off (V)'
 playFolder.add({ play: () => audio.flutter(1) }, 'play').name('▶ stutter (C)');
 playFolder.add({ play: () => audio.thump(1) }, 'play').name('▶ bump stop (B)');
 
+// Before and after: the old sound is the two resonance exhaust, no intake, heard dry. Switching
+// back restores what was set before, and nothing here is saved.
+const compare = { sound: 'new' as 'new' | 'old' };
+// What the dropdown shows. Its change handler reads the old value from compare.
+const compareView = { ...compare };
+const newSound = {
+	exhaust: audio.params.engine.exhaust,
+	intake: audio.params.engine.intake,
+	position: audio.params.listener.position,
+};
+function setCompare(sound: 'new' | 'old'): void {
+	const { engine, listener } = audio.params;
+	if (sound === 'old' && compare.sound === 'new') {
+		Object.assign(newSound, {
+			exhaust: engine.exhaust,
+			intake: engine.intake,
+			position: listener.position,
+		});
+		engine.exhaust = 'resonances';
+		engine.intake = 0;
+		listener.position = 'dry';
+	} else if (sound === 'new' && compare.sound === 'old') {
+		engine.exhaust =
+			newSound.exhaust === 'resonances' ? 'pipes' : newSound.exhaust;
+		engine.intake = newSound.intake || 1;
+		listener.position =
+			newSound.position === 'dry' ? 'exterior' : newSound.position;
+	}
+	compare.sound = sound;
+	compareView.sound = sound;
+	panel.refresh();
+	compareControl.updateDisplay();
+}
+const compareControl = playFolder
+	.add(compareView, 'sound', {
+		'New: exhaust pipes, intake, room': 'new',
+		'Old: two resonances, dry': 'old',
+	})
+	.name('before / after (O)')
+	.onChange((sound: 'new' | 'old') => setCompare(sound));
+
 const carFolder = gui.addFolder('Car');
 carFolder
 	.add(settings, 'car', carOptions)
 	.name('car (rpm, gears, auto voice)')
-	.onChange((name: VehicleCarName) => {
+	.onChange((name: WheeledVehicleCarName) => {
 		settings.cylinders = carEngines[name]?.cylinders ?? 6;
 		audio.setCylinders(settings.cylinders);
 		audio.setCarVoice(carEngines[name]?.voice ?? 'classic');
 		resetDrive();
 	});
-carFolder.add(settings, 'turbo', turboOptions).name('turbo');
+carFolder
+	.add(settings, 'turbo', turboOptions)
+	.name('turbo')
+	.onChange((type: WheeledVehicleTurboName) => audio.setTurbo(type));
 carFolder
 	.add(settings, 'cylinders', 2, 16, 1)
 	.name('cylinders (classic voice)')
@@ -161,6 +221,8 @@ window.addEventListener('keydown', (e) => {
 	if (isTyping(e)) return;
 	held.add(e.code);
 	if (e.code === 'KeyB' && !e.repeat) audio.thump(1);
+	if (e.code === 'KeyO' && !e.repeat)
+		setCompare(compare.sound === 'new' ? 'old' : 'new');
 	if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 window.addEventListener('keyup', (e) => held.delete(e.code));
@@ -170,45 +232,84 @@ window.addEventListener('blur', () => held.clear());
 // Engine and turbo model
 // ---------------------------------------------------------------------------
 
-const stageBoost = [0, 0];
+// Each stage's shaft spool and delivered pressure, 0 to 1
+const stageSpool = [0, 0];
+const stagePressure = [0, 0];
+/** Manifold pressure dumping through the blow-off valve (s), as in the engine */
+const DUMP_TIME = 0.1;
 
+const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
 const smoothstep = (a: number, b: number, x: number) => {
-	const t = Math.min(Math.max((x - a) / Math.max(b - a, 1e-6), 0), 1);
+	const t = clamp01((x - a) / Math.max(b - a, 1e-6));
 	return t * t * (3 - 2 * t);
 };
 
-/** Boost from the turbo type's stages, each lagging toward throttle x its rpm curve */
+/**
+ * Boost from the turbo type's stages, the way the engine (b3UpdateTurbo in vendor/box3d) makes it.
+ * The pedal asks for a share of the fully boosted torque, so boost only builds past 1 / (1 +
+ * full boost). Each stage's shaft spools toward that load times its rpm curve, quicker high in
+ * the revs and as boost builds, and spins down over its bleed time. The pressure is what the
+ * shaft makes, capped by what the pedal asks for: it fills at once and dumps with a DUMP_TIME time constant.
+ */
 function updateBoost(dt: number): void {
 	const type = turboTypes[settings.turbo];
-	const maxRpm = vehicleCars[settings.car].engine.maxRpm;
-	let total = 0;
-	let gains = 0;
-	type.stages.forEach((stage, i) => {
-		const target =
-			sound.throttle *
-			smoothstep(stage.spool, stage.full, sound.engineRpm / maxRpm);
-		const time = target > stageBoost[i] ? stage.spoolTime : stage.bleedTime;
-		stageBoost[i] +=
-			(target - stageBoost[i]) * Math.min(dt / Math.max(time, 0.01), 1);
-		total += stage.gain * stageBoost[i];
-		gains += stage.gain;
-	});
-	const lagged = gains > 0 ? total / gains : 0;
+	const maxRpm = wheeledVehicleCars[settings.car].engine.maxRpm;
+	const rpm = sound.engineRpm;
+	const full = type.stages.reduce((sum, stage) => sum + stage.gain, 0);
+	const load = full > 0 ? clamp01((sound.throttle * (1 + full) - 1) / full) : 0;
+	// Anti-lag keeps the shaft driven and the manifold pressurized off throttle
+	const shaftLoad = type.antiLag ? 1 : load;
 	const instant = type.instantFraction ?? 0;
-	sound.boost =
-		gains > 0 ? instant * sound.throttle + (1 - instant) * lagged : 0;
+	let total = 0;
+	type.stages.forEach((stage, i) => {
+		const fullRpm = stage.full * maxRpm;
+		const target = shaftLoad * smoothstep(stage.spool * maxRpm, fullRpm, rpm);
+		let tau = stage.bleedTime;
+		if (target > stageSpool[i]) {
+			const drive = Math.min(
+				Math.max(shaftLoad * (rpm / fullRpm) * (0.5 + stageSpool[i]), 0.2),
+				3,
+			);
+			tau = stage.spoolTime / drive;
+		}
+		stageSpool[i] += ((target - stageSpool[i]) * dt) / (tau + dt);
+		const spool = stageSpool[i];
+		const delivered = Math.min(spool + (target - spool) * instant, target);
+		stagePressure[i] =
+			delivered >= stagePressure[i]
+				? delivered
+				: stagePressure[i] +
+					((delivered - stagePressure[i]) * dt) / (DUMP_TIME + dt);
+		total += stage.gain * stagePressure[i];
+	});
+	sound.boost = full > 0 ? total / full : 0;
 }
 
-/** Out of gear: the rpm climbs on throttle, falls back to idle off it and bounces off the limiter */
+// Rev limiter: at the max rpm the ignition cuts until the revs fall LIMITER_DROP, then fires
+// again, a quick stutter just under the redline. Snapping the revs back by a few hundred rpm
+// every frame instead would warble the pitch. The sound hears a cut as a dip in load
+// (CUT_THROTTLE of the pedal), not a lift, so it never blows off or crackles.
+const LIMITER_DROP = 120;
+const CUT_FALL = 5000;
+const CUT_THROTTLE = 0.6;
+let limiterCut = false;
+
+/** Out of gear: the rpm climbs on throttle, falls back to idle off it and stutters on the limiter */
 function freeRev(throttle: number, dt: number): void {
-	const { idleRpm, maxRpm } = vehicleCars[settings.car].engine;
+	const { idleRpm, maxRpm } = wheeledVehicleCars[settings.car].engine;
 	sound.throttle += (throttle - sound.throttle) * Math.min(dt * 12, 1);
-	const rate = sound.throttle > 0.05 ? 7000 * sound.throttle : -4500;
+	if (sound.engineRpm >= maxRpm) limiterCut = true;
+	else if (sound.engineRpm <= maxRpm - LIMITER_DROP || sound.throttle < 0.05)
+		limiterCut = false;
+	const rate = limiterCut
+		? -CUT_FALL
+		: sound.throttle > 0.05
+			? 7000 * sound.throttle
+			: -4500;
 	sound.engineRpm = Math.min(
 		Math.max(sound.engineRpm + rate * dt, idleRpm),
 		maxRpm,
 	);
-	if (sound.engineRpm >= maxRpm - 1) sound.engineRpm = maxRpm - 350;
 	sound.gear = 0;
 }
 
@@ -220,8 +321,10 @@ function resetDrive(): void {
 	clock = 0;
 	phase = 'launch';
 	phaseTime = 0;
-	stageBoost.fill(0);
-	sound.engineRpm = vehicleCars[settings.car].engine.idleRpm;
+	stageSpool.fill(0);
+	stagePressure.fill(0);
+	limiterCut = false;
+	sound.engineRpm = wheeledVehicleCars[settings.car].engine.idleRpm;
 	sound.throttle = 0;
 	sound.boost = 0;
 	sound.gear = 0;
@@ -239,14 +342,14 @@ function setPhase(next: typeof phase): void {
 
 /** Wheel speed (m/s) to engine rpm in a gear (1 is first) */
 function gearRpm(speed: number, gear: number): number {
-	const car = vehicleCars[settings.car];
+	const car = wheeledVehicleCars[settings.car];
 	const ratio = car.gears[gear - 1] * car.finalDrive;
 	return ((speed / car.wheelRadius) * ratio * 60) / (2 * Math.PI);
 }
 
 /** Launch, pull through every gear with a lift at each shift, brake to a stop, wait, repeat */
 function pull(dt: number): void {
-	const car = vehicleCars[settings.car];
+	const car = wheeledVehicleCars[settings.car];
 	const { idleRpm, maxRpm } = car.engine;
 	const shiftRpm = 0.9 * maxRpm;
 	const top = car.gears.length;
@@ -296,7 +399,7 @@ function pull(dt: number): void {
 
 /** Holding a slide: wavering throttle and slip, a bump every few seconds */
 function drift(dt: number): void {
-	const { maxRpm } = vehicleCars[settings.car].engine;
+	const { maxRpm } = wheeledVehicleCars[settings.car].engine;
 	const t = clock;
 	sound.gear = 3;
 	sound.speed = 17 + 3 * Math.sin(0.4 * t);
@@ -311,6 +414,7 @@ function drift(dt: number): void {
 
 function step(dt: number): void {
 	clock += dt;
+	if (settings.mode !== 'keys' && settings.mode !== 'rev') limiterCut = false;
 	switch (settings.mode) {
 		case 'manual':
 			break;
@@ -338,18 +442,135 @@ function step(dt: number): void {
 	// Space is a burnout: the tires squeal even with the speed slider at zero
 	const burnout = settings.mode === 'keys' && held.has('Space');
 	audio.update(
-		burnout ? { ...sound, speed: Math.max(sound.speed, 12) } : sound,
+		{
+			...sound,
+			speed: burnout ? Math.max(sound.speed, 12) : sound.speed,
+			throttle: limiterCut ? sound.throttle * CUT_THROTTLE : sound.throttle,
+			supercharged: settings.turbo === 'supercharger',
+			antiLag: settings.turbo === 'antiLag',
+		},
+		dt,
+	);
+	engine.update(
+		{
+			rpm: sound.engineRpm,
+			throttle: sound.throttle,
+			cut: limiterCut,
+			boost:
+				settings.turbo === 'sequential' && settings.mode !== 'manual'
+					? stagePressure
+					: [sound.boost],
+			// The tailpipes spit flame on anti-lag bangs as on overrun pops
+			crackle: Math.max(audio.crackle, audio.antiLag),
+		},
 		dt,
 	);
 }
 
 // ---------------------------------------------------------------------------
-// Scope: waveform on top, spectrum (log frequency) below
+// 3D engine, framed above the scope
+// ---------------------------------------------------------------------------
+
+/** Share of the window the scope covers at the bottom */
+const SCOPE_HEIGHT = 0.3;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.domElement.id = 'engine-view';
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a1a);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(
+	new RoomEnvironment(),
+	0.04,
+).texture;
+scene.environmentIntensity = 0.6;
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x2a2018, 0.6));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+keyLight.position.set(-4, 8, 6);
+scene.add(keyLight);
+const grid = new THREE.GridHelper(24, 24, 0x3a3a3a, 0x262626);
+grid.position.y = -2.4;
+scene.add(grid);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+camera.position.set(-7, 4.5, 8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0.2, 0);
+
+const engine = createEngineModel(audio.params.turbo);
+scene.add(engine.group);
+audio.onSound = (name, strength) => {
+	if (name === 'thump') engine.jolt(strength);
+	else engine.puff(strength, name === 'blowOff' ? 'valve' : 'inlet');
+};
+
+const modelFolder = gui.addFolder('Engine model');
+modelFolder.add(engine, 'slowMotion', 0.01, 1, 0.01).name('speed (x real)');
+
+const inductions: Record<WheeledVehicleTurboName, EngineInduction> = {
+	none: 'none',
+	small: 'single',
+	big: 'single',
+	twinScroll: 'single',
+	parallel: 'twin',
+	sequential: 'sequential',
+	vgt: 'single',
+	electric: 'single',
+	supercharger: 'supercharger',
+	antiLag: 'single',
+};
+
+/** The voice playing, with 'auto' resolved to the car's engine as the audio does */
+function engineVoice(): EngineVoiceName {
+	const choice = audio.params.engine.voice;
+	if (choice === 'auto') return carEngines[settings.car]?.voice ?? 'classic';
+	return choice === 'classic' || choice in engineVoices ? choice : 'classic';
+}
+
+let engineKey = '';
+
+/** Rebuilds the engine when the voice, the cylinder count or the turbo changes, and frames it */
+function syncEngine(): void {
+	const voice = engineVoice();
+	const induction = inductions[settings.turbo];
+	const key = `${voice} ${voice === 'classic' ? settings.cylinders : ''} ${induction}`;
+	if (key === engineKey) return;
+	engineKey = key;
+	engine.setEngine(voice, settings.cylinders, induction);
+	const fit =
+		engine.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+	const direction = camera.position.clone().sub(controls.target).normalize();
+	camera.position.copy(controls.target).addScaledVector(direction, fit * 0.95);
+}
+
+function resizeView(): void {
+	const w = window.innerWidth;
+	const h = window.innerHeight;
+	renderer.setSize(w, h);
+	camera.aspect = w / h;
+	// Shift the picture so the engine sits centred above the scope and left of the panel
+	const panel = Math.min(gui.domElement.offsetWidth, w / 3);
+	camera.setViewOffset(w, h, panel / 2, (h * SCOPE_HEIGHT) / 2, w, h);
+	camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeView);
+resizeView();
+
+// ---------------------------------------------------------------------------
+// Scope along the bottom: waveform on top, spectrum (log frequency) below
 // ---------------------------------------------------------------------------
 
 const style = document.createElement('style');
 style.textContent = `
-	#scope { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+	#engine-view { position: fixed; inset: 0; display: block; }
+	#scope {
+		position: fixed; left: 0; bottom: 0; width: 100vw; height: ${SCOPE_HEIGHT * 100}vh;
+		display: block; pointer-events: none;
+	}
 	.sound-lab-info { max-width: min(460px, calc(100vw - 40px)); }
 	.sound-lab-info b { font-size: 15px; }
 	.sound-lab-readout { font-variant-numeric: tabular-nums; margin-top: 4px; color: #ffd166; }
@@ -366,15 +587,17 @@ const info = document.createElement('div');
 info.className = 'overlay sound-lab-info';
 info.innerHTML = `
 	<b>Vehicle: sound lab</b><br />
-	Tune the engine, tire and turbo sound in the Sound folder. It saves as you go, and the
-	driving examples use the same tuning.<br />
-	<span class="sound-lab-hint">W / ↑ rev · Space burnout · V blow-off · C stutter · B bump stop</span>
+	Tune the engine, tire and turbo sound in the Sound folder. It saves as you go; copy it as
+	JSON to make it the default.<br />
+	<span class="sound-lab-hint">W / ↑ rev · Space burnout · V blow-off · C stutter · B bump stop · O before / after · drag to orbit</span>
 	<div class="sound-lab-readout"></div>
+	<div class="sound-lab-hint" data-engine></div>
 	<div class="sound-lab-hint" data-start>Click or press a key to start the sound.</div>
 `;
 document.body.appendChild(info);
 const readout = info.querySelector('.sound-lab-readout') as HTMLElement;
 const startHint = info.querySelector('[data-start]') as HTMLElement;
+const engineLabel = info.querySelector('[data-engine]') as HTMLElement;
 
 let analyser: AnalyserNode | null = null;
 let timeData = new Uint8Array(0);
@@ -383,7 +606,7 @@ let freqData = new Uint8Array(0);
 function resize(): void {
 	const ratio = Math.min(window.devicePixelRatio, 2);
 	canvas.width = Math.floor(window.innerWidth * ratio);
-	canvas.height = Math.floor(window.innerHeight * ratio);
+	canvas.height = Math.floor(window.innerHeight * SCOPE_HEIGHT * ratio);
 	ctx2d.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 window.addEventListener('resize', resize);
@@ -396,8 +619,13 @@ const hzToX = (hz: number, width: number) =>
 
 function drawScope(): void {
 	const w = window.innerWidth;
-	const h = window.innerHeight;
-	ctx2d.fillStyle = '#1a1a1a';
+	const h = window.innerHeight * SCOPE_HEIGHT;
+	ctx2d.clearRect(0, 0, w, h);
+	const shade = ctx2d.createLinearGradient(0, 0, 0, h);
+	shade.addColorStop(0, 'rgba(26,26,26,0)');
+	shade.addColorStop(0.25, 'rgba(26,26,26,0.85)');
+	shade.addColorStop(1, 'rgba(26,26,26,0.95)');
+	ctx2d.fillStyle = shade;
 	ctx2d.fillRect(0, 0, w, h);
 
 	const output = audio.output;
@@ -414,10 +642,10 @@ function drawScope(): void {
 			? 'none'
 			: '';
 
-	const waveTop = h * 0.3;
-	const waveHeight = h * 0.25;
-	const specTop = h * 0.6;
-	const specHeight = h * 0.35;
+	const waveTop = h * 0.12;
+	const waveHeight = h * 0.3;
+	const specTop = h * 0.46;
+	const specHeight = h * 0.44;
 
 	// Frequency grid
 	ctx2d.font = '11px system-ui, sans-serif';
@@ -430,7 +658,7 @@ function drawScope(): void {
 		ctx2d.fillText(
 			hz >= 1000 ? `${hz / 1000}k` : `${hz}`,
 			x,
-			specTop + specHeight + 14,
+			specTop + specHeight + 12,
 		);
 	}
 	ctx2d.fillStyle = 'rgba(255,255,255,0.06)';
@@ -479,12 +707,22 @@ let last = performance.now();
 function frame(now: number): void {
 	const dt = Math.min((now - last) / 1000, 0.05);
 	last = now;
+	syncEngine();
 	step(dt);
+	controls.update();
+	renderer.render(scene, camera);
 	drawScope();
 	const gear = sound.gear > 0 ? `gear ${sound.gear}` : 'neutral';
+	// The pressure in bar, as the showcase's HUD shows it: about the torque the boost adds
+	const bar =
+		sound.boost *
+		turboTypes[settings.turbo].stages.reduce((sum, s) => sum + s.gain, 0) *
+		1.013;
 	readout.textContent =
 		`${Math.round(sound.engineRpm)} rpm · ${gear} · ` +
-		`${Math.round(sound.speed * 3.6)} km/h · boost ${Math.round(sound.boost * 100)}%`;
+		`${Math.round(sound.speed * 3.6)} km/h · boost ${Math.round(sound.boost * 100)}% (${bar.toFixed(2)} bar)` +
+		(limiterCut ? ' · limiter' : '');
+	engineLabel.textContent = `${engine.title}, shown at ${engine.slowMotion.toFixed(2)}x speed`;
 	requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

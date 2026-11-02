@@ -1,5 +1,6 @@
 // Measures vehicle presets in Node and checks them against target ranges for their archetype,
-// drivetrain and realism level. Runs against the built dist/, like test/smoke.mjs.
+// drivetrain and realism level. Runs the built dist/ engine, like test/smoke.mjs, with the presets
+// from src/wheeled-vehicles.js so a tuning edit needs no rebuild.
 //
 //   node examples/scripts/vehicle-metrics.mjs --preset rally-50-awd
 //   node examples/scripts/vehicle-metrics.mjs --car super            all 15 supercar presets
@@ -7,10 +8,10 @@
 //   node examples/scripts/vehicle-metrics.mjs --file my-car.mjs      a preset module (see below)
 //   add --json for machine readable output, --quick to skip the top speed run, --perturb
 //   to rerun each car with the mass 3% and the tire grip 2% off each way, and --turbo <type>
-//   to fit a turbo from turboTypes in vehicle-presets.js (the rated torque stays the same)
+//   to fit a turbo from turboTypes in src/wheeled-vehicles.js (the rated torque stays the same)
 //
 // A --file module exports `preset` ({ title, halfExtents, apply(def) }, the same shape as the
-// entries in examples/src/vehicle-presets.js) and `target`
+// entries in src/wheeled-vehicles.js) and `target`
 // ({ archetype: 'sports' | 'rally' | 'super' | 'hatch', realism: 100 | 75 | 50 | 25 | 0,
 // drive: 'fwd' | 'rwd' | 'awd' }).
 //
@@ -23,9 +24,9 @@ import { pathToFileURL } from 'node:url';
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const presetsModule = await import(
-	new URL('examples/src/vehicle-presets.js', root).href
+	new URL('src/wheeled-vehicles.js', root).href
 );
-const { vehiclePresets, realismLevels, turboTypes, applyTurbo } = presetsModule;
+const { wheeledVehiclePresets, realismLevels, turboTypes, applyTurbo, createSteeringLimiter } = presetsModule;
 
 // ---------------------------------------------------------------------------
 // Targets
@@ -76,13 +77,20 @@ export const archetypes = {
 // How each realism level moves the targets. Grip scales braking and lateral g. Roll scales the
 // archetype's step steer roll range: a realistic car must roll, an arcade car hardly at all.
 // The rest says what a level must or must not do in the step steer and self righting tests.
+// turnShare is how much of the level's lateral g floor full lock must reach at 120 km/h, so the
+// steering's speed falloff does not leave grip unused (null: the car's own steering, no target).
 export const realismTargets = {
-	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true },
-	75: { grip: 1.1, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false },
-	50: { grip: 1.2, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false },
-	25: { grip: 1.32, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false },
-	0: { grip: 1.45, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false },
+	100: { grip: 1.0, roll: [1, 1], maySpin: true, mustRight: false, mustNotRight: true, turnShare: null },
+	75: { grip: 1.15, roll: [0.6, 0.85], maySpin: true, mustRight: false, mustNotRight: false, turnShare: 0.75 },
+	50: { grip: 1.3, roll: [0, 0.65], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.8 },
+	25: { grip: 1.45, roll: [0, 0.45], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.85 },
+	0: { grip: 1.6, roll: [0, 0.3], maySpin: false, mustRight: true, mustNotRight: false, turnShare: 0.9 },
 };
+
+// Keyboard moves a forgiving car (50% realism and below) must survive: the peak sideslip in each
+// stays under this many degrees. The steer input goes through createSteeringLimiter, the driver aid
+// the presets ship with, as it does for a keyboard player in the examples.
+export const forgivingSlip = 25;
 
 export function targetRanges({ archetype, realism, drive }) {
 	const a = archetypes[archetype];
@@ -90,14 +98,17 @@ export function targetRanges({ archetype, realism, drive }) {
 	const arcade = 1 - realism / 100;
 	const [z0, z1] = a.zeroTo100[drive];
 	return {
-		// The archetype figures are launch control runs, as the test is: b3VehicleAssists
-		// launchControl is on by default. More grip can only help the launch.
-		zeroTo100: [z0 * (1 - 0.2 * arcade), z1],
+		// The archetype figures are launch control runs, as the test is: b3WheeledVehicleAssists
+		// launchControl is on by default. More grip can only help the launch: a traction limited
+		// launch gets quicker with the level's tire grip, so the floor falls with it. grip^-0.6 gives
+		// the floors the old 1 - 0.2 * arcade did at the old grips (1.1 to 1.45).
+		zeroTo100: [z0 * r.grip ** -0.6, z1],
 		// Downforce loads the tires and adds rolling resistance
 		topSpeed: [a.topSpeed[0] * (1 - 0.05 * arcade), a.topSpeed[1]],
 		braking: [a.braking[0] / r.grip / 1.05, a.braking[1] / r.grip],
 		lateralG: [a.lateralG[0] * r.grip, a.lateralG[1] * r.grip * 1.08],
 		stepRoll: [a.stepRoll[0] * r.roll[0], a.stepRoll[1] * r.roll[1]],
+		stepTurnG: r.turnShare === null ? null : [a.lateralG[0] * r.grip * r.turnShare, Number.POSITIVE_INFINITY],
 		handbrakeYaw: [45, 360],
 		handbrakeRate: [60, 400],
 		shiftShare: [0.87, 0.93],
@@ -120,12 +131,12 @@ const pos = [0, 0, 0];
 const rot = [0, 0, 0, 1];
 const vel = [0, 0, 0];
 const ang = [0, 0, 0];
-const buf = b3.createVehicleStateBuffer();
-const state = b3.createVehicleStateRecord();
+const buf = b3.createWheeledVehicleStateBuffer();
+const state = b3.createWheeledVehicleStateRecord();
 
 function readState(vehicle) {
-	b3.getVehicleStateData(buf, vehicle);
-	b3.getVehicleStateAt(state, buf);
+	b3.getWheeledVehicleStateData(buf, vehicle);
+	b3.getWheeledVehicleStateAt(state, buf);
 	return state;
 }
 
@@ -153,9 +164,9 @@ function createCar(world, preset, position, rotation = [0, 0, 0, 1]) {
 	const chassis = b3.b3CreateBody(world, bodyDef);
 	const [hx, hy, hz] = preset.halfExtents;
 	b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), hx, hy, hz);
-	const def = preset.apply(b3.b3DefaultVehicleDef());
+	const def = preset.apply(b3.b3DefaultWheeledVehicleDef());
 	def.chassisId = chassis;
-	const vehicle = b3.b3CreateVehicle(world, def);
+	const vehicle = b3.b3CreateWheeledVehicle(world, def);
 	return { world, vehicle, chassis, def };
 }
 
@@ -229,7 +240,7 @@ function holdSpeed(car, target, steer = 0) {
 function driveTo(car, target, timeout = 30) {
 	let t = 0;
 	while (readState(car.vehicle).speed < target && t < timeout) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(1));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1));
 		step(car);
 		t += dt;
 	}
@@ -269,14 +280,14 @@ function testLaunchAndBrake(preset) {
 		// at high rpm sends an engine braking pulse into the driven wheels, and landing it on top of
 		// full brake pushes them past their peak slip, where ABS cannot recover them.
 		for (let i = 0; i < 15; i++) {
-			b3.b3Vehicle_SetInput(car.vehicle, input(0));
+			b3.b3WheeledVehicle_SetInput(car.vehicle, input(0));
 			step(car);
 		}
 		const v0 = readState(car.vehicle).speed;
 		const from = pose(car.chassis).position;
 		let t = 0;
 		while (readState(car.vehicle).speed > 0.3 && t < 15) {
-			b3.b3Vehicle_SetInput(car.vehicle, input(0, 1));
+			b3.b3WheeledVehicle_SetInput(car.vehicle, input(0, 1));
 			step(car);
 			brakeUpright = Math.min(brakeUpright, pose(car.chassis).upright);
 			t += dt;
@@ -301,7 +312,7 @@ function testTopSpeed(preset) {
 	let lastCheck = 0;
 	let lastTop = 0;
 	while (t < 90) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(1));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1));
 		step(car);
 		t += dt;
 		top = Math.max(top, readState(car.vehicle).speed * kmh);
@@ -337,7 +348,7 @@ function testShifts(preset) {
 	let prevRpm = readState(car.vehicle).engineRpm;
 	const top = car.def.transmission.gearCount;
 	for (let t = 0; t < 40 && gear < top; t += dt) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(1));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1));
 		step(car);
 		const s = readState(car.vehicle);
 		if (s.gear > gear) rpms.push(prevRpm);
@@ -357,25 +368,25 @@ function testLateral(preset, kmhTarget = 70) {
 	const car = settled(preset);
 	// Speed sensitive steering would cap the angle below what the tires need at the limit, so
 	// this measures the tires with the full steering lock available
-	const steering = b3.b3Vehicle_GetSteering(car.vehicle);
+	const steering = b3.b3WheeledVehicle_GetSteering(car.vehicle);
 	steering.speedReference = 0;
-	b3.b3Vehicle_SetSteering(car.vehicle, steering);
+	b3.b3WheeledVehicle_SetSteering(car.vehicle, steering);
 	const target = kmhTarget / kmh;
 	let t = 0;
 	while (readState(car.vehicle).speed < target && t < 20) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
 		step(car);
 		t += dt;
 	}
 	for (let i = 0; i < 60; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
 		step(car);
 	}
 	const window = [];
 	let peak = 0;
 	const frames = 6 / dt;
 	for (let i = 0; i < frames; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target, (0.5 * i) / frames));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target, (0.5 * i) / frames));
 		step(car);
 		b3.b3Body_GetLinearVelocity(vel, car.chassis);
 		b3.b3Body_GetAngularVelocity(ang, car.chassis);
@@ -396,13 +407,13 @@ function testStepSteer(preset) {
 	const target = 120 / kmh;
 	let t = 0;
 	while (readState(car.vehicle).speed < target && t < 25) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
 		step(car);
 		t += dt;
 	}
 	const reached = readState(car.vehicle).speed >= target * 0.97;
 	for (let i = 0; i < 60; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
 		step(car);
 	}
 	let roll = 0;
@@ -411,9 +422,16 @@ function testStepSteer(preset) {
 	const yaw0 = pose(car.chassis).yaw;
 	let yaw = 0;
 	let prevYaw = yaw0;
+	// Lateral acceleration (speed times yaw rate) averaged over 0.5-2.5 s: how hard full lock turns
+	let turn = 0;
 	for (let i = 0; i < 180; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(1, 0, 1));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1, 0, 1));
 		step(car);
+		if (i >= 30 && i < 150) {
+			b3.b3Body_GetLinearVelocity(vel, car.chassis);
+			b3.b3Body_GetAngularVelocity(ang, car.chassis);
+			turn += (Math.hypot(vel[0], vel[2]) * Math.abs(ang[1])) / 9.81 / 120;
+		}
 		const p = pose(car.chassis);
 		roll = Math.max(roll, Math.abs(p.roll));
 		minUp = Math.min(minUp, p.upright);
@@ -430,9 +448,62 @@ function testStepSteer(preset) {
 		stepRoll: roll,
 		stepSideslip: slip,
 		stepYaw: Math.abs(yaw) * toDeg,
+		stepTurnG: turn,
 		spun: slip > 35,
 		flipped: minUp < 0.5,
 	};
+}
+
+// What a keyboard player does: full lock, full brake and full throttle, nothing in between. Each
+// move starts at a steady speed and returns the peak sideslip. A forgiving car slides a little
+// and keeps going; a car that punishes the player spins.
+const keyboardMoves = {
+	// Full brake and full lock at once from 110 km/h, the usual way into a corner
+	brakeTurn: [110, () => input(0, 1, 1), 2.5],
+	// Turned in on the throttle, then braking mid corner
+	trailBrake: [90, (t) => (t < 1 ? input(1, 0, 1) : input(0, 1, 1)), 3],
+	// Full lock on the throttle, then lifting mid corner
+	liftOff: [80, (t) => input(t < 1.5 ? 1 : 0, 0, 1), 3],
+	// Lock to lock every 0.8 s on the throttle, then straight
+	slalom: [90, (t) => input(1, 0, t < 4 ? (Math.floor(t / 0.8) % 2 ? -1 : 1) : 0), 6],
+	// Too much lock, the opposite lock to catch it, then letting go
+	flick: [100, (t) => input(1, 0, t < 1.2 ? 1 : t < 2.4 ? -1 : 0), 5],
+};
+
+const limitSteer = createSteeringLimiter(b3);
+
+function testKeyboard(preset) {
+	const out = {};
+	for (const [name, [kmhStart, script, seconds]] of Object.entries(keyboardMoves)) {
+		const car = settled(preset);
+		const target = kmhStart / kmh;
+		let t = 0;
+		while (readState(car.vehicle).speed < target && t < 25) {
+			b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
+			step(car);
+			t += dt;
+		}
+		for (let i = 0; i < 30; i++) {
+			b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
+			step(car);
+		}
+		let slip = 0;
+		const steering = b3.b3WheeledVehicle_GetSteering(car.vehicle);
+		const wheels = car.def.wheels.slice(0, car.def.wheelCount);
+		for (let i = 0; i < seconds / dt; i++) {
+			const keys = script(i * dt);
+			keys.steer = limitSteer(car.chassis, steering, wheels, keys.steer, keys.brake);
+			b3.b3WheeledVehicle_SetInput(car.vehicle, keys);
+			step(car);
+			// Stopped: held brake selects reverse, and a car reversing reads as 180 degrees of
+			// sideslip, so the move ends when the car does
+			if (readState(car.vehicle).speed < 1) break;
+			slip = Math.max(slip, sideslip(car.chassis));
+		}
+		out[`${name}Slip`] = slip;
+		b3.b3DestroyWorld(car.world);
+	}
+	return out;
 }
 
 // 60 km/h, full steer and a 0.8 s handbrake pull: the heading change after 1.5 s and the peak
@@ -442,7 +513,7 @@ function testHandbrake(preset) {
 	const target = 60 / kmh;
 	let t = 0;
 	while (readState(car.vehicle).speed < target && t < 20) {
-		b3.b3Vehicle_SetInput(car.vehicle, holdSpeed(car, target));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, holdSpeed(car, target));
 		step(car);
 		t += dt;
 	}
@@ -452,7 +523,7 @@ function testHandbrake(preset) {
 	let minUp = 1;
 	let peakRate = 0;
 	for (let i = 0; i < 90; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(0, 0, 1, i < 48 ? 1 : 0));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(0, 0, 1, i < 48 ? 1 : 0));
 		step(car);
 		peakRate = Math.max(peakRate, Math.abs(b3.b3Body_GetAngularVelocity(ang, car.chassis)[1]));
 		const p = pose(car.chassis);
@@ -518,7 +589,7 @@ function testRough(preset) {
 	let finite = true;
 	let maxSpeed = 0;
 	for (let i = 0; i < 900; i++) {
-		b3.b3Vehicle_SetInput(car.vehicle, input(1, 0, 0.6 * Math.sin(i * 0.02)));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1, 0, 0.6 * Math.sin(i * 0.02)));
 		step(car);
 		const p = pose(car.chassis);
 		const s = readState(car.vehicle);
@@ -540,6 +611,7 @@ export function measure(preset, { quick = false } = {}) {
 		...testShifts(preset),
 		...testLateral(preset),
 		...testStepSteer(preset),
+		...testKeyboard(preset),
 		...testHandbrake(preset),
 		...testSelfRight(preset),
 		...testRough(preset),
@@ -583,6 +655,13 @@ export function check(m, target, { quick = false } = {}) {
 	rule('noFlip', !m.flipped, m.flipped ? 'flipped in the step steer' : 'stays on its wheels');
 	if (!t.maySpin) {
 		rule('noSpin', !m.spun, `peak sideslip ${m.stepSideslip.toFixed(0)} deg (want < 35)`);
+		for (const move of Object.keys(keyboardMoves)) {
+			const slip = m[`${move}Slip`];
+			rule(`forgiving ${move}`, slip < forgivingSlip, `peak sideslip ${slip.toFixed(0)} deg (want < ${forgivingSlip})`);
+		}
+	}
+	if (t.stepTurnG) {
+		rule('turnsAtSpeed', m.stepTurnG >= t.stepTurnG[0], `${m.stepTurnG.toFixed(2)} g at full lock and 120 km/h (want >= ${t.stepTurnG[0].toFixed(2)})`);
 	}
 	range('handbrakeYaw', 'deg', 0);
 	range('handbrakeRate', 'deg/s', 0);
@@ -666,7 +745,7 @@ const isMain =
 if (isMain) {
 	const args = parseArgs(process.argv.slice(2));
 	const jobs = [];
-	for (const [name, preset] of Object.entries(vehiclePresets)) {
+	for (const [name, preset] of Object.entries(wheeledVehiclePresets)) {
 		if (!preset.matrix) continue;
 		const { car, realism, drive } = preset.matrix;
 		if (args.all || args.car === car || args.presets.includes(name)) {
@@ -674,7 +753,7 @@ if (isMain) {
 		}
 	}
 	for (const name of args.presets) {
-		if (!vehiclePresets[name]?.matrix) throw new Error(`no matrix preset ${name}`);
+		if (!wheeledVehiclePresets[name]?.matrix) throw new Error(`no matrix preset ${name}`);
 	}
 	if (args.file) {
 		const mod = await import(pathToFileURL(path.resolve(args.file)).href);
@@ -732,7 +811,7 @@ if (isMain) {
 			const failed = checks.filter((c) => !c.pass);
 			const m = metrics;
 			console.log(
-				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(24)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${args.quick ? 'skipped' : `${m.topSpeed.toFixed(0)} (gear ${m.topGear}, ${m.topRpm.toFixed(0)} rpm)`} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} yaw ${m.stepYaw.toFixed(0)}${m.flipped ? ' FLIP' : ''} | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
+				`${failed.length ? 'FAIL' : 'pass'} ${job.name.padEnd(24)} 0-100 ${m.zeroTo100.toFixed(2)} s | top ${args.quick ? 'skipped' : `${m.topSpeed.toFixed(0)} (gear ${m.topGear}, ${m.topRpm.toFixed(0)} rpm)`} | brake ${m.braking.toFixed(1)} m | lat ${m.lateralG.toFixed(2)} g | step roll ${m.stepRoll.toFixed(1)} slip ${m.stepSideslip.toFixed(0)} turn ${m.stepTurnG.toFixed(2)} g${m.flipped ? ' FLIP' : ''} | keys ${Object.keys(keyboardMoves).map((k) => m[`${k}Slip`].toFixed(0)).join('/')} deg | hb ${m.handbrakeYaw.toFixed(0)} deg ${m.handbrakeRate.toFixed(0)} deg/s | side ${m.sideRighted ? 'rights' : 'stays'} roof ${m.roofRighted ? 'rights' : 'stays'} | rough ${m.roughUpright.toFixed(2)} | ride ${m.rideHeight.toFixed(2)}`,
 			);
 			for (const c of failed) console.log(`       x ${c.name}: ${c.detail}`);
 		}

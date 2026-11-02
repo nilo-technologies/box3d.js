@@ -27,6 +27,10 @@
     "./character": {
       "types": "./dist/character.d.ts",
       "import": "./dist/character.mjs"
+    },
+    "./wheeled-vehicles": {
+      "types": "./dist/wheeled-vehicles.d.ts",
+      "import": "./dist/wheeled-vehicles.mjs"
     }
   },
   "files": [
@@ -39,6 +43,8 @@
     "build:debug": "node scripts/build.mjs --debug",
     "test": "node test/smoke.mjs",
     "bench:decomposition": "node test/bench-decomposition-cache.mjs",
+    "bench:physics": "node test/bench-physics.mjs",
+    "bench:physics:compare": "node test/bench-physics-compare.mjs",
     "docs:build": "node docs/build.js",
     "docs:check": "pnpm --filter @box3d/examples exec tsc --noEmit -p ../docs/tsconfig.json",
     "lint": "biome lint examples/src",

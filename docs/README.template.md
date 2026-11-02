@@ -302,35 +302,45 @@ Springs can also be given in physical units (stiffness and damping), which keeps
 
 <Snippet source="./joints.ts" select="wheel" />
 
-## Vehicles
+## WheeledVehicles
 
-`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+`b3CreateWheeledVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_wheeledVehicleCastSphere` or `b3_wheeledVehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. WheeledVehicles are not supported in recorded worlds.
 
-<Snippet source="./vehicle.ts" select="create" />
+<Snippet source="./wheeled-vehicle.ts" select="create" />
 
 ### Driving
 
-<Snippet source="./vehicle.ts" select="drive" />
+<Snippet source="./wheeled-vehicle.ts" select="drive" />
 
 ### Reading the Vehicle State
 
-<Snippet source="./vehicle.ts" select="read" />
+<Snippet source="./wheeled-vehicle.ts" select="read" />
+
+To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. Multiplying this pose by the chassis transform reproduces `b3WheeledVehicle_GetWheelTransform`, for any chassis axes, so a wheel mesh parented to the chassis mesh can take it as is. To draw the wheels between physics steps, keep the previous step's readout, unwrap each wheel's spin with `angularVelocity`, and blend, as below. `b3WheeledVehicle_GetWheelLocalTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)` reads one wheel.
+
+<Snippet source="./wheeled-vehicle.ts" select="wheels-local" />
 
 ### Live Tuning
 
-<Snippet source="./vehicle.ts" select="tune" />
+<Snippet source="./wheeled-vehicle.ts" select="tune" />
 
 ### Turbos and Superchargers
 
-`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+`b3WheeledVehicleTurbo` (in the definition as `turbo`, live through `b3WheeledVehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3WheeledVehicle_GetState` and the packed readout.
 
-<Snippet source="./vehicle.ts" select="turbo" />
+<Snippet source="./wheeled-vehicle.ts" select="turbo" />
 
-The vehicle examples share one tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets they drive are in `examples/src/vehicle-presets.js`.
+### Presets
 
-The preset showcase swaps between 45 more presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both.
+`box3d.js/wheeled-vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`wheeledVehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node. The presets are tuned for keyboard players driving through `createSteeringLimiter`, a driver aid applied to the steer input that caps the steer angle near the front tires' grip limit (tighter while braking); without it, full lock at speed can spin the less realistic cars.
 
-<ExamplesTable ids="example-vehicle-fwd,example-vehicle-rwd,example-vehicle-awd,example-vehicle-offroad,example-vehicle-showcase" />
+<Snippet source="./wheeled-vehicle.ts" select="presets" />
+
+The vehicle example has a tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3WheeledVehicle_Set*` setters. The presets it drives come from `box3d.js/wheeled-vehicles`.
+
+The example, a preset showcase, swaps between 45 presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both. The circuit's road is a triangle mesh over the height field, with edges that ease down to the ground. Every setting changed in the panel goes into the URL, so a tuned car can be shared as a link.
+
+<ExamplesTable ids="example-vehicle-showcase" />
 
 ## Queries
 
