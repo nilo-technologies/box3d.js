@@ -9,31 +9,31 @@ import type {
 	b3BodyId,
 	b3Quat,
 	b3Vec3,
-	b3VehicleDef,
-	b3VehicleId,
-	b3VehicleSteering,
-	b3VehicleWheelDef,
-	VehicleWheelRecord,
+	b3WheeledVehicleDef,
+	b3WheeledVehicleId,
+	b3WheeledVehicleSteering,
+	b3WheeledVehicleWheelDef,
+	WheeledVehicleWheelRecord,
 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
 import {
 	applyTurbo,
-	createPresetVehicleDef,
+	createPresetWheeledVehicleDef,
 	turboGain,
-	type VehiclePresetName,
-	type VehicleTurboName,
-	vehiclePresets,
-} from 'box3d.js/vehicles';
+	type WheeledVehiclePresetName,
+	type WheeledVehicleTurboName,
+	wheeledVehiclePresets,
+} from 'box3d.js/wheeled-vehicles';
 import * as THREE from 'three';
 import { createWorldRenderer } from './box3d-three';
 import { createHarness } from './harness';
 import { quatFromAxisAngle } from './math';
-import { createVehicleAudio } from './vehicle-audio';
+import { createWheeledVehicleAudio } from './vehicle-audio';
 import { addEngineVoicePicker, carEngines } from './vehicle-engine-voice';
 import {
-	createVehicleSettings,
+	createWheeledVehicleSettings,
 	formatBoost,
-	type VehicleSettings,
+	type WheeledVehicleSettings,
 } from './vehicle-settings';
 import { addShowcase } from './vehicle-showcase';
 import { createSteeringLimiter } from './vehicle-steering';
@@ -62,26 +62,26 @@ import {
  * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. circuit and stage:
  * the race tracks from vehicle-tracks.js, a paved circuit and an off-road stage.
  */
-export type VehicleTerrain = 'track' | 'offroad' | 'circuit' | 'stage';
+export type WheeledVehicleTerrain = 'track' | 'offroad' | 'circuit' | 'stage';
 
-export type VehicleDemoOptions = {
-	preset: VehiclePresetName;
-	terrain: VehicleTerrain;
+export type WheeledVehicleDemoOptions = {
+	preset: WheeledVehiclePresetName;
+	terrain: WheeledVehicleTerrain;
 	/** Body paint */
 	color: number;
 	/** One line under the title */
 	blurb: string;
 	/** Adds the Preset folder and hotkeys that swap between the preset matrix cars */
 	showcase?: boolean;
-	/** Fits a turbo type from box3d.js/vehicles on top of the preset. 'none' by default. */
-	turbo?: VehicleTurboName;
+	/** Fits a turbo type from box3d.js/wheeled-vehicles on top of the preset. 'none' by default. */
+	turbo?: WheeledVehicleTurboName;
 };
 
 const STEP = 1 / 60;
 const SUBSTEPS = 4;
 
-export async function runVehicleDemo(
-	options: VehicleDemoOptions,
+export async function runWheeledVehicleDemo(
+	options: WheeledVehicleDemoOptions,
 ): Promise<void> {
 	const b3: Box3DModule = await Box3D();
 	const app = createHarness({ camera: [0, 4, -9], target: [0, 1, 0] });
@@ -402,9 +402,10 @@ export async function runVehicleDemo(
 	// Vehicle
 	// ---------------------------------------------------------------------------
 
-	const stateBuffer = b3.createVehicleStateBuffer();
-	const state = b3.createVehicleStateRecord();
-	const wheelRecord: VehicleWheelRecord = b3.createVehicleWheelRecord();
+	const stateBuffer = b3.createWheeledVehicleStateBuffer();
+	const state = b3.createWheeledVehicleStateRecord();
+	const wheelRecord: WheeledVehicleWheelRecord =
+		b3.createWheeledVehicleWheelRecord();
 
 	// Ramps, hills and rocks in the ground's tone with its contour lines, props in the accent
 	const solidMaterial = topoMaterial({ color: topo.solid });
@@ -456,13 +457,13 @@ export async function runVehicleDemo(
 	};
 
 	type Car = {
-		name: VehiclePresetName;
-		turbo: VehicleTurboName;
+		name: WheeledVehiclePresetName;
+		turbo: WheeledVehicleTurboName;
 		chassis: b3BodyId;
-		vehicle: b3VehicleId;
+		vehicle: b3WheeledVehicleId;
 		halfExtents: b3Vec3;
 		wheelCount: number;
-		settings: VehicleSettings;
+		settings: WheeledVehicleSettings;
 		group: THREE.Group;
 		/** The painted body, a child of group that sways over the wheels */
 		body: THREE.Group;
@@ -485,8 +486,8 @@ export async function runVehicleDemo(
 			manual: boolean;
 			tractionControl: boolean;
 			abs: boolean;
-			steering: b3VehicleSteering;
-			wheels: b3VehicleWheelDef[];
+			steering: b3WheeledVehicleSteering;
+			wheels: b3WheeledVehicleWheelDef[];
 		};
 		refreshLive(): void;
 		destroy(): void;
@@ -494,13 +495,13 @@ export async function runVehicleDemo(
 
 	/** Builds a car from a preset and a turbo type at a pose, with its visuals and settings panel */
 	function spawnCar(
-		name: VehiclePresetName,
-		turbo: VehicleTurboName,
+		name: WheeledVehiclePresetName,
+		turbo: WheeledVehicleTurboName,
 		color: number,
 		position: b3Vec3,
 		rotation: b3Quat = [0, 0, 0, 1],
 	): Car {
-		const preset = vehiclePresets[name];
+		const preset = wheeledVehiclePresets[name];
 		const halfExtents = preset.halfExtents;
 		const [hx, hy, hz] = halfExtents;
 		const bodyDef = b3.b3DefaultBodyDef();
@@ -512,14 +513,14 @@ export async function runVehicleDemo(
 		hidden.add(chassis.index1);
 
 		const presetDef = () => {
-			const d = createPresetVehicleDef(b3, name);
+			const d = createPresetWheeledVehicleDef(b3, name);
 			return turbo === 'none' ? d : applyTurbo(d, turbo);
 		};
-		const defaults: b3VehicleDef = presetDef();
+		const defaults: b3WheeledVehicleDef = presetDef();
 		const def = presetDef();
 		def.chassisId = chassis;
-		const vehicle = b3.b3CreateVehicle(world, def);
-		const wheelCount = b3.b3Vehicle_GetWheelCount(vehicle);
+		const vehicle = b3.b3CreateWheeledVehicle(world, def);
+		const wheelCount = b3.b3WheeledVehicle_GetWheelCount(vehicle);
 
 		const live: Car['live'] = {
 			maxRpm: defaults.engine.maxRpm,
@@ -533,24 +534,25 @@ export async function runVehicleDemo(
 			wheels: defaults.wheels.slice(0, wheelCount),
 		};
 		function refreshLive(): void {
-			live.maxRpm = b3.b3Vehicle_GetEngine(vehicle).maxRpm;
-			const turbo = b3.b3Vehicle_GetTurbo(vehicle);
+			live.maxRpm = b3.b3WheeledVehicle_GetEngine(vehicle).maxRpm;
+			const turbo = b3.b3WheeledVehicle_GetTurbo(vehicle);
 			live.fullBoost = turboGain(turbo);
 			live.supercharged = turbo.instantFraction >= 1;
 			live.antiLag = turbo.antiLag;
 			live.manual =
-				b3.b3Vehicle_GetTransmission(vehicle).mode.value ===
-				b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual.value;
-			const assists = b3.b3Vehicle_GetAssists(vehicle);
+				b3.b3WheeledVehicle_GetTransmission(vehicle).mode.value ===
+				b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionManual
+					.value;
+			const assists = b3.b3WheeledVehicle_GetAssists(vehicle);
 			live.tractionControl = assists.tractionControl;
 			live.abs = assists.abs;
-			live.steering = b3.b3Vehicle_GetSteering(vehicle);
+			live.steering = b3.b3WheeledVehicle_GetSteering(vehicle);
 			for (let i = 0; i < wheelCount; i++)
-				live.wheels[i] = b3.b3Vehicle_GetWheel(vehicle, i);
+				live.wheels[i] = b3.b3WheeledVehicle_GetWheel(vehicle, i);
 		}
 		refreshLive();
 
-		const settings = createVehicleSettings(
+		const settings = createWheeledVehicleSettings(
 			app.gui,
 			b3,
 			vehicle,
@@ -764,10 +766,12 @@ export async function runVehicleDemo(
 	);
 
 	// ---- Sound. Each car has its own engine voice, and its cylinder count sets the pitch.
-	const engineFor = (name: VehiclePresetName) =>
-		carEngines[vehiclePresets[name].matrix?.car ?? name] ?? carEngines.sports;
-	const cylindersFor = (name: VehiclePresetName) => engineFor(name).cylinders;
-	const audio = createVehicleAudio();
+	const engineFor = (name: WheeledVehiclePresetName) =>
+		carEngines[wheeledVehiclePresets[name].matrix?.car ?? name] ??
+		carEngines.sports;
+	const cylindersFor = (name: WheeledVehiclePresetName) =>
+		engineFor(name).cylinders;
+	const audio = createWheeledVehicleAudio();
 	audio.setCylinders(cylindersFor(options.preset));
 	audio.setCarVoice(engineFor(options.preset).voice);
 	audio.setTurbo(options.turbo ?? 'none');
@@ -810,20 +814,22 @@ export async function runVehicleDemo(
 	const isManual = () => car.live.manual;
 
 	function setManual(manual: boolean): void {
-		const transmission = b3.b3Vehicle_GetTransmission(car.vehicle);
+		const transmission = b3.b3WheeledVehicle_GetTransmission(car.vehicle);
 		transmission.mode = manual
-			? b3.b3VehicleTransmissionMode.b3_vehicleTransmissionManual
-			: b3.b3VehicleTransmissionMode.b3_vehicleTransmissionAuto;
-		b3.b3Vehicle_SetTransmission(car.vehicle, transmission);
+			? b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionManual
+			: b3.b3WheeledVehicleTransmissionMode.b3_wheeledVehicleTransmissionAuto;
+		b3.b3WheeledVehicle_SetTransmission(car.vehicle, transmission);
 		car.settings.sync();
 		car.refreshLive();
 	}
 
 	function shift(delta: number): void {
 		if (!isManual()) setManual(true);
-		const gearCount = b3.b3Vehicle_GetTransmission(car.vehicle).gearCount;
-		const gear = b3.b3Vehicle_GetState(car.vehicle).gear;
-		b3.b3Vehicle_SetGear(
+		const gearCount = b3.b3WheeledVehicle_GetTransmission(
+			car.vehicle,
+		).gearCount;
+		const gear = b3.b3WheeledVehicle_GetState(car.vehicle).gear;
+		b3.b3WheeledVehicle_SetGear(
 			car.vehicle,
 			Math.min(Math.max(gear + delta, -1), gearCount),
 		);
@@ -850,7 +856,7 @@ export async function runVehicleDemo(
 		const yaw = toSpawn ? spawnYaw : carYaw();
 		if (toSpawn) resetLap();
 		const position: b3Vec3 = toSpawn ? spawn : [p[0], p[1] + 1.5, p[2]];
-		b3.b3Vehicle_Reset(
+		b3.b3WheeledVehicle_Reset(
 			car.vehicle,
 			position,
 			quatFromAxisAngle([0, 1, 0], yaw),
@@ -864,9 +870,9 @@ export async function runVehicleDemo(
 
 	/** Replaces the car with another preset or turbo, upright and at rest where the old one was */
 	function swapCar(
-		name: VehiclePresetName,
+		name: WheeledVehiclePresetName,
 		color: number,
-		turbo: VehicleTurboName = car.turbo,
+		turbo: WheeledVehicleTurboName = car.turbo,
 	): void {
 		if (name === car.name && turbo === car.turbo) return;
 		const p = b3.b3Body_GetPosition([0, 0, 0], car.chassis);
@@ -956,7 +962,11 @@ export async function runVehicleDemo(
 		'Left pad steers, further out for more lock · ▲ gas · ▼ brake, hold to reverse · HB handbrake · ↻ flip upright';
 	const info = document.createElement('div');
 	info.className = 'overlay';
-	let infoText = [vehiclePresets[options.preset].title, options.blurb, ''];
+	let infoText = [
+		wheeledVehiclePresets[options.preset].title,
+		options.blurb,
+		'',
+	];
 	let touchShown = false;
 	function setInfo(title: string, blurb: string, extra = ''): void {
 		infoText = [title, blurb, extra];
@@ -1114,8 +1124,8 @@ export async function runVehicleDemo(
 			scratchQuat[2],
 			scratchQuat[3],
 		);
-		b3.getVehicleStateData(stateBuffer, car.vehicle);
-		b3.getVehicleStateAt(state, stateBuffer);
+		b3.getWheeledVehicleStateData(stateBuffer, car.vehicle);
+		b3.getWheeledVehicleStateAt(state, stateBuffer);
 	}
 	readPose();
 	prevPos.copy(currPos);
@@ -1161,7 +1171,7 @@ export async function runVehicleDemo(
 							braking,
 						)
 					: input.steer;
-				b3.b3Vehicle_SetInput(car.vehicle, { ...input, steer });
+				b3.b3WheeledVehicle_SetInput(car.vehicle, { ...input, steer });
 				b3.b3World_Step(world, STEP, SUBSTEPS);
 				simTime += STEP;
 				readPose();
@@ -1197,7 +1207,7 @@ export async function runVehicleDemo(
 		let compression = 0;
 		let axleY = 0;
 		for (let i = 0; i < car.wheelCount; i++) {
-			b3.getVehicleWheelAt(wheelRecord, stateBuffer, i);
+			b3.getWheeledVehicleWheelAt(wheelRecord, stateBuffer, i);
 			const visual = car.wheelVisuals[i];
 			const p = wheelRecord.position;
 			const q = wheelRecord.rotation;

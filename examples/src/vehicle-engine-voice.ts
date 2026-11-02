@@ -10,7 +10,7 @@ import {
 	type EngineVoiceChoice,
 	type EngineVoiceName,
 	engineVoices,
-	type VehicleAudio,
+	type WheeledVehicleAudio,
 } from './vehicle-audio';
 
 /** The engine of each example car and matrix car: its cylinder count and the voice 'auto' plays */
@@ -35,6 +35,9 @@ for (const [key, voice] of Object.entries(engineVoices)) {
 	voiceOptions[voice.title] = key as EngineVoiceName;
 }
 
-export function addEngineVoicePicker(gui: GUI, audio: VehicleAudio): void {
+export function addEngineVoicePicker(
+	gui: GUI,
+	audio: WheeledVehicleAudio,
+): void {
 	gui.add(audio.params.engine, 'voice', voiceOptions).name('engine sound');
 }

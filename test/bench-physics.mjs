@@ -3,7 +3,7 @@
 // input and the checks stay outside the timers.
 //
 //   node test/bench-physics.mjs                         every scenario against dist/
-//   node test/bench-physics.mjs --dist <dir>            another build: a dist/ folder with box3d.mjs and vehicles.mjs
+//   node test/bench-physics.mjs --dist <dir>            another build: a dist/ folder with box3d.mjs and wheeled-vehicles.mjs
 //   node test/bench-physics.mjs --scenario vehicles     one scenario (repeat the flag for more)
 //   node test/bench-physics.mjs --json                  one JSON object on stdout, for test/bench-physics-compare.mjs
 //
@@ -227,9 +227,9 @@ const scenarios = {
 	// 64 preset cars in 16 lanes and 4 rows hold 72 km/h on a straight road crossed by five speed
 	// bumps. The lanes cycle through four presets so different tire and drivetrain settings run.
 	vehicles: {
-		title: 'Vehicles, 64 cars driving straight over 5 bumps',
-		load: () => import( pathToFileURL( path.join( dist, 'vehicles.mjs' ) ).href ),
-		setup( { vehiclePresets, createPresetVehicleDef } )
+		title: 'WheeledVehicles, 64 cars driving straight over 5 bumps',
+		load: () => import( pathToFileURL( path.join( dist, 'wheeled-vehicles.mjs' ) ).href ),
+		setup( { wheeledVehiclePresets, createPresetWheeledVehicleDef } )
 		{
 			const presets = [ 'sports-50-rwd', 'rally-75-awd', 'super-25-rwd', 'sports-100-fwd' ];
 			const world = createWorld();
@@ -253,18 +253,18 @@ const scenarios = {
 				for ( let lane = 0; lane < lanes; lane++ )
 				{
 					const name = presets[ lane % presets.length ];
-					const [ hx, hy, hz ] = vehiclePresets[ name ].halfExtents;
+					const [ hx, hy, hz ] = wheeledVehiclePresets[ name ].halfExtents;
 					const start = [ ( lane - ( lanes - 1 ) / 2 ) * laneWidth, 1.4, -row * rowGap ];
 					const chassis = dynamicBody( world, start );
 					b3.b3CreateBoxShape( chassis, b3.b3DefaultShapeDef(), hx, hy, hz );
-					const def = createPresetVehicleDef( b3, name );
+					const def = createPresetWheeledVehicleDef( b3, name );
 					def.chassisId = chassis;
-					cars.push( { vehicle: b3.b3CreateVehicle( world, def ), chassis, startZ: start[ 2 ] } );
+					cars.push( { vehicle: b3.b3CreateWheeledVehicle( world, def ), chassis, startZ: start[ 2 ] } );
 				}
 			}
 
-			const buf = b3.createVehicleStateBuffer();
-			const state = b3.createVehicleStateRecord();
+			const buf = b3.createWheeledVehicleStateBuffer();
+			const state = b3.createWheeledVehicleStateRecord();
 			const target = 20; // m/s
 			const warmup = 60;
 			const idle = { forward: 0, brake: 0, steer: 0, handbrake: 0 };
@@ -276,13 +276,13 @@ const scenarios = {
 					{
 						if ( i < warmup )
 						{
-							b3.b3Vehicle_SetInput( car.vehicle, idle );
+							b3.b3WheeledVehicle_SetInput( car.vehicle, idle );
 							continue;
 						}
-						b3.getVehicleStateData( buf, car.vehicle );
-						b3.getVehicleStateAt( state, buf );
+						b3.getWheeledVehicleStateData( buf, car.vehicle );
+						b3.getWheeledVehicleStateAt( state, buf );
 						const error = target - state.speed;
-						b3.b3Vehicle_SetInput( car.vehicle, {
+						b3.b3WheeledVehicle_SetInput( car.vehicle, {
 							forward: error < -0.5 ? 0 : Math.max( 0, Math.min( 1, error * 0.5 + 0.25 ) ),
 							brake: error < -2 ? Math.min( 1, -error * 0.2 ) : 0,
 							steer: 0,
@@ -305,7 +305,7 @@ const scenarios = {
 				release()
 				{
 					b3.b3DestroyWorld( world );
-					b3.destroyVehicleStateBuffer?.( buf );
+					b3.destroyWheeledVehicleStateBuffer?.( buf );
 				},
 			};
 		},

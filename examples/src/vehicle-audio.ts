@@ -20,15 +20,15 @@
 // the ground and nearby walls reflecting, or in the cabin, where the body dulls the highs and
 // booms in the lows. Dry plays it as synthesized.
 //
-// Every number that shapes the sound lives in VehicleSoundParams. audio.params is read every
+// Every number that shapes the sound lives in WheeledVehicleSoundParams. audio.params is read every
 // frame, so changing a field changes the sound right away. The driving examples only let the
 // driver pick the engine voice (vehicle-engine-voice.ts); everything else stays at
 // defaultSoundParams. The sound lab (example-vehicle-sound.ts, vehicle-sound-panel.ts) tunes all
 // of it without a car.
 
-import type { VehicleTurboName } from 'box3d.js/vehicles';
+import type { WheeledVehicleTurboName } from 'box3d.js/wheeled-vehicles';
 
-export type VehicleSound = {
+export type WheeledVehicleSound = {
 	engineRpm: number;
 	/** Throttle after the gearbox logic, 0 to 1 */
 	throttle: number;
@@ -663,7 +663,7 @@ export type EngineVoiceName = 'classic' | keyof typeof engineVoices;
 /** 'auto' picks the voice of the car being driven (setCarVoice) */
 export type EngineVoiceChoice = 'auto' | EngineVoiceName;
 
-export type VehicleSoundParams = {
+export type WheeledVehicleSoundParams = {
 	engine: {
 		voice: EngineVoiceChoice;
 		/** Engine volume at zero and full throttle */
@@ -854,7 +854,7 @@ export const listenerPositions: Record<
 	},
 };
 
-export const defaultSoundParams: VehicleSoundParams = {
+export const defaultSoundParams: WheeledVehicleSoundParams = {
 	engine: {
 		voice: 'auto',
 		idleVolume: 0.07,
@@ -924,8 +924,8 @@ export const defaultSoundParams: VehicleSoundParams = {
 
 /** A deep copy of the defaults, or of the given params */
 export function cloneSoundParams(
-	params: VehicleSoundParams = defaultSoundParams,
-): VehicleSoundParams {
+	params: WheeledVehicleSoundParams = defaultSoundParams,
+): WheeledVehicleSoundParams {
 	return structuredClone(params);
 }
 
@@ -935,7 +935,7 @@ export function cloneSoundParams(
  * (a saved 'electric') becomes 'auto'.
  */
 export function assignSoundParams(
-	target: VehicleSoundParams,
+	target: WheeledVehicleSoundParams,
 	source: unknown,
 ): void {
 	if (!source || typeof source !== 'object') return;
@@ -963,8 +963,8 @@ export function assignSoundParams(
  * change of a default still reaches it
  */
 export function diffSoundParams(
-	params: VehicleSoundParams,
-	base: VehicleSoundParams = defaultSoundParams,
+	params: WheeledVehicleSoundParams,
+	base: WheeledVehicleSoundParams = defaultSoundParams,
 ): Record<string, unknown> {
 	const diff: Record<string, unknown> = {};
 	const from = params as unknown as Record<string, unknown>;
@@ -985,7 +985,7 @@ export function diffSoundParams(
 /** A voice with the character knobs and the listener's mix applied, as the worklet plays it */
 export function engineVoiceConfig(
 	voice: EngineVoice,
-	p: VehicleSoundParams['engine'],
+	p: WheeledVehicleSoundParams['engine'],
 	listener: ListenerPosition = 'dry',
 ): EngineVoiceConfig {
 	const pipe = Math.max(p.pipeSize, 0.1);
@@ -1080,10 +1080,10 @@ export type TurboSound = { build: TurboBuild; whoosh?: number };
 const smallTurbo: TurboSound = { build: { surge: 0.6 } };
 
 /**
- * The running sound of each turbo type (box3d.js/vehicles turboTypes). Types without a sound of
+ * The running sound of each turbo type (box3d.js/wheeled-vehicles turboTypes). Types without a sound of
  * their own yet play the small turbo's. Without boost a turbo is silent, so 'none' is too.
  */
-export const turboSounds: Record<VehicleTurboName, TurboSound> = {
+export const turboSounds: Record<WheeledVehicleTurboName, TurboSound> = {
 	none: smallTurbo,
 	small: smallTurbo,
 	// A big wheel, lower and airier, on a heavy shaft that spools slowly and sings long after a lift
@@ -1220,9 +1220,9 @@ export function createListener(ctx: BaseAudioContext): Listener {
 // Audio graph
 // ---------------------------------------------------------------------------
 
-export type VehicleAudio = {
+export type WheeledVehicleAudio = {
 	/** Call once per frame */
-	update(sound: VehicleSound, dt: number): void;
+	update(sound: WheeledVehicleSound, dt: number): void;
 	/** Firing pulses per crankshaft turn are cylinders / 2, which sets the classic voice's pitch */
 	setCylinders(cylinders: number): void;
 	readonly cylinders: number;
@@ -1231,13 +1231,13 @@ export type VehicleAudio = {
 	/** The voice playing now, after resolving 'auto' */
 	readonly voice: EngineVoiceName;
 	/** The car's turbo type, which picks the turbo's running sound (turboSounds) */
-	setTurbo(type: VehicleTurboName): void;
-	readonly turbo: VehicleTurboName;
+	setTurbo(type: WheeledVehicleTurboName): void;
+	readonly turbo: WheeledVehicleTurboName;
 	setVolume(volume: number): void;
 	/** 0 to 1, as last set */
 	readonly volume: number;
 	/** Live sound settings, read every frame */
-	params: VehicleSoundParams;
+	params: WheeledVehicleSoundParams;
 	/** Plays the blow-off hiss, the compressor flutter or the bump stop thump now, strength 0 to 1 */
 	blowOff(strength?: number): void;
 	flutter(strength?: number): void;
@@ -1251,10 +1251,10 @@ export type VehicleAudio = {
 	/** Anti-lag level, 0 to 1, while it bangs off throttle */
 	readonly antiLag: number;
 	/** Called when a one-shot plays, for visuals that react to it */
-	onSound: ((name: VehicleSoundEvent, strength: number) => void) | null;
+	onSound: ((name: WheeledVehicleSoundEvent, strength: number) => void) | null;
 };
 
-export type VehicleSoundEvent = 'blowOff' | 'flutter' | 'thump';
+export type WheeledVehicleSoundEvent = 'blowOff' | 'flutter' | 'thump';
 
 function noiseBuffer(context: AudioContext, seconds: number): AudioBuffer {
 	const buffer = context.createBuffer(
@@ -1278,10 +1278,10 @@ function loopedNoise(context: AudioContext, buffer: AudioBuffer) {
 const workletUrl = new URL('./vehicle-engine-worklet.js', import.meta.url);
 const turboWorkletUrl = new URL('./vehicle-turbo-worklet.js', import.meta.url);
 
-export function createVehicleAudio(
+export function createWheeledVehicleAudio(
 	volume = 0.5,
-	params: VehicleSoundParams = cloneSoundParams(),
-): VehicleAudio {
+	params: WheeledVehicleSoundParams = cloneSoundParams(),
+): WheeledVehicleAudio {
 	let context: AudioContext | null = null;
 	let cylinders = 6;
 	let carVoice: EngineVoiceName = 'classic';
@@ -1296,7 +1296,7 @@ export function createVehicleAudio(
 	// The turbo's running sound, once its worklet has loaded, and the car's turbo type
 	let turboNode: AudioWorkletNode | null = null;
 	let turboKey = '';
-	let turboType: VehicleTurboName = 'small';
+	let turboType: WheeledVehicleTurboName = 'small';
 
 	function build(ctx: AudioContext) {
 		// Every sound meets in master, then reaches the speakers through the listener
@@ -1417,7 +1417,7 @@ export function createVehicleAudio(
 	// A touch only counts as a user gesture for audio once the finger lifts
 	window.addEventListener('pointerup', unlock);
 
-	let onSound: VehicleAudio['onSound'] = null;
+	let onSound: WheeledVehicleAudio['onSound'] = null;
 
 	function resolveVoice(): EngineVoiceName {
 		const choice =
@@ -1614,7 +1614,7 @@ export function createVehicleAudio(
 	}
 
 	/** Follows the throttle and boost, plays the lift sounds and returns the crackle level */
-	function updateLift(sound: VehicleSound, dt: number): number {
+	function updateLift(sound: WheeledVehicleSound, dt: number): number {
 		const { engine, turbo } = params;
 		liftCooldown = Math.max(liftCooldown - dt, 0);
 
@@ -1701,7 +1701,7 @@ export function createVehicleAudio(
 	const ANTI_LAG_LOAD = 0.6;
 	let antiLag = 0;
 
-	function updateAntiLag(sound: VehicleSound, dt: number): number {
+	function updateAntiLag(sound: WheeledVehicleSound, dt: number): number {
 		let target = 0;
 		if (sound.antiLag) {
 			const shut = 1 - Math.min(Math.max((sound.throttle - 0.05) / 0.2, 0), 1);

@@ -17,7 +17,7 @@ import {
 	type EngineVoice,
 	type EngineVoiceName,
 	engineVoices,
-	type VehicleSoundParams,
+	type WheeledVehicleSoundParams,
 } from './vehicle-audio';
 
 export type EngineInduction =
@@ -354,7 +354,7 @@ function puffTexture(): THREE.Texture {
 }
 
 export function createEngineModel(
-	turboParams?: VehicleSoundParams['turbo'],
+	turboParams?: WheeledVehicleSoundParams['turbo'],
 ): EngineModel {
 	const group = new THREE.Group();
 	const mat = materials();

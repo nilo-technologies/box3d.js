@@ -1,15 +1,15 @@
 // Vehicle presets for box3d.js: the four original cars and a 45 car matrix (sports, rally,
 // super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers: car, then drivetrain, then
-// realism level, then an optional turbo. Each preset tunes a b3DefaultVehicleDef() in place.
+// realism level, then an optional turbo. Each preset tunes a b3DefaultWheeledVehicleDef() in place.
 //
-//   import { createPresetVehicleDef, vehiclePresets } from 'box3d.js/vehicles';
-//   const [hx, hy, hz] = vehiclePresets['rally-50-awd'].halfExtents; // chassis box
-//   const def = createPresetVehicleDef(b3, 'rally-50-awd');
+//   import { createPresetWheeledVehicleDef, wheeledVehiclePresets } from 'box3d.js/wheeled-vehicles';
+//   const [hx, hy, hz] = wheeledVehiclePresets['rally-50-awd'].halfExtents; // chassis box
+//   const def = createPresetWheeledVehicleDef(b3, 'rally-50-awd');
 //   def.chassisId = chassis;
-//   const vehicle = b3.b3CreateVehicle(worldId, def);
+//   const vehicle = b3.b3CreateWheeledVehicle(worldId, def);
 //
-// Plain JS so Node can import it without a TypeScript step; types live in vehicles.d.ts.
-// Shipped as dist/vehicles.mjs, and used by the examples, test/smoke.mjs and the vehicle scripts.
+// Plain JS so Node can import it without a TypeScript step; types live in wheeled-vehicles.d.ts.
+// Shipped as dist/wheeled-vehicles.mjs, and used by the examples, test/smoke.mjs and the vehicle scripts.
 
 const deg = (degrees) => (degrees * Math.PI) / 180;
 
@@ -210,7 +210,7 @@ function offroad(def) {
 // ---------------------------------------------------------------------------
 // Preset matrix: 3 cars x 5 realism levels x 3 drivetrains.
 //
-// A preset is built in three layers on top of b3DefaultVehicleDef():
+// A preset is built in three layers on top of b3DefaultWheeledVehicleDef():
 //   1. the car: body, wheels, suspension, real tires, engine, gearbox, brakes, aero. This is
 //      the car as it would be at 100% realism, with no driving assists beyond its own.
 //   2. the drivetrain layer: which wheels are driven, the differentials, and the anti-roll
@@ -285,7 +285,7 @@ function applyCar(def, car) {
  * The three cars, as they would be at 100% realism. `drive` holds the per car numbers the
  * drivetrain layers read: limited slip ratios and the AWD front torque share.
  */
-export const vehicleCars = {
+export const wheeledVehicleCars = {
 	sports: {
 		title: 'Sports car',
 		blurb: 'Front engine coupe: 1400 kg, 420 N·m, road tires, six gears.',
@@ -772,8 +772,8 @@ const turboStage = (stage, maxRpm) =>
 export const turboGain = (turbo) =>
 	turbo.stages.reduce((sum, stage) => sum + stage.gain, 0);
 
-/** A b3VehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
-export function makeVehicleTurbo(type, maxRpm, ratedTorque) {
+/** A b3WheeledVehicleTurbo for an engine with this max rpm and rated (fully boosted) peak torque */
+export function makeWheeledVehicleTurbo(type, maxRpm, ratedTorque) {
 	const t = turboTypes[type];
 	return {
 		stages: [turboStage(t.stages[0], maxRpm), turboStage(t.stages[1], maxRpm)],
@@ -792,7 +792,7 @@ const close = (a, b) => Math.abs(a - b) <= 1e-3 * Math.max(1, Math.abs(b));
 export function findTurboType(turbo, maxRpm, maxTorque) {
 	const rated = maxTorque * (1 + turboGain(turbo));
 	for (const type of Object.keys(turboTypes)) {
-		const t = makeVehicleTurbo(type, maxRpm, rated);
+		const t = makeWheeledVehicleTurbo(type, maxRpm, rated);
 		const same =
 			turbo.stages.every((stage, i) =>
 				Object.keys(stage).every((key) => close(stage[key], t.stages[i][key])),
@@ -808,23 +808,23 @@ export function findTurboType(turbo, maxRpm, maxTorque) {
 /** Swaps the forced induction, keeping the engine's rated peak torque */
 export function applyTurbo(def, type) {
 	const rated = def.engine.maxTorque * (1 + turboGain(def.turbo));
-	def.turbo = makeVehicleTurbo(type, def.engine.maxRpm, rated);
+	def.turbo = makeWheeledVehicleTurbo(type, def.engine.maxRpm, rated);
 	def.engine.maxTorque = rated / (1 + turboGain(def.turbo));
 	return def;
 }
 
-/** Tunes a b3DefaultVehicleDef() in place: car, then drivetrain, then realism, then turbo */
-export function applyVehiclePreset(def, car, realism, drive, turbo = 'none') {
-	applyCar(def, vehicleCars[car]);
-	drivetrainLayers[drive].apply(def, vehicleCars[car]);
+/** Tunes a b3DefaultWheeledVehicleDef() in place: car, then drivetrain, then realism, then turbo */
+export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'none') {
+	applyCar(def, wheeledVehicleCars[car]);
+	drivetrainLayers[drive].apply(def, wheeledVehicleCars[car]);
 	applyRealism(def, realismLevels[realism]);
 	if (turbo !== 'none') applyTurbo(def, turbo);
 	return def;
 }
 
-export function buildVehiclePreset(b3, car, realism, drive, turbo = 'none') {
-	return applyVehiclePreset(
-		b3.b3DefaultVehicleDef(),
+export function buildWheeledVehiclePreset(b3, car, realism, drive, turbo = 'none') {
+	return applyWheeledVehiclePreset(
+		b3.b3DefaultWheeledVehicleDef(),
 		car,
 		realism,
 		drive,
@@ -832,24 +832,24 @@ export function buildVehiclePreset(b3, car, realism, drive, turbo = 'none') {
 	);
 }
 
-export const vehiclePresetName = (car, realism, drive) =>
+export const wheeledVehiclePresetName = (car, realism, drive) =>
 	`${car}-${realism}-${drive}`;
 
 const matrixPresets = {};
-for (const car of Object.keys(vehicleCars)) {
+for (const car of Object.keys(wheeledVehicleCars)) {
 	for (const realism of Object.keys(realismLevels)) {
 		for (const drive of Object.keys(drivetrainLayers)) {
-			matrixPresets[vehiclePresetName(car, realism, drive)] = {
-				title: `${vehicleCars[car].title}, ${drivetrainLayers[drive].title}, ${realismLevels[realism].title}`,
-				halfExtents: vehicleCars[car].halfExtents,
+			matrixPresets[wheeledVehiclePresetName(car, realism, drive)] = {
+				title: `${wheeledVehicleCars[car].title}, ${drivetrainLayers[drive].title}, ${realismLevels[realism].title}`,
+				halfExtents: wheeledVehicleCars[car].halfExtents,
 				matrix: { car, realism: Number(realism), drive },
-				apply: (def) => applyVehiclePreset(def, car, realism, drive),
+				apply: (def) => applyWheeledVehiclePreset(def, car, realism, drive),
 			};
 		}
 	}
 }
 
-export const vehiclePresets = {
+export const wheeledVehiclePresets = {
 	fwd: { title: 'FWD hatchback', halfExtents: [0.66, 0.32, 1.95], apply: fwd },
 	rwd: { title: 'RWD sports car', halfExtents: [0.7, 0.28, 2.15], apply: rwd },
 	awd: { title: 'AWD road car', halfExtents: [0.7, 0.32, 2.15], apply: awd },
@@ -862,7 +862,7 @@ export const vehiclePresets = {
 };
 
 // Steering limit: a driver aid applied to the input before it reaches the vehicle. A keyboard
-// gives only full lock or nothing, and the speed falloff in b3VehicleSteering is one curve for
+// gives only full lock or nothing, and the speed falloff in b3WheeledVehicleSteering is one curve for
 // every speed and grip, so full lock at speed would turn the front wheels well past the angle
 // where their tires grip best: the fronts plough, the rears follow, and the car slides or spins.
 // This caps the steer angle at `peakScale` times the front tires' peak slip angle, measured from
@@ -875,7 +875,7 @@ const STEER_LIMIT_MIN_SPEED = 3;
 
 /**
  * Returns limitSteer(chassis, steering, wheels, steer, braking): the steer input (1 full right,
- * -1 full left) with the grip limit applied. `steering` is b3Vehicle_GetSteering(vehicle) and
+ * -1 full left) with the grip limit applied. `steering` is b3WheeledVehicle_GetSteering(vehicle) and
  * `wheels` the vehicle's wheel defs. While braking (0 to 1) the cap moves to `brakingPeakScale`:
  * under braking the weight is on the front and extra lock past the peak spins the car, while off
  * the brake it helps the car turn in. Cars face +z with +x to their left, as the presets do.
@@ -931,6 +931,6 @@ export function createSteeringLimiter(b3, { peakScale = 1.5, brakingPeakScale = 
 	};
 }
 
-export function createPresetVehicleDef(b3, name) {
-	return vehiclePresets[name].apply(b3.b3DefaultVehicleDef());
+export function createPresetWheeledVehicleDef(b3, name) {
+	return wheeledVehiclePresets[name].apply(b3.b3DefaultWheeledVehicleDef());
 }

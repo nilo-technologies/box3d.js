@@ -1,11 +1,11 @@
 ---
 name: vehicle-tuning
-description: Build or tune a box3d.js vehicle (b3VehicleDef) to a brief such as "75% realistic FWD hot hatch" or "arcade RWD supercar", and prove it with the vehicle metrics script. Use when adding or changing a car preset in src/vehicles.js (box3d.js/vehicles), when a car drives wrong (spins, flips, understeers, won't shift, brakes long), or when asked how realistic or arcade a car feels.
+description: Build or tune a box3d.js vehicle (b3WheeledVehicleDef) to a brief such as "75% realistic FWD hot hatch" or "arcade RWD supercar", and prove it with the vehicle metrics script. Use when adding or changing a car preset in src/wheeled-vehicles.js (box3d.js/wheeled-vehicles), when a car drives wrong (spins, flips, understeers, won't shift, brakes long), or when asked how realistic or arcade a car feels.
 ---
 
 # Vehicle tuning
 
-A car is a `b3VehicleDef` built in three layers on top of `b3.b3DefaultVehicleDef()`:
+A car is a `b3WheeledVehicleDef` built in three layers on top of `b3.b3DefaultWheeledVehicleDef()`:
 
 1. **Car**: the body, wheels, suspension, real tires, engine, gearbox, brakes and aero, as the car would be with no driving aids beyond its own. Pick numbers from the archetype in [reference/archetypes.md](reference/archetypes.md).
 2. **Drivetrain**: which wheels are driven, the differentials, and the weight and anti-roll changes that go with the layout. See [reference/drivetrains.md](reference/drivetrains.md).
@@ -16,7 +16,7 @@ Every field and what the engine really does with it is in [reference/parameters.
 ## Workflow
 
 1. **Pin the brief.** Archetype (sports, rally, super, hatch, or the closest), realism level (100, 75, 50, 25, 0) and drivetrain (fwd, rwd, awd). If the brief is between levels, pick the nearer one and say so.
-2. **Write the car layer** from the archetype ranges: mass, center of mass, wheel layout, tires, engine, gears, brakes, bars, steering, aero. Any field the archetype does not list stays at its `b3DefaultVehicleDef()` default; that is intended. Check the derived numbers before you run anything (see "Sanity math" below).
+2. **Write the car layer** from the archetype ranges: mass, center of mass, wheel layout, tires, engine, gears, brakes, bars, steering, aero. Any field the archetype does not list stays at its `b3DefaultWheeledVehicleDef()` default; that is intended. Check the derived numbers before you run anything (see "Sanity math" below).
 3. **Apply the drivetrain layer**, then **the realism row**, exactly as the reference tables say, in that order. The realism row comes last because it multiplies or offsets values the earlier layers set (tire friction, rear brakes, rear side grip, downforce, center of mass height). Front brake and handbrake torques are not scaled by the realism row; the rear brake is, by the tire grip, so size it in the car layer for 100% grip. For a single preset, size the front brake in the car layer for the grip of the level you are building (see "Sanity math"). In the matrix one car layer serves all five levels, so size them once and check every level with `--car`.
 4. **Measure.** Save the car as a preset module (template below) and run
    `node examples/scripts/vehicle-metrics.mjs --file path/to/car.mjs`
@@ -49,7 +49,7 @@ export const preset = {
 
 Rules for `apply(def)`:
 
-- `def` comes from `b3DefaultVehicleDef()`: 4 wheels in the order front left, front right, rear left, rear right, +z forward, +y up, left is +x.
+- `def` comes from `b3DefaultWheeledVehicleDef()`: 4 wheels in the order front left, front right, rear left, rear right, +z forward, +y up, left is +x.
 - Fixed size arrays stay fixed size: `wheels` has 8 slots, `transmission.gearRatios` 8, `drivetrain.differentials` 4 and `antiRoll.bars` 4. Unused gear slots are 0. Set `def.transmission.gearRatios[i]` and `gearCount`, `def.drivetrain.differentials[i]` and `differentialCount`, `def.antiRoll.bars[i]` and `barCount`. Fill unused differentials with `{ leftWheel: -1, rightWheel: -1, torqueRatio: 0, leftRightSplit: 0.5, limitedSlipRatio: 1 }` and unused bars with `{ leftWheel: -1, rightWheel: -1, stiffness: 0 }`.
 - Replace vector fields whole: `def.chassis.centerOfMassOffset = [0, -0.1, 0.05]`, not `[1] = ...`.
 - Angles are radians.
@@ -76,7 +76,7 @@ All on flat ground with the default shape friction (0.6, the tire reference, so 
 
 ## Keyboard driving
 
-Most players use WASD: full lock, full throttle or full brake, nothing in between. The examples pass the steer input through `createSteeringLimiter` (shipped in `box3d.js/vehicles`), which caps the steer angle at 1.5 times the front tires' peak slip angle from the direction the front axle travels, and at the peak itself while braking. The presets are tuned for it. What the WASD sweep taught (findings #36-38):
+Most players use WASD: full lock, full throttle or full brake, nothing in between. The examples pass the steer input through `createSteeringLimiter` (shipped in `box3d.js/wheeled-vehicles`), which caps the steer angle at 1.5 times the front tires' peak slip angle from the direction the front axle travels, and at the peak itself while braking. The presets are tuned for it. What the WASD sweep taught (findings #36-38):
 
 - The front to rear tire balance decides whether a keyboard car turns, ploughs or spins. Without a limiter, full lock at speed takes the fronts far past their peak, and that understeer is what keeps the car from spinning. A limiter that holds the fronts near their best grip removes that safety, so the rear tires need about 5% more side grip than the fronts (`rear.tire` in the car layer; wide rear tires on a real car do the same).
 - A cap right at the peak (1.0) makes every corner taken too fast plough wide; 1.5 lets the car turn in and slide when overdone. Braking with extra lock spins the car, so the cap returns to the peak under the brake (`brakingPeakScale`).

@@ -271,7 +271,7 @@ npm install box3d.js
 - [Rigid Bodies](#rigid-bodies)
 - [Shapes](#shapes)
 - [Joints](#joints)
-- [Vehicles](#vehicles)
+- [WheeledVehicles](#wheeledvehicles)
 - [Queries](#queries)
 - [Events](#events)
 - [Debug Draw](#debug-draw)
@@ -1253,9 +1253,9 @@ wheelDef.suspensionDampingRatio = 0.7;  // 0 = undamped, 1 = critically damped
 b3.b3CreateWheelJoint(world, wheelDef);
 ```
 
-## Vehicles
+## WheeledVehicles
 
-`b3CreateVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_vehicleCastSphere` or `b3_vehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. Vehicles are not supported in recorded worlds.
+`b3CreateWheeledVehicle` turns a dynamic body into a drivable car. Each wheel casts against the world once per step (a rounded cylinder by default; set the wheel's `castType` to `b3_wheeledVehicleCastSphere` or `b3_wheeledVehicleCastRay` for a sphere or a ray), and is solved as a soft suspension plus a tire with a slip curve in every substep. The engine, clutch, gearbox and differentials are solved together once per step, so wheelspin, engine braking and limited slip fall out of the same model. Driving assists (traction control, launch control, ABS, a sticky tire that holds the car on slopes, counter steer, air control, self righting) are on top and can each be turned off. WheeledVehicles are not supported in recorded worlds.
 
 ```ts
 // The vehicle drives an existing dynamic body. Create the chassis shapes first.
@@ -1267,7 +1267,7 @@ b3.b3CreateBoxShape(chassis, b3.b3DefaultShapeDef(), 0.9, 0.3, 2.1);
 
 // The default is a 1300 kg rear wheel drive sedan: +Z forward, +Y up, wheels in the order
 // front left, front right, rear left, rear right.
-const vehicleDef = b3.b3DefaultVehicleDef();
+const vehicleDef = b3.b3DefaultWheeledVehicleDef();
 vehicleDef.chassisId = chassis;
 vehicleDef.engine.maxTorque = 420;
 vehicleDef.assists.abs = true;
@@ -1277,7 +1277,7 @@ vehicleDef.drivetrain.differentials[0] = { leftWheel: 0, rightWheel: 1, torqueRa
 vehicleDef.drivetrain.differentials[1] = { leftWheel: 2, rightWheel: 3, torqueRatio: 0.6, leftRightSplit: 0.5, limitedSlipRatio: 1.3 };
 vehicleDef.drivetrain.differentialCount = 2;
 
-const vehicle = b3.b3CreateVehicle(world, vehicleDef);
+const vehicle = b3.b3CreateWheeledVehicle(world, vehicleDef);
 ```
 
 ### Driving
@@ -1285,7 +1285,7 @@ const vehicle = b3.b3CreateVehicle(world, vehicleDef);
 ```ts
 // forward: -1..1 (the automatic gearbox brakes first, then selects reverse), steer: -1 left
 // to 1 right, brake and handbrake: 0..1. Input wakes the chassis.
-b3.b3Vehicle_SetInput(vehicle, { forward: 1, brake: 0, steer: -0.3, handbrake: 0 });
+b3.b3WheeledVehicle_SetInput(vehicle, { forward: 1, brake: 0, steer: -0.3, handbrake: 0 });
 b3.b3World_Step(world, 1 / 60, 4);
 ```
 
@@ -1293,30 +1293,30 @@ b3.b3World_Step(world, 1 / 60, 4);
 
 ```ts
 // One call per frame packs the vehicle and wheel state into a reusable wasm buffer
-const stateBuffer = b3.createVehicleStateBuffer();
-const state = b3.createVehicleStateRecord();
-const wheel = b3.createVehicleWheelRecord();
+const stateBuffer = b3.createWheeledVehicleStateBuffer();
+const state = b3.createWheeledVehicleStateRecord();
+const wheel = b3.createWheeledVehicleWheelRecord();
 
-b3.getVehicleStateData(stateBuffer, vehicle);
-b3.getVehicleStateAt(state, stateBuffer);
+b3.getWheeledVehicleStateData(stateBuffer, vehicle);
+b3.getWheeledVehicleStateAt(state, stateBuffer);
 console.log(`${(state.speed * 3.6).toFixed(0)} km/h, gear ${state.gear}, ${state.engineRpm.toFixed(0)} rpm`);
 
-for (let i = 0; i < b3.getNumVehicleWheels(stateBuffer); i++) {
-    b3.getVehicleWheelAt(wheel, stateBuffer, i);
+for (let i = 0; i < b3.getNumWheeledVehicleWheels(stateBuffer); i++) {
+    b3.getWheeledVehicleWheelAt(wheel, stateBuffer, i);
     // wheel.position / wheel.rotation: world space wheel transform including steering and spin
     // wheel.load, slipRatio, slipAngle, compression, hasContact, contactPoint, ...
 }
 
-b3.destroyVehicleStateBuffer(stateBuffer);
+b3.destroyWheeledVehicleStateBuffer(stateBuffer);
 ```
 
-To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3Vehicle_GetWheelLocalData(out, vehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. Multiplying this pose by the chassis transform reproduces `b3Vehicle_GetWheelTransform`, for any chassis axes, so a wheel mesh parented to the chassis mesh can take it as is. To draw the wheels between physics steps, keep the previous step's readout, unwrap each wheel's spin with `angularVelocity`, and blend, as below. `b3Vehicle_GetWheelLocalTransform(outPosition, outRotation, vehicleId, wheelIndex)` reads one wheel.
+To place wheel meshes under the chassis mesh, read the wheels in chassis space instead. `b3WheeledVehicle_GetWheelLocalData(out, wheeledVehicleId)` fills a `Float32Array` with every wheel in one call and returns the wheel count. Each wheel takes `B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE` (11) floats: the position (the attachment point lowered along the chassis up axis by the suspension length), the rotation (steer about the chassis up axis, then spin about the axle), then the raw `rotationAngle`, `angularVelocity`, `steerAngle` and `suspensionLength`. Multiplying this pose by the chassis transform reproduces `b3WheeledVehicle_GetWheelTransform`, for any chassis axes, so a wheel mesh parented to the chassis mesh can take it as is. To draw the wheels between physics steps, keep the previous step's readout, unwrap each wheel's spin with `angularVelocity`, and blend, as below. `b3WheeledVehicle_GetWheelLocalTransform(outPosition, outRotation, wheeledVehicleId, wheelIndex)` reads one wheel.
 
 ```ts
 // Wheel meshes parented to the chassis mesh need only each wheel's pose in chassis space. One call
 // fills a Float32Array for every wheel: position (3), rotation x, y, z, w (4), then the raw
 // rotationAngle, angularVelocity, steerAngle and suspensionLength.
-const stride = b3.B3_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
+const stride = b3.B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE; // 11
 const maxWheels = b3.B3_MAX_VEHICLE_WHEELS;
 const wheelData = new Float32Array(maxWheels * stride); // the latest physics step
 const previousData = new Float32Array(maxWheels * stride); // the step before it
@@ -1330,7 +1330,7 @@ const stepDt = 1 / 60;
 function readWheels() {
     const seeded = wheelCount > 0;
     previousData.set(wheelData);
-    wheelCount = b3.b3Vehicle_GetWheelLocalData(wheelData, vehicle);
+    wheelCount = b3.b3WheeledVehicle_GetWheelLocalData(wheelData, vehicle);
     if (!seeded) previousData.set(wheelData); // first read: nothing to interpolate from yet
     for (let i = 0; i < wheelCount; i++) {
         const o = i * stride;
@@ -1341,7 +1341,7 @@ function readWheels() {
 
 // Each render frame: blend the two steps by alpha (0 = previous step, 1 = latest), then rebuild
 // the rotation the readout packs, steer about chassis up times spin about the axle (up x forward).
-const { up, forward } = b3.b3Vehicle_GetChassis(vehicle);
+const { up, forward } = b3.b3WheeledVehicle_GetChassis(vehicle);
 const axle: [number, number, number] = [
     up[1] * forward[2] - up[2] * forward[1],
     up[2] * forward[0] - up[0] * forward[2],
@@ -1375,38 +1375,38 @@ for (let i = 0; i < wheelCount; i++) {
     // wheelMeshes[i].position.fromArray(wheelPosition); wheelMeshes[i].quaternion.fromArray(wheelRotation);
 }
 
-// One wheel, as b3Vehicle_GetWheelTransform does in world space
-const [frontLeftPosition, frontLeftRotation] = b3.b3Vehicle_GetWheelLocalTransform([0, 0, 0], [0, 0, 0, 1], vehicle, 0);
+// One wheel, as b3WheeledVehicle_GetWheelTransform does in world space
+const [frontLeftPosition, frontLeftRotation] = b3.b3WheeledVehicle_GetWheelLocalTransform([0, 0, 0], [0, 0, 0, 1], vehicle, 0);
 ```
 
 ### Live Tuning
 
 ```ts
 // Every part of the definition can be changed while driving. Changes apply on the next step.
-const suspension = b3.b3Vehicle_GetWheel(vehicle, 0);
+const suspension = b3.b3WheeledVehicle_GetWheel(vehicle, 0);
 suspension.suspension.frequency = 2.2;
-b3.b3Vehicle_SetWheel(vehicle, 0, suspension);
+b3.b3WheeledVehicle_SetWheel(vehicle, 0, suspension);
 
-const assists = b3.b3Vehicle_GetAssists(vehicle);
+const assists = b3.b3WheeledVehicle_GetAssists(vehicle);
 assists.tractionControl = false;
 assists.driftGripScale = 0.5; // the handbrake makes the rear loose
-b3.b3Vehicle_SetAssists(vehicle, assists);
+b3.b3WheeledVehicle_SetAssists(vehicle, assists);
 
 // Flip the car back onto its wheels
-b3.b3Vehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
+b3.b3WheeledVehicle_Reset(vehicle, [0, 1.5, 0], [0, 0, 0, 1]);
 ```
 
 ### Turbos and Superchargers
 
-`b3VehicleTurbo` (in the definition as `turbo`, live through `b3Vehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3Vehicle_GetState` and the packed readout.
+`b3WheeledVehicleTurbo` (in the definition as `turbo`, live through `b3WheeledVehicle_SetTurbo`) adds forced induction to the engine: up to two compressor stages, each with a gain, an rpm range where its boost builds, a lag that shortens with rpm and load, and a shaft that keeps spinning through shifts and short lifts while the boost itself dumps. The pedal asks for a share of the fully boosted torque, so boost builds near full pedal. That covers a single turbo, a sequential twin, a supercharger (no lag, plus a parasitic drive loss) and rally anti-lag. The default is naturally aspirated. `state.boost` reads the current boost, in both `b3WheeledVehicle_GetState` and the packed readout.
 
 ```ts
 // A turbo multiplies the torque curve by 1 + boost. Each stage's shaft spools toward a target set
 // by the pedal and the rpm (spoolTime is the lag at full throttle and fullBoostRpm) and spins down
 // with the bleed time. Boost dumps when you lift, but a spinning shaft brings it straight back.
-const turbo = b3.b3Vehicle_GetTurbo(vehicle);
+const turbo = b3.b3WheeledVehicle_GetTurbo(vehicle);
 turbo.stages[0] = { gain: 0.5, spoolRpm: 2500, fullBoostRpm: 4000, spoolTime: 0.8, bleedTime: 1.2 };
-b3.b3Vehicle_SetTurbo(vehicle, turbo);
+b3.b3WheeledVehicle_SetTurbo(vehicle, turbo);
 
 // A sequential twin adds a second, slower stage higher up
 turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.2, bleedTime: 1.8 };
@@ -1414,21 +1414,21 @@ turbo.stages[1] = { gain: 0.3, spoolRpm: 4500, fullBoostRpm: 5500, spoolTime: 1.
 // and antiLag holds the boost off throttle and through shifts
 turbo.instantFraction = 0;
 turbo.antiLag = false;
-b3.b3Vehicle_SetTurbo(vehicle, turbo);
+b3.b3WheeledVehicle_SetTurbo(vehicle, turbo);
 
 b3.b3World_Step(world, 1 / 60, 4);
-console.log(`boost +${(b3.b3Vehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
+console.log(`boost +${(b3.b3WheeledVehicle_GetState(vehicle).boost * 100).toFixed(0)}%`);
 ```
 
 ### Presets
 
-`box3d.js/vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`vehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node. The presets are tuned for keyboard players driving through `createSteeringLimiter`, a driver aid applied to the steer input that caps the steer angle near the front tires' grip limit (tighter while braking); without it, full lock at speed can spin the less realistic cars.
+`box3d.js/wheeled-vehicles` exports ready tuned cars: the four original presets (`fwd` hatchback, `rwd` sports car, `awd` road car, `offroad`) and 45 matrix presets: a sports car, a rally car and a supercar, each at five realism levels (100, 75, 50, 25 and 0 for arcade) and each as FWD, RWD or AWD, named `<car>-<realism>-<drive>`, for example `rally-50-awd`. They are built in layers: the car (`wheeledVehicleCars`), then the drivetrain (`drivetrainLayers`), then a realism table shared by every car (`realismLevels`), then an optional turbo type (`turboTypes`). It is plain JavaScript with no imports, so it also runs in Node. The presets are tuned for keyboard players driving through `createSteeringLimiter`, a driver aid applied to the steer input that caps the steer angle near the front tires' grip limit (tighter while braking); without it, full lock at speed can spin the less realistic cars.
 
 ```ts
-// box3d.js/vehicles has ready tuned cars. A preset tunes a b3DefaultVehicleDef() and gives the
+// box3d.js/wheeled-vehicles has ready tuned cars. A preset tunes a b3DefaultWheeledVehicleDef() and gives the
 // size of the chassis box it was tuned for.
 const presetName = 'rally-50-awd'; // <car>-<realism>-<drive>, or 'fwd' | 'rwd' | 'awd' | 'offroad'
-const [hx, hy, hz] = vehiclePresets[presetName].halfExtents;
+const [hx, hy, hz] = wheeledVehiclePresets[presetName].halfExtents;
 
 const rallyBodyDef = b3.b3DefaultBodyDef();
 rallyBodyDef.type = b3.b3BodyType.b3_dynamicBody;
@@ -1436,26 +1436,26 @@ rallyBodyDef.position = [5, 1, 0];
 const rallyChassis = b3.b3CreateBody(world, rallyBodyDef);
 b3.b3CreateBoxShape(rallyChassis, b3.b3DefaultShapeDef(), hx, hy, hz);
 
-const rallyDef = createPresetVehicleDef(b3, presetName);
+const rallyDef = createPresetWheeledVehicleDef(b3, presetName);
 rallyDef.chassisId = rallyChassis;
-const rally = b3.b3CreateVehicle(world, rallyDef);
+const rally = b3.b3CreateWheeledVehicle(world, rallyDef);
 
 // Or build one from its layers, with an optional turbo type, and change anything before creating it
-const superDef = buildVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
+const superDef = buildWheeledVehiclePreset(b3, 'super', 25, 'rwd', 'parallel');
 superDef.assists.abs = true;
 applyTurbo(superDef, 'supercharger'); // swaps the forced induction, keeping the rated peak torque
 
 // The presets are tuned to be driven through the steering limiter, a driver aid for keyboard
 // input: it caps the steer angle near the front tires' grip limit, tighter while braking
 const limitSteer = createSteeringLimiter(b3);
-const rallySteering = b3.b3Vehicle_GetSteering(rally);
+const rallySteering = b3.b3WheeledVehicle_GetSteering(rally);
 const keys = { forward: 1, brake: 0, steer: 1, handbrake: 0 }; // W and D held
 const rallyWheels = rallyDef.wheels.slice(0, rallyDef.wheelCount);
 const steer = limitSteer(rallyChassis, rallySteering, rallyWheels, keys.steer, keys.brake);
-b3.b3Vehicle_SetInput(rally, { ...keys, steer });
+b3.b3WheeledVehicle_SetInput(rally, { ...keys, steer });
 ```
 
-The vehicle example has a tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3Vehicle_Set*` setters. The presets it drives come from `box3d.js/vehicles`.
+The vehicle example has a tuning panel, `examples/src/vehicle-settings.ts`, which live-edits the chassis mass and center of mass, suspension, wheels, tires, anti-roll bars, engine, turbo, transmission, drivetrain, steering and assists of any vehicle. Wheel positions, the chassis axes and the cast filter are not in the panel; change them with the `b3WheeledVehicle_Set*` setters. The presets it drives come from `box3d.js/wheeled-vehicles`.
 
 The example, a preset showcase, swaps between 45 presets while you drive: a sports car, a rally car and a supercar, each at five realism levels from 100% realistic to arcade, and each as FWD, RWD or AWD. They are built in layers (the car, then the drivetrain, then a realism table shared by every car), and `examples/scripts/vehicle-metrics.mjs` measures any preset (0-100, top speed, braking, lateral g, a step steer, a handbrake turn, self righting and rough ground) against targets taken from real cars of each class. Its terrain menu also has two race tracks, a paved circuit and an off-road stage, each with corners, climbs and descents, a section of bumps of different sizes and a lap timer; `examples/scripts/vehicle-laps.mjs` drives every preset around both. The circuit's road is a triangle mesh over the height field, with edges that ease down to the ground. Every setting changed in the panel goes into the URL, so a tuned car can be shared as a link.
 

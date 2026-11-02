@@ -210,9 +210,9 @@ copyFileSync( join( root, 'src', 'three.d.ts' ), join( root, 'dist', 'three.d.ts
 // Hand-written DynamicMover port (box3d's samples/dynamic_mover.cpp).
 copyFileSync( join( root, 'src', 'character.js' ), join( root, 'dist', 'character.mjs' ) );
 copyFileSync( join( root, 'src', 'character.d.ts' ), join( root, 'dist', 'character.d.ts' ) );
-// Hand-written vehicle presets (b3VehicleDef tunings).
-copyFileSync( join( root, 'src', 'vehicles.js' ), join( root, 'dist', 'vehicles.mjs' ) );
-copyFileSync( join( root, 'src', 'vehicles.d.ts' ), join( root, 'dist', 'vehicles.d.ts' ) );
+// Hand-written vehicle presets (b3WheeledVehicleDef tunings).
+copyFileSync( join( root, 'src', 'wheeled-vehicles.js' ), join( root, 'dist', 'wheeled-vehicles.mjs' ) );
+copyFileSync( join( root, 'src', 'wheeled-vehicles.d.ts' ), join( root, 'dist', 'wheeled-vehicles.d.ts' ) );
 const sizesBefore = wasmSizes();
 stageVhacdHeader();
 
@@ -431,10 +431,10 @@ export interface b3ConvexDecompositionCacheStats { entries: number; hits: number
  * plus the number of pieces that could not become a box3d hull. */
 export interface b3DecompositionShapes extends ShapeIdBuffer { skipped: number; }
 export interface b3DecompositionCompound { compound: b3CompoundData | null; skipped: number; }
-/** Reusable, wasm-backed vehicle readout. Fill with getVehicleStateData after each
- * b3World_Step; free with destroyVehicleStateBuffer. */
-export interface VehicleStateBuffer { readonly _brand?: 'VehicleStateBuffer'; }
-export interface VehicleStateRecord {
+/** Reusable, wasm-backed vehicle readout. Fill with getWheeledVehicleStateData after each
+ * b3World_Step; free with destroyWheeledVehicleStateBuffer. */
+export interface WheeledVehicleStateBuffer { readonly _brand?: 'WheeledVehicleStateBuffer'; }
+export interface WheeledVehicleStateRecord {
   /** Forward speed (m/s) */
   speed: number;
   engineRpm: number;
@@ -452,7 +452,7 @@ export interface VehicleStateRecord {
   /** Launch control is managing the drive torque */
   isLaunching: boolean;
 }
-export interface VehicleWheelRecord {
+export interface WheeledVehicleWheelRecord {
   /** Wheel center, world space */
   position: b3Vec3;
   /** Wheel orientation including steering and spin */
@@ -584,28 +584,28 @@ export interface Box3DFacade {
   getDebugBoundsAt(out: DebugBoundsPrimitive, buf: DebugDrawBuffer, i: number): DebugBoundsPrimitive;
   createDebugTransformPrimitive(): DebugTransformPrimitive;
   getDebugTransformAt(out: DebugTransformPrimitive, buf: DebugDrawBuffer, i: number): DebugTransformPrimitive;
-  createVehicleStateBuffer(): VehicleStateBuffer;
+  createWheeledVehicleStateBuffer(): WheeledVehicleStateBuffer;
   /** Packs the vehicle state and every wheel's state and transform in one call. */
-  getVehicleStateData(buf: VehicleStateBuffer, vehicleId: b3VehicleId): VehicleStateBuffer;
-  destroyVehicleStateBuffer(buf: VehicleStateBuffer): void;
-  getNumVehicleWheels(buf: VehicleStateBuffer): number;
-  createVehicleStateRecord(): VehicleStateRecord;
-  getVehicleStateAt(out: VehicleStateRecord, buf: VehicleStateBuffer): VehicleStateRecord;
-  createVehicleWheelRecord(): VehicleWheelRecord;
-  getVehicleWheelAt(out: VehicleWheelRecord, buf: VehicleStateBuffer, i: number): VehicleWheelRecord;
+  getWheeledVehicleStateData(buf: WheeledVehicleStateBuffer, wheeledVehicleId: b3WheeledVehicleId): WheeledVehicleStateBuffer;
+  destroyWheeledVehicleStateBuffer(buf: WheeledVehicleStateBuffer): void;
+  getNumWheeledVehicleWheels(buf: WheeledVehicleStateBuffer): number;
+  createWheeledVehicleStateRecord(): WheeledVehicleStateRecord;
+  getWheeledVehicleStateAt(out: WheeledVehicleStateRecord, buf: WheeledVehicleStateBuffer): WheeledVehicleStateRecord;
+  createWheeledVehicleWheelRecord(): WheeledVehicleWheelRecord;
+  getWheeledVehicleWheelAt(out: WheeledVehicleWheelRecord, buf: WheeledVehicleStateBuffer, i: number): WheeledVehicleWheelRecord;
   /** Most wheels a vehicle can have. */
   readonly B3_MAX_VEHICLE_WHEELS: number;
-  /** Floats per wheel written by b3Vehicle_GetWheelLocalData (11). */
-  readonly B3_VEHICLE_WHEEL_LOCAL_STRIDE: number;
+  /** Floats per wheel written by b3WheeledVehicle_GetWheelLocalData (11). */
+  readonly B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE: number;
   /** Every wheel's chassis-space pose and raw spin in one call, for placing wheel meshes under
    * the chassis and interpolating them between physics steps. Writes
-   * B3_VEHICLE_WHEEL_LOCAL_STRIDE (11) floats per wheel, wheels in definition order, at
+   * B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE (11) floats per wheel, wheels in definition order, at
    * out[i * 11]:
    *
    * - [0..2] position: wheel center in chassis space, the attachment point lowered along the
    *   chassis up axis by suspensionLength
    * - [3..6] rotation as x, y, z, w: steer about chassis up, then spin about the axle
-   *   (up x forward), so b3Vehicle_GetWheelTransform is the chassis transform times this pose
+   *   (up x forward), so b3WheeledVehicle_GetWheelTransform is the chassis transform times this pose
    * - [7] rotationAngle: spin angle (radians), wrapped to [-pi, pi]
    * - [8] angularVelocity: spin rate (rad/s). A fast wheel turns more than pi per step, so unwrap
    *   the spin with it before interpolating; the quaternion alone cannot be unwrapped.
@@ -613,8 +613,8 @@ export interface Box3DFacade {
    * - [10] suspensionLength: attachment point to wheel center (m)
    *
    * Returns the wheel count, 0 for an invalid vehicle. Throws a RangeError when out is shorter
-   * than count * 11; a B3_MAX_VEHICLE_WHEELS * B3_VEHICLE_WHEEL_LOCAL_STRIDE array fits any vehicle. */
-  b3Vehicle_GetWheelLocalData(out: Float32Array | number[], vehicleId: b3VehicleId): number;
+   * than count * 11; a B3_MAX_VEHICLE_WHEELS * B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE array fits any vehicle. */
+  b3WheeledVehicle_GetWheelLocalData(out: Float32Array | number[], wheeledVehicleId: b3WheeledVehicleId): number;
 }`;
 
 const tsdPath = join( root, 'dist', 'box3d.d.ts' );
@@ -688,8 +688,8 @@ tsd = tsd.replace( /^\s*b3_getMathScratch\(\): number;\r?\n/m, '' );
 tsd = tsd.replace( /^\s*_outMeta\(\): any;\r?\n/m, '' );
 tsd = tsd.replace( /^\s*_retMeta\(\): any;\r?\n/m, '' );
 tsd = tsd.replace( /^\s*_layoutMeta\(\): any;\r?\n/m, '' );
-// The raw writer + scratch pointer behind the facade's b3Vehicle_GetWheelLocalData.
-for ( const re of [ /^\s*b3_getVehicleWheelLocalScratch\(\): number;\r?\n/m, /^\s*b3Vehicle_GetWheelLocalDataInto\([^)]*\): number;\r?\n/m ] )
+// The raw writer + scratch pointer behind the facade's b3WheeledVehicle_GetWheelLocalData.
+for ( const re of [ /^\s*b3_getWheeledVehicleWheelLocalScratch\(\): number;\r?\n/m, /^\s*b3WheeledVehicle_GetWheelLocalDataInto\([^)]*\): number;\r?\n/m ] )
 {
 	if ( !re.test( tsd ) ) throw new Error( `tsd: no ${re} line to strip — binding renamed/removed?` );
 	tsd = tsd.replace( re, '' );

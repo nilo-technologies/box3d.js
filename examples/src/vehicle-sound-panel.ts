@@ -1,5 +1,5 @@
 // Sound tuning panel for the sound lab (example-vehicle-sound.ts): a lil-gui folder with every
-// setting in VehicleSoundParams (engine voice and character, listener, tires, turbo, bump stop),
+// setting in WheeledVehicleSoundParams (engine voice and character, listener, tires, turbo, bump stop),
 // buttons that play the blow-off, the stutter (flutter) and the bump, hotkeys for the first two
 // (V and C), and copy, paste and reset. Changes apply live and are saved in localStorage (only
 // what differs from the defaults). The driving examples don't read it: they play
@@ -25,8 +25,8 @@ import {
 	listenerPositions,
 	type SoundWave,
 	type TurboValve,
-	type VehicleAudio,
-	type VehicleSoundParams,
+	type WheeledVehicleAudio,
+	type WheeledVehicleSoundParams,
 } from './vehicle-audio';
 import { copyText, toast } from './vehicle-showcase';
 
@@ -86,7 +86,7 @@ const valveOptions: Record<string, TurboValve> = {
 /** [field, min, max, step, label] */
 type Slider<G> = [keyof G & string, number, number, number, string];
 
-type EngineParams = VehicleSoundParams['engine'];
+type EngineParams = WheeledVehicleSoundParams['engine'];
 
 const engineVolumeSliders: Slider<EngineParams>[] = [
 	['idleVolume', 0, 0.5, 0.005, 'volume at idle'],
@@ -115,7 +115,7 @@ const classicSliders: Slider<EngineParams>[] = [
 	['resonance', 0.1, 20, 0.1, 'tone resonance (Q)'],
 ];
 
-const tireSliders: Slider<VehicleSoundParams['tires']>[] = [
+const tireSliders: Slider<WheeledVehicleSoundParams['tires']>[] = [
 	['volume', 0, 4, 0.05, 'squeal volume'],
 	['pitch', 200, 4000, 10, 'pitch (Hz)'],
 	['pitchSkid', 0, 3000, 10, 'pitch added at full slide'],
@@ -124,7 +124,7 @@ const tireSliders: Slider<VehicleSoundParams['tires']>[] = [
 	['fullSpeed', 0.5, 40, 0.5, 'full volume at (m/s)'],
 ];
 
-type TurboParams = VehicleSoundParams['turbo'];
+type TurboParams = WheeledVehicleSoundParams['turbo'];
 
 const whineSliders: Slider<TurboParams>[] = [
 	['whineVolume', 0, 0.2, 0.001, 'whistle volume'],
@@ -153,7 +153,7 @@ const valveSliders: Slider<TurboParams>[] = [
 	['antiLagMinRpm', 1000, 8000, 50, 'anti-lag above rpm'],
 ];
 
-const bumpSliders: Slider<VehicleSoundParams['bump']>[] = [
+const bumpSliders: Slider<WheeledVehicleSoundParams['bump']>[] = [
 	['volume', 0, 3, 0.01, 'volume'],
 	['cutoff', 30, 1000, 5, 'cutoff (Hz)'],
 	['length', 0.02, 1.4, 0.01, 'length (s)'],
@@ -181,7 +181,7 @@ function loadSaved(key: string): unknown {
 	}
 }
 
-function save(key: string, params: VehicleSoundParams): void {
+function save(key: string, params: WheeledVehicleSoundParams): void {
 	try {
 		localStorage.setItem(key, JSON.stringify(diffSoundParams(params)));
 	} catch {
@@ -191,7 +191,7 @@ function save(key: string, params: VehicleSoundParams): void {
 
 export function addSoundPanel(
 	gui: GUI,
-	audio: VehicleAudio,
+	audio: WheeledVehicleAudio,
 	options: SoundPanelOptions = {},
 ): SoundPanel {
 	const params = audio.params;
