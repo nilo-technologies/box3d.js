@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- The sports car presets turn in harder at full lock and you can see their suspension work.
+  - Understeer: at full lock through the steering limiter the front tires ran about 30% past their grip peak while the rears had grip to spare, so the car pushed wide. The rear tires now have the same side grip as the fronts (they were 5% grippier) but reach their peak sooner (5.5° of slip against 7°) and keep it past the peak, and the fronts lose less grip past theirs (slide friction 1.06, was 1.02). The RWD rear now works as hard as the front at the limit; taken too fast, the RWD cars slide instead of pushing wide; and the keyboard cornering pace went up (WASD sum 24.20 to 25.13). The AWD cars' rear grip is ×0.985 (a new optional `drive.awdRearGrip` on a car, applied by the AWD layer), which balances them too. The FWD cars still push: a lower rear grip made them spin when lifting mid corner.
+  - Suspension: softer springs (1.5/1.65 Hz, were 2.0/2.2) on longer travel (0.15-0.38 m, was 0.17-0.33), so the body dives about 2° under braking, squats 1-1.5° accelerating and rolls about 2° at 100% (were about 1.2°, 0.7° and 1.7°). The anti-roll bars are stiffer (20000/16000 N/m, were 16000/13000) and the center of mass 2 cm lower, so the less realistic levels still barely roll.
+  - All 45 presets pass `vehicle-metrics.mjs`, the sports car also with `--perturb`, and the sports car laps both tracks at every pace.
+- The supercar presets turn in harder at full lock too, the same way: the rear tires have the front's side grip (1.25, they were 5% grippier) but peak sooner (5.5° of slip against 6.5°) and keep it past the peak, and the fronts lose less past theirs (slide friction 1.18, was 1.15). At full lock the 100% RWD rear works at 1.16× its peak (was 0.85×), and the keyboard cornering pace went up (WASD sum 28.17 to 28.60). Its springs stay as they were: softer ones leave the 50% cars on their roofs, from an engine self-righting quirk on a dead level roof.
+- The rally car presets have softer springs (1.3/1.4 Hz, were 1.5/1.6) with a new optional `suspension.preload` on a car (0.037 m) carrying their sag, so the ride height is unchanged: at 100% the body squats about 1.9°, dives 2.9° and rolls 2.8° (were about 1.4°, 2.1° and 2.5°). The anti-roll bars are a little stiffer (18000/13500 N/m, were 16000/12000). Their tires are unchanged: every rear that turned them in harder spun them in the keyboard moves.
+- All 45 presets pass `vehicle-metrics.mjs`, the rally and supercar also with `--perturb`, and both lap both tracks at paces 0.8, 0.85 and 0.9.
+
 ## v0.4.0
 
 The vehicle release. `Vehicle` is now `WheeledVehicle` throughout (breaking), and vehicles gain a turbo and supercharger, launch control and ABS, 45 tuned presets shipped as `box3d.js/wheeled-vehicles`, two race tracks, and a procedural engine, turbo and tire sound lab.

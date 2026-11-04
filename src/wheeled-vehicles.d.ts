@@ -82,6 +82,8 @@ export interface WheeledVehicleCar {
 		maxLength: number;
 		compressionDamping: number;
 		reboundDamping: number;
+		/** Extra spring length past `maxLength` (m, default 0): carries a soft spring's sag without a longer droop */
+		preload?: number;
 	};
 	tire: WheeledVehicleTire;
 	engine: {
@@ -116,6 +118,8 @@ export interface WheeledVehicleCar {
 		centerLsd: number;
 		/** Share of the torque sent to the front axle in AWD */
 		awdFront: number;
+		/** Multiplies the rear tires' side grip in AWD (default 1) */
+		awdRearGrip?: number;
 	};
 }
 

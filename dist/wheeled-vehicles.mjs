@@ -260,6 +260,7 @@ function applyCar(def, car) {
 			wheel.suspension.frequency = axleSettings.frequency;
 			wheel.suspension.compressionDamping = car.suspension.compressionDamping;
 			wheel.suspension.reboundDamping = car.suspension.reboundDamping;
+			wheel.suspension.preload = car.suspension.preload ?? 0;
 			setTire(wheel, axleSettings.tire ? { ...car.tire, ...axleSettings.tire } : car.tire);
 		},
 	);
@@ -292,26 +293,32 @@ export const wheeledVehicleCars = {
 		color: 0xff6b6b,
 		halfExtents: [0.72, 0.28, 2.15],
 		mass: 1400,
-		comHeight: 0.12,
+		// 2 cm lower than before the softer springs, so the arcade levels still barely roll
+		comHeight: 0.1,
 		comForward: 0.05,
 		layout: [0.8, -0.02, 1.3, -1.25],
 		wheelRadius: 0.33,
 		wheelInertia: 1.0,
 		// About 26% of the braking on the rear, near the ideal split at full braking. More rear brake
 		// locks the inside rear when braking in a turn, and ABS does not catch it while cornering.
-		front: { width: 0.245, brake: 2600, frequency: 2.0 },
-		// The wider rear tires grip 5% more sideways. With the steering limiter holding the fronts
-		// near their best grip, a rear no grippier than the front lets go first and the car spins.
+		front: { width: 0.245, brake: 2600, frequency: 1.5 },
+		// The rear tires grip as hard as the fronts but reach it sooner (5.5 degrees of slip against 7)
+		// and hold it past the peak, so a lift or a flick through the steering limiter does not swing
+		// the tail out. A rear with 5% more grip did that too, but left the front to wash out at full
+		// lock: the car pushed wide in every corner.
 		rear: {
 			width: 0.275,
 			brake: 900,
-			frequency: 2.2,
-			tire: { latPeak: 1.155, latSlide: 1.071 },
+			frequency: 1.65,
+			tire: { latPeakAngle: 5.5, latSlide: 1.1 },
 		},
 		handbrake: 2500,
+		// Soft springs on long travel, so the body visibly squats, dives and rolls (1.2 degrees of
+		// pitch accelerating, 2.2 braking, 2.3 of roll at 100%). A softer spring sags further, so
+		// maxLength rises with it and the car keeps its ride height and center of mass.
 		suspension: {
-			minLength: 0.17,
-			maxLength: 0.33,
+			minLength: 0.15,
+			maxLength: 0.38,
 			// Low compression damping against the rebound lets sharp bumps pass through the
 			// spring instead of kicking the body, as real dampers do
 			compressionDamping: 0.3,
@@ -325,7 +332,8 @@ export const wheeledVehicleCars = {
 			latPeakAngle: 7,
 			latPeak: 1.1,
 			latSlideAngle: 18,
-			latSlide: 1.02,
+			// The fronts keep most of their grip past the peak, where full lock on a keyboard runs them
+			latSlide: 1.06,
 			rolling: 0.013,
 		},
 		engine: {
@@ -343,7 +351,8 @@ export const wheeledVehicleCars = {
 		shiftUpRpm: 6200,
 		shiftDownRpm: 3200,
 		shiftTime: 0.12,
-		antiRoll: [16000, 13000],
+		// Stiffer bars on the softer springs keep the roll within each realism level's range
+		antiRoll: [20000, 16000],
 		steering: {
 			maxAngle: 34,
 			speedReference: 14,
@@ -357,7 +366,7 @@ export const wheeledVehicleCars = {
 		tractionControl: true,
 		abs: true,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
-		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4 },
+		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4, awdRearGrip: 0.985 },
 	},
 	rally: {
 		title: 'Rally car',
@@ -373,20 +382,25 @@ export const wheeledVehicleCars = {
 		// (0.33 m before), so the gearing and stopping force stay the same.
 		wheelRadius: 0.37,
 		wheelInertia: 1.13,
-		front: { width: 0.235, brake: 2580, frequency: 1.5 },
+		front: { width: 0.235, brake: 2580, frequency: 1.3 },
 		// The rear tires grip sooner (9 degrees against 11) and 5% more, and hold on past their peak,
 		// so a keyboard driver lifting or braking mid corner through the steering limiter does not
 		// swing the rear out
 		rear: {
 			width: 0.235,
 			brake: 1680,
-			frequency: 1.6,
+			frequency: 1.4,
 			tire: { latPeak: 1.05, latSlide: 1.05, latPeakAngle: 9 },
 		},
 		handbrake: 4480,
+		// Soft springs (1.3/1.4 Hz) so the body pitches 2-2.5 degrees on launch, 3 under braking and
+		// rolls nearly 3. The preload carries their extra sag, so the ride height stays put without a
+		// longer droop or a lower bump stop: either one throws the car off its roof at 100%, where it
+		// must stay.
 		suspension: {
 			minLength: 0.12,
 			maxLength: 0.45,
+			preload: 0.037,
 			compressionDamping: 0.3,
 			reboundDamping: 0.7,
 		},
@@ -413,7 +427,8 @@ export const wheeledVehicleCars = {
 		shiftUpRpm: 6500,
 		shiftDownRpm: 3600,
 		shiftTime: 0.08,
-		antiRoll: [16000, 12000],
+		// Stiffer bars on the softer springs keep the 25% level inside its roll range
+		antiRoll: [18000, 13500],
 		steering: {
 			maxAngle: 38,
 			speedReference: 15,
@@ -444,14 +459,15 @@ export const wheeledVehicleCars = {
 		// peak slip on a full brake step, and ABS cannot release a wheel once it is past the peak.
 		front: { width: 0.255, brake: 2400, frequency: 2.5 },
 		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
-		// braking on the rear (2200 was 48% and spun the car braking into a turn). The wider rear tires
-		// grip 5% more sideways, so lifting mid corner through the steering limiter does not swing
-		// the tail out.
+		// braking on the rear (2200 was 48% and spun the car braking into a turn). The rear tires grip
+		// as hard as the fronts but reach it sooner (5.5 degrees of slip against 6.5) and hold it past
+		// the peak, so a lift through the steering limiter does not swing the tail out. 5% more rear
+		// grip did that too, but left the fronts washing out at full lock.
 		rear: {
 			width: 0.325,
 			brake: 1500,
 			frequency: 2.7,
-			tire: { latPeak: 1.3125, latSlide: 1.2075 },
+			tire: { latPeakAngle: 5.5, latSlide: 1.25 },
 		},
 		handbrake: 2000,
 		suspension: {
@@ -470,7 +486,8 @@ export const wheeledVehicleCars = {
 			latPeakAngle: 6.5,
 			latPeak: 1.25,
 			latSlideAngle: 16,
-			latSlide: 1.15,
+			// The fronts keep most of their grip past the peak, where full lock on a keyboard runs them
+			latSlide: 1.18,
 			rolling: 0.012,
 		},
 		engine: {
@@ -506,6 +523,19 @@ export const wheeledVehicleCars = {
  * Drivetrain layers. Each picks the driven wheels and differentials from the car's `drive`
  * numbers and rebalances the anti-roll bars for the layout.
  */
+// Rear tire side grip × `scale` (the car's `drive.awdRearGrip`): driving the front axle spends some
+// of its grip, so an AWD car needs a little less rear side grip than the RWD car for the same
+// balance. Called before the realism row multiplies the grip.
+function scaleRearGrip(def, scale = 1) {
+	if (scale === 1) return;
+	for (let i = 0; i < def.wheelCount; i++) {
+		const wheel = def.wheels[i];
+		if (wheel.steerFactor !== 0) continue;
+		wheel.tire.lateralPeakFriction *= scale;
+		wheel.tire.lateralSlideFriction *= scale;
+	}
+}
+
 export const drivetrainLayers = {
 	fwd: {
 		title: 'FWD',
@@ -534,6 +564,7 @@ export const drivetrainLayers = {
 			]);
 			def.drivetrain.centerLimitedSlipRatio = car.drive.centerLsd;
 			setAntiRoll(def, car.antiRoll[0] * 0.9, car.antiRoll[1] * 1.1);
+			scaleRearGrip(def, car.drive.awdRearGrip);
 		},
 	},
 };
