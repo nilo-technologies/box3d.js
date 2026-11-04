@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The sports car presets turn in harder at full lock and you can see their suspension work.
+  - Understeer: at full lock through the steering limiter the front tires ran about 30% past their grip peak while the rears had grip to spare, so the car pushed wide. The rear tires now have the same side grip as the fronts (they were 5% grippier) but reach their peak sooner (5.5° of slip against 7°) and keep it past the peak, and the fronts lose less grip past theirs (slide friction 1.06, was 1.02). The RWD rear now works as hard as the front at the limit, overdone the RWD cars slide instead of pushing wide, and the keyboard cornering pace went up (WASD sum 24.20 to 25.13). The AWD cars' rear grip is ×0.985 (a new optional `drive.awdRearGrip` on a car, applied by the AWD layer), which balances them too. The FWD cars still push: a lower rear grip made them spin when lifting mid corner.
+  - Suspension: softer springs (1.5/1.65 Hz, were 2.0/2.2) on longer travel (0.15-0.38 m, was 0.17-0.33), so the body dives about 2° under braking, squats 1-1.5° accelerating and rolls about 2° at 100% (were about 1.2°, 0.7° and 1.7°). The anti-roll bars are stiffer (20000/16000 N/m, were 16000/13000) and the center of mass 2 cm lower, so the less realistic levels still barely roll.
+  - All 45 presets pass `vehicle-metrics.mjs`, the sports car also with `--perturb`, and the sports car laps both tracks at every pace.
+
 ## v0.4.0
 
 The vehicle release. `Vehicle` is now `WheeledVehicle` throughout (breaking), and vehicles gain a turbo and supercharger, launch control and ABS, 45 tuned presets shipped as `box3d.js/wheeled-vehicles`, two race tracks, and a procedural engine, turbo and tire sound lab.

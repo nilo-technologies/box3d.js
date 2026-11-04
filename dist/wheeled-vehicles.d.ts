@@ -116,6 +116,8 @@ export interface WheeledVehicleCar {
 		centerLsd: number;
 		/** Share of the torque sent to the front axle in AWD */
 		awdFront: number;
+		/** Multiplies the rear tires' side grip in AWD (default 1) */
+		awdRearGrip?: number;
 	};
 }
 
