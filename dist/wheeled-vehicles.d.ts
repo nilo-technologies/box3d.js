@@ -82,6 +82,8 @@ export interface WheeledVehicleCar {
 		maxLength: number;
 		compressionDamping: number;
 		reboundDamping: number;
+		/** Extra spring length past `maxLength` (m, default 0): carries a soft spring's sag without a longer droop */
+		preload?: number;
 	};
 	tire: WheeledVehicleTire;
 	engine: {

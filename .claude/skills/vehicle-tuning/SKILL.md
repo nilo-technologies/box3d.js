@@ -101,7 +101,7 @@ Most players use WASD: full lock, full throttle or full brake, nothing in betwee
 | braking long with ABS on | front `maxBrakeTorque` down toward 1.15-1.25x the front peak torque at this level's grip (see "Sanity math"); far above it the fronts lock and ABS cannot recover them | tire friction |
 | braking long without ABS | tire `longitudinalSlideFriction` (locked wheels slide), brake balance: rear brake lower so the rears lock last | `abs: true` if the level allows it |
 | lateral g low | `lateralPeakFriction` and `lateralSlideFriction` | lower `rollInfluence` does not add grip; downforce only helps at speed |
-| understeer at full lock (keyboard: fronts past their peak, rears with margin) | rear tire peak angle smaller than the front's (`rear.tire.latPeakAngle`) with no extra rear grip, front `latSlide` toward `latPeak` | an AWD car: `drive.awdRearGrip` a little under 1. FWD pushes by nature: a rear grip cut makes it spin on a lift. Bars do not move the balance (findings #38, #45) |
+| understeer at full lock (keyboard: fronts past their peak, rears with margin) | rear tire peak angle smaller than the front's (`rear.tire.latPeakAngle`) with no extra rear grip, front `latSlide` toward `latPeak` | an AWD car: `drive.awdRearGrip` a little under 1. FWD pushes by nature: a rear grip cut makes it spin on a lift. Bars do not move the balance. The balance is a cliff: step the rear in 1% steps and run `--perturb` and the laps; a car without TC at 100% (rally) may have no step that passes (findings #38, #45, #46) |
 | snap oversteer, spins in the step steer | softer rear bar or stiffer front, rear LSD lower | rear tire `lateralSlideFriction` closer to the peak, less steering at speed (`speedReference` down). More `counterSteer` costs turning in every corner (findings #31), and a rear only grip bias costs drifts (findings #33) |
 | spins braking in a turn (`forgiving brakeTurn`, `trailBrake`) | rear `maxBrakeTorque` down toward the ideal split (about 25-30% of the braking on a 50/50 car), rear tire side grip up (`rear.tire`) | lower `rollInfluence`, less `speedReference`. With the steering limiter, keep `brakingPeakScale` at 1 (findings #30, #37) |
 | keyboard driver ploughs wide in corners (`vehicle-wasd.mjs`: low clean pace, fails by plough) | `speedReference` up, `latSlide` toward `latPeak` | the limiter's `peakScale` (1.5); never fix it with anti-roll or springs, they do not move the balance (findings #38) |
@@ -115,6 +115,7 @@ Most players use WASD: full lock, full throttle or full brake, nothing in betwee
 | handbrake rotates less on the arcade level | `counterSteer` too high: it catches the slide | keep `counterSteer` ≤ 0.6 with `driftGripScale` ≤ 0.4 |
 | stays on its roof at an arcade level | `selfRighting` up (taller bodies need more: 4 at 50%) | |
 | rights itself from the roof at 100% | `selfRighting` must be 0 | |
+| softer springs leave it on its roof, or throw it off at 100% | `suspension.preload` for the extra sag instead of a longer `maxLength` or a lower `minLength` | a car that lands dead level on its roof never rights: the engine's righting roll flips sign at ±π (findings #46) |
 | bounces or floats | `compressionDamping`/`reboundDamping` toward 0.5/0.8, spring `frequency` up | |
 | bottoms out on bumps | `maxLength - minLength` (travel), `frequency` up | |
 

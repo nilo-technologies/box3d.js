@@ -260,6 +260,7 @@ function applyCar(def, car) {
 			wheel.suspension.frequency = axleSettings.frequency;
 			wheel.suspension.compressionDamping = car.suspension.compressionDamping;
 			wheel.suspension.reboundDamping = car.suspension.reboundDamping;
+			wheel.suspension.preload = car.suspension.preload ?? 0;
 			setTire(wheel, axleSettings.tire ? { ...car.tire, ...axleSettings.tire } : car.tire);
 		},
 	);
@@ -381,20 +382,25 @@ export const wheeledVehicleCars = {
 		// (0.33 m before), so the gearing and stopping force stay the same.
 		wheelRadius: 0.37,
 		wheelInertia: 1.13,
-		front: { width: 0.235, brake: 2580, frequency: 1.5 },
+		front: { width: 0.235, brake: 2580, frequency: 1.3 },
 		// The rear tires grip sooner (9 degrees against 11) and 5% more, and hold on past their peak,
 		// so a keyboard driver lifting or braking mid corner through the steering limiter does not
 		// swing the rear out
 		rear: {
 			width: 0.235,
 			brake: 1680,
-			frequency: 1.6,
+			frequency: 1.4,
 			tire: { latPeak: 1.05, latSlide: 1.05, latPeakAngle: 9 },
 		},
 		handbrake: 4480,
+		// Soft springs (1.3/1.4 Hz) so the body pitches 2-2.5 degrees on launch, 3 under braking and
+		// rolls nearly 3. The preload carries their extra sag, so the ride height stays put without a
+		// longer droop or a lower bump stop: either one throws the car off its roof at 100%, where it
+		// must stay.
 		suspension: {
 			minLength: 0.12,
 			maxLength: 0.45,
+			preload: 0.037,
 			compressionDamping: 0.3,
 			reboundDamping: 0.7,
 		},
@@ -421,7 +427,8 @@ export const wheeledVehicleCars = {
 		shiftUpRpm: 6500,
 		shiftDownRpm: 3600,
 		shiftTime: 0.08,
-		antiRoll: [16000, 12000],
+		// Stiffer bars on the softer springs keep the 25% level inside its roll range
+		antiRoll: [18000, 13500],
 		steering: {
 			maxAngle: 38,
 			speedReference: 15,
@@ -452,14 +459,15 @@ export const wheeledVehicleCars = {
 		// peak slip on a full brake step, and ABS cannot release a wheel once it is past the peak.
 		front: { width: 0.255, brake: 2400, frequency: 2.5 },
 		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
-		// braking on the rear (2200 was 48% and spun the car braking into a turn). The wider rear tires
-		// grip 5% more sideways, so lifting mid corner through the steering limiter does not swing
-		// the tail out.
+		// braking on the rear (2200 was 48% and spun the car braking into a turn). The rear tires grip
+		// as hard as the fronts but reach it sooner (5.5 degrees of slip against 6.5) and hold it past
+		// the peak, so a lift through the steering limiter does not swing the tail out. 5% more rear
+		// grip did that too, but left the fronts washing out at full lock.
 		rear: {
 			width: 0.325,
 			brake: 1500,
 			frequency: 2.7,
-			tire: { latPeak: 1.3125, latSlide: 1.2075 },
+			tire: { latPeakAngle: 5.5, latSlide: 1.25 },
 		},
 		handbrake: 2000,
 		suspension: {
@@ -478,7 +486,8 @@ export const wheeledVehicleCars = {
 			latPeakAngle: 6.5,
 			latPeak: 1.25,
 			latSlideAngle: 16,
-			latSlide: 1.15,
+			// The fronts keep most of their grip past the peak, where full lock on a keyboard runs them
+			latSlide: 1.18,
 			rolling: 0.012,
 		},
 		engine: {
