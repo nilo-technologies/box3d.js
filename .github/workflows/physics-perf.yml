@@ -86,28 +86,42 @@ jobs:
         # Upstream box3d.js (isaac-mason/box3d.js) from npm: erincatto/box3d at 8441b4a, without this
         # fork's engine changes, built to wasm. It has the same API, so the same scenarios run on it,
         # except the wheeled vehicles, which it lacks. npm pack only downloads: it runs no scripts.
+        # The reference is optional: when the download fails, the comparison runs without it.
+        id: reference
+        continue-on-error: true
         env:
           REFERENCE: box3d.js@0.1.1
         run: |
           mkdir -p .bench/reference
           file=$(cd .bench && npm pack "$REFERENCE" --silent)
           tar -xzf ".bench/$file" -C .bench/reference
+          test -f .bench/reference/package/dist/box3d.mjs
+          echo "dist=.bench/reference/package/dist" >> "$GITHUB_OUTPUT"
 
       - name: Run the scenarios
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head }}
           BASE_SHA: ${{ steps.base.outputs.sha }}
           BASE_REF: ${{ steps.pr.outputs.base }}
+          REFERENCE_DIST: ${{ steps.reference.outputs.dist }}
         # A failed comparison still writes its report, which says what failed: publish it, then fail
         run: |
+          reference=()
+          if [ -n "$REFERENCE_DIST" ]; then
+            reference=(--reference "$REFERENCE_DIST" --reference-label "upstream box3d.js 0.1.1 (erincatto/box3d @ 8441b4a)")
+          else
+            echo "::warning::The reference build could not be downloaded, so the report has no reference column"
+          fi
           status=0
           node test/bench-physics-compare.mjs \
             --base .bench/base/dist --head dist --runs 7 \
-            --reference .bench/reference/package/dist \
-            --reference-label "upstream box3d.js 0.1.1 (erincatto/box3d @ 8441b4a)" \
+            "${reference[@]}" \
             --base-label "$BASE_REF @ ${BASE_SHA::7} (merge base)" \
             --head-label "#${{ steps.pr.outputs.number }} @ ${HEAD_SHA::7}" \
             --markdown .bench/report.md --json .bench/runs.json || status=$?
+          if [ -f .bench/report.md ] && [ -z "$REFERENCE_DIST" ]; then
+            printf '\nThe reference build (upstream box3d.js 0.1.1) could not be downloaded, so this report has no reference.\n' >> .bench/report.md
+          fi
           if [ -f .bench/report.md ]; then cat .bench/report.md >> "$GITHUB_STEP_SUMMARY"; fi
           exit $status
 
