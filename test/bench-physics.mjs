@@ -7,6 +7,9 @@
 //   node test/bench-physics.mjs --scenario vehicles     one scenario (repeat the flag for more)
 //   node test/bench-physics.mjs --json                  one JSON object on stdout, for test/bench-physics-compare.mjs
 //
+// The query scenarios (ray casts, overlaps, shape casts and character movers) time a frame's batch
+// of world queries instead of a step, in a still scene.
+//
 // The scenarios are deterministic, so two builds that simulate the same way do the same work. Each
 // one also reports a check (how many boxes still stand, how far the cars got) so a change that
 // alters the simulation shows up next to its timing.
@@ -40,10 +43,10 @@ function axisAngle( axis, angle )
 // The worlds the running scenario created, destroyed once it ends however it ends
 const worlds = [];
 
-function createWorld( { enableSleep = true } = {} )
+function createWorld( { enableSleep = true, gravity = [ 0, -9.81, 0 ] } = {} )
 {
 	const worldDef = b3.b3DefaultWorldDef();
-	worldDef.gravity = [ 0, -9.81, 0 ];
+	worldDef.gravity = gravity;
 	worldDef.enableSleep = enableSleep;
 	const world = b3.b3CreateWorld( worldDef );
 	worlds.push( world );
@@ -72,6 +75,99 @@ function groundBox( world, halfExtent )
 	b3.b3CreateBoxShape( staticBody( world, [ 0, -1, 0 ] ), b3.b3DefaultShapeDef(), halfExtent, 1, halfExtent );
 }
 
+// A scene for the query scenarios: a 48 m height field with a triangle mesh slab on it, walls,
+// and 2000 spheres, capsules, boxes and hulls in a 20 x 5 x 20 lattice, half on static bodies and
+// half on dynamic ones. Gravity is off and no two shapes touch, so stepping moves nothing: the
+// warmup steps only settle the broadphase trees, and every build queries the same scene.
+const queryHalf = 24;
+function queryScene()
+{
+	const world = createWorld( { gravity: [ 0, 0, 0 ] } );
+	const n = 65, cell = ( 2 * queryHalf ) / ( n - 1 );
+	const heights = [];
+	for ( let z = 0; z < n; z++ )
+	{
+		for ( let x = 0; x < n; x++ ) heights.push( 0.6 * Math.sin( x * 0.3 ) * Math.cos( z * 0.25 ) );
+	}
+	const field = b3.b3CreateHeightField( heights, n, n, [ cell, 1, cell ] );
+	b3.b3CreateHeightFieldShape( staticBody( world, [ -queryHalf, 0, -queryHalf ] ), b3.b3DefaultShapeDef(), field );
+
+	// a 16 x 16 m slab of 32 x 32 quads, rippled, floating over one corner
+	const m = 33, positions = [], indices = [];
+	for ( let z = 0; z < m; z++ )
+	{
+		for ( let x = 0; x < m; x++ ) positions.push( x * 0.5 - 8, 0.3 * Math.sin( x * 0.7 + z * 0.4 ), z * 0.5 - 8 );
+	}
+	for ( let z = 0; z < m - 1; z++ )
+	{
+		for ( let x = 0; x < m - 1; x++ )
+		{
+			const i = z * m + x;
+			indices.push( i, i + m, i + 1, i + 1, i + m, i + m + 1 );
+		}
+	}
+	const mesh = b3.b3CreateMesh( positions, indices );
+	b3.b3CreateMeshShape( staticBody( world, [ 12, 11, 12 ] ), b3.b3DefaultShapeDef(), mesh, [ 1, 1, 1 ] );
+
+	const wallDef = b3.b3DefaultShapeDef();
+	for ( const [ x, z, hx, hz ] of [ [ queryHalf, 0, 0.5, queryHalf ], [ -queryHalf, 0, 0.5, queryHalf ], [ 0, queryHalf, queryHalf, 0.5 ], [ 0, -queryHalf, queryHalf, 0.5 ] ] )
+	{
+		b3.b3CreateBoxShape( staticBody( world, [ x, 4, z ] ), wallDef, hx, 5, hz );
+	}
+
+	const hull = b3.b3CreateCylinder( 0.8, 0.4, -0.4, 8 );
+	const shapeDef = b3.b3DefaultShapeDef();
+	let i = 0;
+	for ( let ix = 0; ix < 20; ix++ )
+	{
+		for ( let iy = 0; iy < 5; iy++ )
+		{
+			for ( let iz = 0; iz < 20; iz++, i++ )
+			{
+				const position = [ ( ix - 9.5 ) * 2.2, 2 + iy * 2, ( iz - 9.5 ) * 2.2 ];
+				const rotation = axisAngle( [ 0.6, 0, 0.8 ], i * 0.7 );
+				const body = i % 2 ? dynamicBody( world, position, rotation ) : staticBody( world, position, rotation );
+				switch ( i % 4 )
+				{
+					case 0: b3.b3CreateSphereShape( body, shapeDef, { center: [ 0, 0, 0 ], radius: 0.4 } ); break;
+					case 1: b3.b3CreateCapsuleShape( body, shapeDef, { center1: [ 0, -0.35, 0 ], center2: [ 0, 0.35, 0 ], radius: 0.3 } ); break;
+					case 2: b3.b3CreateBoxShape( body, shapeDef, 0.4, 0.3, 0.5 ); break;
+					case 3: b3.b3CreateHullShape( body, shapeDef, hull ); break;
+				}
+			}
+		}
+	}
+	return {
+		world,
+		filter: b3.b3DefaultQueryFilter(),
+		release()
+		{
+			b3.b3DestroyWorld( world );
+			b3.b3DestroyHeightField( field );
+			b3.b3DestroyMesh( mesh );
+			b3.b3DestroyHull( hull );
+		},
+	};
+}
+
+// A deterministic spread of numbers in [0, 1), so the queries cover the scene without Math.random
+const spread = ( k ) =>
+{
+	const s = Math.sin( k * 12.9898 + 78.233 ) * 43758.5453;
+	return s - Math.floor( s );
+};
+
+// Shape proxies for the overlap and cast queries: a point cloud and a radius
+const proxies = {
+	sphere: { points: [ 0, 0, 0 ], radius: 0.5 },
+	capsule: { points: [ 0, -0.5, 0, 0, 0.5, 0 ], radius: 0.3 },
+	box: {
+		points: [ -0.4, -0.4, -0.4, 0.4, -0.4, -0.4, -0.4, 0.4, -0.4, 0.4, 0.4, -0.4, -0.4, -0.4, 0.4, 0.4, -0.4, 0.4, -0.4, 0.4, 0.4, 0.4, 0.4, 0.4 ],
+		radius: 0,
+	},
+};
+const proxyList = Object.values( proxies );
+
 const pos = [ 0, 0, 0 ];
 const rot = [ 0, 0, 0, 1 ];
 const upright = ( body ) =>
@@ -87,6 +183,10 @@ const upright = ( body ) =>
 // timed too: creating the world, its bodies, shapes, joints and vehicles. load() runs before it,
 // untimed, for what is not physics (importing a module). The first `warmup` steps run untimed, then
 // `steps` are timed. beforeStep runs untimed before every step.
+//
+// A query scenario (kind: 'query') also returns query( i ): the timer measures that call, one
+// frame's batch of queries, in place of the step, and the world is not stepped past the warmup.
+// The first `queryWarmup` frames of queries run untimed. The check counts every frame.
 
 const scenarios = {
 	// Solver bound: one tall stack where every box leans on the ones below. Sleep is off so it keeps
@@ -310,6 +410,172 @@ const scenarios = {
 			};
 		},
 	},
+
+	// The query scenarios share queryScene(), and each frame's queries land in new places.
+
+	// 1000 closest hit rays a frame from above down into the lattice and the ground, and 100 rays
+	// across the whole scene that report every shape they pass through.
+	raycasts: {
+		title: 'Ray casts, 1000 closest and 100 all hits a frame',
+		kind: 'query',
+		setup()
+		{
+			const scene = queryScene();
+			const { world, filter } = scene;
+			let closest = 0, fractions = 0, all = 0;
+			const countAll = () =>
+			{
+				all++;
+				return 1; // keep going: every hit along the ray
+			};
+			return {
+				world, warmup: 10, queryWarmup: 30, steps: 300,
+				query( i )
+				{
+					for ( let j = 0; j < 1000; j++ )
+					{
+						const k = i * 1000 + j;
+						const origin = [ ( spread( k ) - 0.5 ) * 40, 14, ( spread( k + 0.5 ) - 0.5 ) * 40 ];
+						const target = [ ( spread( k + 0.25 ) - 0.5 ) * 40, -1, ( spread( k + 0.75 ) - 0.5 ) * 40 ];
+						const hit = b3.b3World_CastRayClosest( world, origin, [ target[ 0 ] - origin[ 0 ], target[ 1 ] - origin[ 1 ], target[ 2 ] - origin[ 2 ] ], filter );
+						if ( hit.hit )
+						{
+							closest++;
+							fractions += hit.fraction;
+						}
+					}
+					for ( let j = 0; j < 100; j++ )
+					{
+						const k = i * 100 + j + 0.125;
+						b3.b3World_CastRay( world, [ -23, 1 + spread( k ) * 10, ( spread( k + 0.5 ) - 0.5 ) * 44 ], [ 46, 0, 0 ], filter, countAll );
+					}
+				},
+				check: () => `${closest} closest hits at ${( fractions / closest ).toFixed( 4 )} of the ray on average, ${all} hits on the all hits rays`,
+				release: scene.release,
+			};
+		},
+	},
+
+	// 200 axis aligned boxes and 200 sphere, capsule and box shapes a frame, scattered through the
+	// lattice, each collecting every shape it overlaps.
+	overlaps: {
+		title: 'Overlaps, 200 AABB and 200 shape queries a frame',
+		kind: 'query',
+		setup()
+		{
+			const scene = queryScene();
+			const { world, filter } = scene;
+			let boxes = 0, shapes = 0;
+			const countBox = () =>
+			{
+				boxes++;
+				return true;
+			};
+			const countShape = () =>
+			{
+				shapes++;
+				return true;
+			};
+			const at = ( k ) => [ ( spread( k ) - 0.5 ) * 44, 1 + spread( k + 0.5 ) * 10, ( spread( k + 0.25 ) - 0.5 ) * 44 ];
+			return {
+				world, warmup: 10, queryWarmup: 30, steps: 300,
+				query( i )
+				{
+					for ( let j = 0; j < 200; j++ )
+					{
+						const [ x, y, z ] = at( i * 200 + j );
+						b3.b3World_OverlapAABB( world, [ x - 1.5, y - 1.5, z - 1.5, x + 1.5, y + 1.5, z + 1.5 ], filter, countBox );
+					}
+					for ( let j = 0; j < 200; j++ )
+					{
+						const proxy = proxyList[ j % proxyList.length ];
+						b3.b3World_OverlapShape( world, at( i * 200 + j + 0.375 ), proxy.points, proxy.radius, filter, countShape );
+					}
+				},
+				check: () => `${boxes} AABB overlaps, ${shapes} shape overlaps`,
+				release: scene.release,
+			};
+		},
+	},
+
+	// 200 sphere, capsule and box casts a frame from above down into the lattice and the ground,
+	// each clipped to its closest hit.
+	shapecasts: {
+		title: 'Shape casts, 200 sphere, capsule and box casts a frame',
+		kind: 'query',
+		setup()
+		{
+			const scene = queryScene();
+			const { world, filter } = scene;
+			let casts = 0, hits = 0, fractions = 0, nearest = 1;
+			const clip = ( shapeId, point, normal, fraction ) =>
+			{
+				nearest = Math.min( nearest, fraction );
+				return fraction; // clip the cast: the closest hit
+			};
+			return {
+				world, warmup: 10, queryWarmup: 30, steps: 300,
+				query( i )
+				{
+					for ( let j = 0; j < 200; j++ )
+					{
+						const k = i * 200 + j + 0.625;
+						const origin = [ ( spread( k ) - 0.5 ) * 40, 14, ( spread( k + 0.5 ) - 0.5 ) * 40 ];
+						const target = [ ( spread( k + 0.25 ) - 0.5 ) * 40, -1, ( spread( k + 0.75 ) - 0.5 ) * 40 ];
+						const proxy = proxyList[ j % proxyList.length ];
+						nearest = 1;
+						casts++;
+						b3.b3World_CastShape( world, origin, proxy.points, proxy.radius, [ target[ 0 ] - origin[ 0 ], target[ 1 ] - origin[ 1 ], target[ 2 ] - origin[ 2 ] ], filter, clip );
+						if ( nearest < 1 )
+						{
+							hits++;
+							fractions += nearest;
+						}
+					}
+				},
+				check: () => `${hits}/${casts} casts hit, at ${( fractions / hits ).toFixed( 4 )} of the cast on average`,
+				release: scene.release,
+			};
+		},
+	},
+
+	// 100 character capsules a frame, scattered through the lattice: each one casts 2 m sideways
+	// (b3World_CastMover) and collects the planes it touches (b3World_CollideMover), the two
+	// queries a character controller makes every frame.
+	movers: {
+		title: 'Character movers, 100 casts and 100 collides a frame',
+		kind: 'query',
+		setup()
+		{
+			const scene = queryScene();
+			const { world, filter } = scene;
+			const mover = { center1: [ 0, 0.4, 0 ], center2: [ 0, 1.4, 0 ], radius: 0.4 };
+			let casts = 0, blocked = 0, touched = 0;
+			const candidate = () => true;
+			const collect = () =>
+			{
+				touched++;
+				return true;
+			};
+			return {
+				world, warmup: 10, queryWarmup: 30, steps: 300,
+				query( i )
+				{
+					for ( let j = 0; j < 100; j++ )
+					{
+						const k = i * 100 + j + 0.875;
+						const origin = [ ( spread( k ) - 0.5 ) * 44, spread( k + 0.5 ) * 9, ( spread( k + 0.25 ) - 0.5 ) * 44 ];
+						const angle = spread( k + 0.75 ) * Math.PI * 2;
+						casts++;
+						if ( b3.b3World_CastMover( world, origin, mover, [ 2 * Math.cos( angle ), 0, 2 * Math.sin( angle ) ], filter, candidate ) < 1 ) blocked++;
+						b3.b3World_CollideMover( world, origin, mover, filter, collect );
+					}
+				},
+				check: () => `${blocked}/${casts} casts blocked, ${touched} shapes touched`,
+				release: scene.release,
+			};
+		},
+	},
 };
 
 // ---------------------------------------------------------------------------
@@ -337,7 +603,8 @@ async function run( name )
 		s = scenario.setup( loaded );
 		const setup = performance.now() - t0;
 		const counters = b3.b3World_GetCounters( s.world );
-		const result = { title: scenario.title, setup, bodies: counters.bodyCount, joints: counters.jointCount, steps: s.steps };
+		const kind = scenario.kind ?? 'step';
+		const result = { title: scenario.title, kind, setup, bodies: counters.bodyCount, joints: counters.jointCount, steps: s.steps };
 
 		for ( let i = 0; i < s.warmup; i++ )
 		{
@@ -346,6 +613,19 @@ async function run( name )
 		}
 
 		const times = new Float64Array( s.steps );
+		if ( kind === 'query' )
+		{
+			const warmup = s.queryWarmup ?? 0;
+			for ( let i = 0; i < warmup; i++ ) s.query( i );
+			for ( let i = 0; i < s.steps; i++ )
+			{
+				const t0 = performance.now();
+				s.query( warmup + i );
+				times[ i ] = performance.now() - t0;
+			}
+			return Object.assign( result, stats( times ), { check: s.check() } );
+		}
+
 		// The engine's own profile, summed over the timed steps (ms)
 		const phases = { collide: 0, solve: 0 };
 		let contacts = 0;
@@ -398,7 +678,7 @@ for ( const name of names )
 	catch ( error )
 	{
 		// a scenario can need an API an older build lacks; report it and keep going
-		results[ name ] = { title: scenarios[ name ].title, error: String( error?.stack ?? error ) };
+		results[ name ] = { title: scenarios[ name ].title, kind: scenarios[ name ].kind ?? 'step', error: String( error?.stack ?? error ) };
 	}
 }
 
@@ -408,7 +688,7 @@ if ( args.json )
 }
 else
 {
-	const ms = ( v ) => v.toFixed( 3 );
+	const ms = ( v ) => v?.toFixed( 3 ) ?? '';
 	console.log( `physics benchmark: ${dist}, Node ${process.version}, ${dt * 1000 | 0} ms steps with ${subSteps} substeps` );
 	console.table( Object.fromEntries( Object.entries( results ).map( ( [ name, r ] ) => [ name, r.error ? { error: r.error.split( '\n' )[ 0 ] } : {
 		bodies: r.bodies,
