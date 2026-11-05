@@ -1,7 +1,8 @@
 name: Physics performance
 
 # Times the physics scenarios in test/bench-physics.mjs on the pull request's dist/ against the
-# dist/ of its merge base, and posts the report on the pull request. Runs when a pull request is
+# dist/ of its merge base, with upstream box3d.js for reference, and posts the report on the pull
+# request. Runs when a pull request is
 # opened or marked ready for review, and again whenever a maintainer comments with 📊.
 # It times the committed dist/, so a pull request that changes src/ must rebuild it to be measured.
 
@@ -81,6 +82,17 @@ jobs:
           git archive "$base" dist | tar -x -C .bench/base
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch the reference build
+        # Upstream box3d.js (isaac-mason/box3d.js) from npm: erincatto/box3d at 8441b4a, without this
+        # fork's engine changes, built to wasm. It has the same API, so the same scenarios run on it,
+        # except the wheeled vehicles, which it lacks. npm pack only downloads: it runs no scripts.
+        env:
+          REFERENCE: box3d.js@0.1.1
+        run: |
+          mkdir -p .bench/reference
+          file=$(cd .bench && npm pack "$REFERENCE" --silent)
+          tar -xzf ".bench/$file" -C .bench/reference
+
       - name: Run the scenarios
         env:
           HEAD_SHA: ${{ steps.pr.outputs.head }}
@@ -91,6 +103,8 @@ jobs:
           status=0
           node test/bench-physics-compare.mjs \
             --base .bench/base/dist --head dist --runs 7 \
+            --reference .bench/reference/package/dist \
+            --reference-label "upstream box3d.js 0.1.1 (erincatto/box3d @ 8441b4a)" \
             --base-label "$BASE_REF @ ${BASE_SHA::7} (merge base)" \
             --head-label "#${{ steps.pr.outputs.number }} @ ${HEAD_SHA::7}" \
             --markdown .bench/report.md --json .bench/runs.json || status=$?
