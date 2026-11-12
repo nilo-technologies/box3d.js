@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `vendor/box3d` points at nilo-technologies/box3d `main` (`6bdae6c`), and `dist/` is rebuilt from it. It brings two engine changes:
+  - Self righting works on a level roof (nilo-technologies/box3d#15). A car lying flat on its roof stayed there: every wheel reported ground contact from a cast that started inside the ground, the righting direction flipped every step, and the stuck timer reset mid roll.
+  - The bump stop force is capped (nilo-technologies/box3d#14).
+- The supercar presets have softer springs (1.7/1.85 Hz, were 2.5/2.7) with `suspension.preload` (0.047 m) carrying their sag, so the ride height is unchanged: at 100% the body squats about 1.1°, dives 1.6° and rolls 1.5° (were about 0.5°, 0.7° and 1.0°). Before the engine fix, springs this soft left the 50% cars on their roofs.
+- All 45 presets pass `vehicle-metrics.mjs --perturb` and lap both tracks.
 - The `box3d.js/three` debug renderer can cull to a camera. Set `settings.camera` (a three `PerspectiveCamera` or `OrthographicCamera`) and each `update` draws inside the AABB of its frustum, cut down to `drawingBounds` when that is set too. The box is coarser than the frustum, so some things just out of view are still drawn. box3d's broadphase query then skips every shape outside, along with those bodies' joints, contacts and mass markers. `settings.cullDistance` pulls the far plane in, since a far plane of 1000 gives a box that culls little. `debug.cullBounds` reads back the box the last `update` used. The debug-draw example has a Culling folder that can freeze the camera and show the box.
   - A shape that stops being drawn (culled, filtered out by `maskBits` or `drawingBounds`, or destroyed) now keeps its Three objects, hidden, for `settings.shapeCacheFrames` updates (300 by default) instead of being rebuilt the next time it shows. Before, panning back and forth rebuilt its meshes and edge lines every time.
   - Shape meshes and edge lines are left to three's own frustum culling (`frustumCulled` was forced off).

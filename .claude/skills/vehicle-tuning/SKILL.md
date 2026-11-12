@@ -115,7 +115,7 @@ Most players use WASD: full lock, full throttle or full brake, nothing in betwee
 | handbrake rotates less on the arcade level | `counterSteer` too high: it catches the slide | keep `counterSteer` ≤ 0.6 with `driftGripScale` ≤ 0.4 |
 | stays on its roof at an arcade level | `selfRighting` up (taller bodies need more: 4 at 50%) | |
 | rights itself from the roof at 100% | `selfRighting` must be 0 | |
-| softer springs leave it on its roof, or throw it off at 100% | `suspension.preload` for the extra sag instead of a longer `maxLength` or a lower `minLength` | a car that lands dead level on its roof never rights: the engine's righting roll flips sign at ±π (findings #46) |
+| softer springs leave it on its roof, or throw it off at 100% | `suspension.preload` for the extra sag instead of a longer `maxLength` or a lower `minLength` | before nilo-technologies/box3d#15 a car that landed level on its roof never righted; check the engine is at least that version (findings #46, #47) |
 | bounces or floats | `compressionDamping`/`reboundDamping` toward 0.5/0.8, spring `frequency` up | |
 | bottoms out on bumps | `maxLength - minLength` (travel), `frequency` up | |
 
