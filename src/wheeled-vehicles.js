@@ -457,7 +457,7 @@ export const wheeledVehicleCars = {
 		wheelInertia: 1.2,
 		// About 1.15x what the front tires carry at peak grip. A much stronger brake overshoots the
 		// peak slip on a full brake step, and ABS cannot release a wheel once it is past the peak.
-		front: { width: 0.255, brake: 2400, frequency: 2.5 },
+		front: { width: 0.255, brake: 2400, frequency: 1.7 },
 		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
 		// braking on the rear (2200 was 48% and spun the car braking into a turn). The rear tires grip
 		// as hard as the fronts but reach it sooner (5.5 degrees of slip against 6.5) and hold it past
@@ -466,13 +466,19 @@ export const wheeledVehicleCars = {
 		rear: {
 			width: 0.325,
 			brake: 1500,
-			frequency: 2.7,
+			frequency: 1.85,
 			tire: { latPeakAngle: 5.5, latSlide: 1.25 },
 		},
 		handbrake: 2000,
+		// Soft springs (1.7/1.85 Hz) so the body visibly pitches and rolls: about 1.1 degrees of squat,
+		// 1.6 of dive and 1.5 of roll at 100%, from 0.5, 0.7 and 1.0. The preload carries their extra
+		// sag, so the ride height is unchanged. Below 2.2 Hz the car used to settle level on its roof,
+		// which the engine could not right before nilo-technologies/box3d#15; at 1.6 Hz the 100% AWD
+		// car rolled landing the stage's jump.
 		suspension: {
-			minLength: 0.18,
+			minLength: 0.15,
 			maxLength: 0.3,
+			preload: 0.047,
 			// Low compression damping against the rebound lets sharp bumps pass through the
 			// spring instead of kicking the body, as real dampers do
 			compressionDamping: 0.35,
