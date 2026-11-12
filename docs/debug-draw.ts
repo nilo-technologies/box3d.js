@@ -1,5 +1,5 @@
 import Box3D from 'box3d.js/inline';
-import { createDebugRenderer } from 'box3d.js/three';
+import { createDebugRenderer, type DebugRendererSettings } from 'box3d.js/three';
 
 const b3 = await Box3D();
 const world = b3.b3CreateWorld(b3.b3DefaultWorldDef());
@@ -9,6 +9,7 @@ const world = b3.b3CreateWorld(b3.b3DefaultWorldDef());
 // any Object3D. This module does not import three itself.
 declare const THREE: Parameters<typeof createDebugRenderer>[2]['THREE'];
 declare const scene: Parameters<typeof createDebugRenderer>[2]['parent'];
+declare const camera: NonNullable<DebugRendererSettings['camera']>;
 
 const debug = createDebugRenderer(b3, world, {
     THREE,
@@ -19,6 +20,11 @@ const debug = createDebugRenderer(b3, world, {
 b3.b3World_Step(world, 1 / 60, 4);
 debug.update();
 debug.settings.contactNormals = true;
+
+// Cull to a camera: box3d only visits what lies in its frustum, out to 60 units.
+debug.settings.camera = camera;
+debug.settings.cullDistance = 60;
+debug.update();
 
 // The buffer API is there when you draw it yourself. One buffer, refilled in place.
 const draw = b3.createDebugDrawBuffer();

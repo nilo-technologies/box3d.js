@@ -6,6 +6,9 @@
 //   const debug = createDebugRenderer(b3, world, { THREE, parent: scene, settings });
 //   debug.update(); // after stepping
 //   debug.dispose();
+//
+// Set `settings.camera` (and `cullDistance`) to draw only what that camera can
+// see. See cameraBounds and resolveBounds below.
 
 // Matches DebugShapeState in src/bindings.cpp. Index is the buffer's state value.
 const STATE_NAMES = [
@@ -56,7 +59,65 @@ const DEFAULTS = {
 	opacity: 1,
 	depthTest: true,
 	renderOrder: 0,
+	shapeCacheFrames: 300,
 };
+
+// Frustum corners in NDC x/y. Depth comes from near/far, not NDC z, so WebGL
+// ([-1, 1]), WebGPU ([0, 1]) and reversed-depth projections all work.
+const NDC_CORNERS = [-1, -1, 1, -1, -1, 1, 1, 1];
+// b3AABB is float. Keep an infinite far plane from turning into NaN.
+const MAX_CULL_DEPTH = 1e12;
+const MAX_COORD = 1e30;
+
+function clampCoord(v) {
+	return v > MAX_COORD ? MAX_COORD : v < -MAX_COORD ? -MAX_COORD : v;
+}
+
+// World-space AABB of the camera frustum, its far plane pulled in to `distance`.
+function cameraBounds(camera, distance, out) {
+	if (typeof camera.updateMatrixWorld === 'function') camera.updateMatrixWorld();
+	const inv = camera.projectionMatrixInverse.elements;
+	const m = camera.matrixWorld.elements;
+	const near = camera.near;
+	let far = Math.min(camera.far, MAX_CULL_DEPTH);
+	if (distance != null && distance < far) far = Math.max(distance, near);
+	const ortho = camera.isOrthographicCamera === true;
+	out[0] = out[1] = out[2] = Number.POSITIVE_INFINITY;
+	out[3] = out[4] = out[5] = Number.NEGATIVE_INFINITY;
+	for (let c = 0; c < 8; c += 2) {
+		const x = NDC_CORNERS[c];
+		const y = NDC_CORNERS[c + 1];
+		// Unproject a point on the corner ray. NDC z 0.5 sits between near and far
+		// under every depth convention three uses.
+		const z = 0.5;
+		const w = inv[3] * x + inv[7] * y + inv[11] * z + inv[15];
+		const vx = (inv[0] * x + inv[4] * y + inv[8] * z + inv[12]) / w;
+		const vy = (inv[1] * x + inv[5] * y + inv[9] * z + inv[13]) / w;
+		const vz = (inv[2] * x + inv[6] * y + inv[10] * z + inv[14]) / w;
+		for (let k = 0; k < 2; k++) {
+			const depth = k === 0 ? near : far;
+			let px = vx;
+			let py = vy;
+			if (!ortho && vz < -1e-12) {
+				const s = depth / -vz;
+				px *= s;
+				py *= s;
+			}
+			const pz = -depth;
+			const wx = m[0] * px + m[4] * py + m[8] * pz + m[12];
+			const wy = m[1] * px + m[5] * py + m[9] * pz + m[13];
+			const wz = m[2] * px + m[6] * py + m[10] * pz + m[14];
+			if (wx < out[0]) out[0] = wx;
+			if (wy < out[1]) out[1] = wy;
+			if (wz < out[2]) out[2] = wz;
+			if (wx > out[3]) out[3] = wx;
+			if (wy > out[4]) out[4] = wy;
+			if (wz > out[5]) out[5] = wz;
+		}
+	}
+	for (let i = 0; i < 6; i++) out[i] = clampCoord(out[i]);
+	return out;
+}
 
 const RING = 16;
 const ARC = 8;
@@ -148,6 +209,11 @@ export function createDebugRenderer(b3, worldId, options) {
 		drawingBounds: undefined,
 		maskBits: undefined,
 	};
+	// No roles: getDebugDraw clears the buffer and draws nothing.
+	const emptyOpts = {};
+	const cullBox = [0, 0, 0, 0, 0, 0];
+	let cullBounds = null;
+	let frame = 0;
 
 	const color = new THREE.Color();
 	const rgb = [1, 1, 1];
@@ -195,8 +261,34 @@ export function createDebugRenderer(b3, worldId, options) {
 		drawOpts.graphColors = !!settings.graphColors;
 		drawOpts.forceScale = settings.forceScale;
 		drawOpts.jointScale = settings.jointScale;
-		drawOpts.drawingBounds = settings.drawingBounds;
+		drawOpts.drawingBounds = resolveBounds();
 		drawOpts.maskBits = settings.maskBits;
+	}
+
+	// The box this frame draws inside: the camera frustum's AABB, cut down to
+	// `drawingBounds` when both are set. box3d queries its broadphase with it, so
+	// shapes outside are never visited, and joints, contacts and mass markers
+	// follow the bodies whose shapes it reached.
+	function resolveBounds() {
+		const fixed = settings.drawingBounds ?? null;
+		const camera = settings.camera;
+		if (!camera) {
+			cullBounds = fixed;
+			return fixed ?? undefined;
+		}
+		cameraBounds(camera, settings.cullDistance, cullBox);
+		if (fixed) {
+			for (let i = 0; i < 3; i++) {
+				if (fixed[i] > cullBox[i]) cullBox[i] = fixed[i];
+				if (fixed[i + 3] < cullBox[i + 3]) cullBox[i + 3] = fixed[i + 3];
+			}
+		}
+		cullBounds = cullBox;
+		return cullBox;
+	}
+
+	function boundsEmpty(b) {
+		return b != null && (b[0] > b[3] || b[1] > b[4] || b[2] > b[5]);
 	}
 
 	function resolvePacked(packed, key) {
@@ -317,7 +409,8 @@ export function createDebugRenderer(b3, worldId, options) {
 				});
 				const mesh = new THREE.Mesh(geometry, mat);
 				mesh.matrixAutoUpdate = false;
-				mesh.frustumCulled = false;
+				// Fixed local geometry, so three's own bounding-sphere test is exact.
+				mesh.frustumCulled = true;
 				group.add(mesh);
 				materials.push(mat);
 			}
@@ -327,7 +420,7 @@ export function createDebugRenderer(b3, worldId, options) {
 				const mat = new THREE.LineBasicMaterial();
 				const segs = new THREE.LineSegments(edges, mat);
 				segs.matrixAutoUpdate = false;
-				segs.frustumCulled = false;
+				segs.frustumCulled = true;
 				group.add(segs);
 				materials.push(mat);
 			}
@@ -369,13 +462,15 @@ export function createDebugRenderer(b3, worldId, options) {
 		}
 	}
 
+	// A shape missing from a frame was culled, filtered out, or destroyed. Its
+	// objects stay, hidden, for `shapeCacheFrames` updates, so panning back over
+	// it does not rebuild them. Geometry ids are never reused, so a stale entry
+	// can't show up as another shape.
 	function syncShapes() {
-		const seen = new Set();
 		const n = b3.getNumDebugShapes(buf);
 		for (let i = 0; i < n; i++) {
 			b3.getDebugShapeAt(shapeRec, buf, i);
 			const id = shapeRec.geometryId;
-			seen.add(id);
 			const cached = cacheGeometry(id);
 			if (!cached) continue;
 			let obj = objects.get(id);
@@ -390,6 +485,8 @@ export function createDebugRenderer(b3, worldId, options) {
 				objects.set(id, obj);
 				root.add(obj.group);
 			}
+			obj.seen = frame;
+			obj.group.visible = true;
 			const stateName = STATE_NAMES[shapeRec.state] ?? 'custom';
 			const tint = resolvePacked(shapeRec.color, stateName);
 			for (const mat of obj.materials) {
@@ -401,8 +498,11 @@ export function createDebugRenderer(b3, worldId, options) {
 			obj.group.updateMatrix();
 			obj.group.renderOrder = settings.renderOrder ?? 0;
 		}
-		for (const id of objects.keys()) {
-			if (!seen.has(id)) dropShape(id);
+		const keep = Math.max(0, settings.shapeCacheFrames ?? 0);
+		for (const [id, obj] of objects) {
+			if (obj.seen === frame) continue;
+			if (frame - obj.seen > keep) dropShape(id);
+			else obj.group.visible = false;
 		}
 	}
 
@@ -675,8 +775,10 @@ export function createDebugRenderer(b3, worldId, options) {
 	}
 
 	function update() {
+		frame++;
 		syncDrawOpts();
-		b3.getDebugDraw(buf, worldId, drawOpts);
+		// The camera and `drawingBounds` may not overlap. box3d wants a valid box.
+		b3.getDebugDraw(buf, worldId, boundsEmpty(drawOpts.drawingBounds) ? emptyOpts : drawOpts);
 		if (settings.shapes) syncShapes();
 		else {
 			for (const id of objects.keys()) dropShape(id);
@@ -698,5 +800,13 @@ export function createDebugRenderer(b3, worldId, options) {
 		b3.destroyDebugDrawBuffer(buf);
 	}
 
-	return { settings, object3d: root, update, dispose };
+	return {
+		settings,
+		object3d: root,
+		update,
+		dispose,
+		get cullBounds() {
+			return cullBounds;
+		},
+	};
 }

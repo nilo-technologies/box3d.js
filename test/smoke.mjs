@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DynamicMover } from '../dist/character.mjs';
+import { createDebugRenderer } from '../dist/three.mjs';
 
 function fallingBox( b3 )
 {
@@ -908,6 +909,161 @@ function debugDraw( b3 )
 		assert.equal( geo.capsules.length, 7, `${label}: both centers and the radius` );
 		assert.ok( Math.abs( geo.capsules[ 6 ] - 0.25 ) < 1e-5, `${label}: radius round-trips` );
 	} );
+}
+
+// The slice of three that box3d.js/three constructs, with no rendering. Counts
+// edge-geometry builds so the test can tell a cached shape from a rebuilt one.
+function stubThree()
+{
+	const built = { edges: 0 };
+	const setter = () => ( { set() {} } );
+	class Object3D
+	{
+		constructor( geometry, material )
+		{
+			this.geometry = geometry;
+			this.material = material;
+			this.children = [];
+			this.position = setter();
+			this.quaternion = setter();
+			this.scale = setter();
+			this.visible = true;
+			this.frustumCulled = true;
+			this.matrixAutoUpdate = true;
+			this.renderOrder = 0;
+		}
+		add( o ) { this.children.push( o ); }
+		remove( o ) { this.children = this.children.filter( ( c ) => c !== o ); }
+		updateMatrix() {}
+	}
+	class BufferGeometry
+	{
+		constructor() { this.attributes = {}; }
+		setAttribute( name, a ) { this.attributes[ name ] = a; }
+		getAttribute( name ) { return this.attributes[ name ]; }
+		setIndex() {}
+		setDrawRange() {}
+		computeVertexNormals() {}
+		applyQuaternion() {}
+		translate() {}
+		dispose() {}
+	}
+	class Material
+	{
+		constructor() { this.color = setter(); }
+		dispose() {}
+	}
+	return {
+		built,
+		THREE: {
+			Group: Object3D, Mesh: Object3D, LineSegments: Object3D, Points: Object3D,
+			BufferGeometry,
+			EdgesGeometry: class extends BufferGeometry { constructor() { super(); built.edges++; } },
+			SphereGeometry: BufferGeometry, CapsuleGeometry: BufferGeometry,
+			BufferAttribute: class { constructor( array ) { this.array = array; } },
+			MeshBasicMaterial: Material, LineBasicMaterial: Material, PointsMaterial: Material,
+			Color: class { constructor() { this.r = this.g = this.b = 1; } set() {} },
+			Quaternion: class { setFromUnitVectors() { return this; } },
+			Vector3: class { set() { return this; } },
+			DoubleSide: 2,
+		},
+	};
+}
+
+// A camera at `position` looking down -z, as three stores it: column-major
+// matrixWorld and the inverse of its projection.
+function stubCamera( position, { fov = 60, aspect = 1, near = 0.1, far = 1000, ortho = null } = {} )
+{
+	const inv = new Array( 16 ).fill( 0 );
+	if ( ortho )
+	{
+		inv[ 0 ] = ortho; inv[ 5 ] = ortho;
+		inv[ 10 ] = -( far - near ) / 2; inv[ 14 ] = -( far + near ) / 2; inv[ 15 ] = 1;
+	}
+	else
+	{
+		const f = 1 / Math.tan( fov * Math.PI / 360 );
+		inv[ 0 ] = aspect / f; inv[ 5 ] = 1 / f; inv[ 14 ] = -1;
+		inv[ 11 ] = ( near - far ) / ( 2 * far * near ); inv[ 15 ] = ( far + near ) / ( 2 * far * near );
+	}
+	const world = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, position[ 0 ], position[ 1 ], position[ 2 ], 1 ];
+	return {
+		near, far, isOrthographicCamera: !!ortho,
+		matrixWorld: { elements: world },
+		projectionMatrixInverse: { elements: inv },
+		moveTo( p ) { world[ 12 ] = p[ 0 ]; world[ 13 ] = p[ 1 ]; world[ 14 ] = p[ 2 ]; },
+	};
+}
+
+function debugRendererCulling( b3 )
+{
+	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
+	const bdef = b3.b3DefaultBodyDef();
+	bdef.type = b3.b3BodyType.b3_staticBody;
+	// In front of a camera at the origin, behind it, off to the side, and 100 out.
+	for ( const position of [ [ 0, 0, -5 ], [ 0, 0, 10 ], [ 30, 0, -5 ], [ 0, 0, -100 ] ] )
+	{
+		bdef.position = position;
+		b3.b3CreateBoxShape( b3.b3CreateBody( world, bdef ), b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5 );
+	}
+
+	const { THREE, built } = stubThree();
+	const parent = new THREE.Group();
+	const camera = stubCamera( [ 0, 0, 0 ] );
+	const debug = createDebugRenderer( b3, world, { THREE, parent, settings: { camera, cullDistance: 20 } } );
+	// Shape groups are the root's children past the shared lines and points.
+	const shapes = () => debug.object3d.children.slice( 2 );
+	const visible = () => shapes().filter( ( g ) => g.visible ).length;
+
+	debug.update();
+	assert.equal( visible(), 1, 'camera culling draws only the box in its frustum' );
+	const b = debug.cullBounds;
+	const half = 20 * Math.tan( Math.PI / 6 );
+	near( b[ 0 ], -half, 1e-3, 'cull box spans the frustum width at cullDistance' );
+	near( b[ 3 ], half, 1e-3, 'cull box max x' );
+	near( b[ 2 ], -20, 1e-3, 'cull box reaches cullDistance' );
+	near( b[ 5 ], -0.1, 1e-3, 'cull box starts at the near plane' );
+	assert.equal( built.edges, 1, 'one shape built' );
+
+	camera.moveTo( [ 0, 0, -90 ] );
+	debug.update();
+	assert.equal( visible(), 1, 'the far box is drawn once the camera reaches it' );
+	assert.equal( shapes().length, 2, 'the culled box stays cached, hidden' );
+	assert.equal( built.edges, 2, 'only the far box was built' );
+
+	camera.moveTo( [ 0, 0, 0 ] );
+	debug.update();
+	assert.equal( visible(), 1, 'back at the origin, the near box shows again' );
+	assert.equal( built.edges, 2, 'the near box came back from the cache, not rebuilt' );
+
+	debug.settings.shapeCacheFrames = 0;
+	debug.update();
+	assert.equal( shapes().length, 1, 'with no cache frames a culled shape is freed' );
+
+	debug.settings.drawingBounds = [ 100, 100, 100, 101, 101, 101 ];
+	debug.update();
+	assert.equal( visible(), 0, 'a camera and drawingBounds that miss draw nothing' );
+	assert.ok( debug.cullBounds[ 0 ] > debug.cullBounds[ 3 ], 'and cullBounds reads back empty' );
+
+	debug.settings.drawingBounds = [ -1, -1, -10, 1, 1, 0 ];
+	debug.update();
+	near( debug.cullBounds[ 2 ], -10, 1e-6, 'drawingBounds cuts the camera box down' );
+	near( debug.cullBounds[ 0 ], -1, 1e-6, 'on every axis' );
+	assert.equal( visible(), 1, 'the box inside both is drawn' );
+
+	debug.settings.drawingBounds = undefined;
+	debug.settings.camera = stubCamera( [ 0, 0, 0 ], { ortho: 2 } );
+	debug.update();
+	near( debug.cullBounds[ 3 ], 2, 1e-6, 'an orthographic box has the camera width at every depth' );
+	near( debug.cullBounds[ 2 ], -20, 1e-6, 'and still stops at cullDistance' );
+
+	debug.settings.camera = null;
+	debug.update();
+	assert.equal( debug.cullBounds, null, 'no camera and no drawingBounds leaves the draw unbounded' );
+	assert.equal( visible(), 4, 'and draws every box' );
+
+	debug.dispose();
+	b3.b3DestroyWorld( world );
 }
 
 const IDENTITY_FRAME = () => ( { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
@@ -2023,6 +2179,7 @@ async function check( label, importPath, decompositionOptions )
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 
 	debugDraw( b3 );
+	debugRendererCulling( b3 );
 
 	triangleCollision( b3 );
 
