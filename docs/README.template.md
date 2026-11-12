@@ -426,6 +426,8 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 
 `box3d.js/three` turns the buffer into Three.js objects. It does not import `three`. Pass the same `THREE` namespace the rest of the page uses, so `three` and `three/webgpu` both work. `null` in `colors` keeps box3d's own colour. Mass has no box3d colour, so `colors.mass: null` is white.
 
+Set `settings.camera` to cull to that camera. Each `update` draws inside the AABB of the camera's frustum, cut down to `drawingBounds` when that is set too. box3d's broadphase skips every shape outside that box, along with those bodies' joints, contacts and mass markers. The box is coarser than the frustum, so some shapes and overlays just outside the view are still drawn, and it grows with the far plane, so set `cullDistance` to cap it. Three's own frustum culling then skips shape meshes and edge lines that are out of view. The shared lines and points (joints, contacts, bounds, mass) are drawn for everything inside the box. Shapes that leave the view stay cached, hidden, for `shapeCacheFrames` updates (300 by default), so panning back does not rebuild them.
+
 <Snippet source="./debug-draw.ts" select="debug-draw" />
 
 <ExamplesTable ids="example-debug-draw" />

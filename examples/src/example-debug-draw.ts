@@ -2,9 +2,10 @@
 // colour box3d can hold, drawn by box3d.js/three. A decomposed pipe bounces on
 // its own pad from restitution alone. Each Debug checkbox changes the overlay.
 // The Filter folder hides the category-2 post (mask 1) and drops the joint row
-// (it sits past drawingBounds.minZ). Disabled bodies leave the broadphase, and
-// a time-of-impact colour lasts a single frame, so those two states are not in
-// the scene.
+// (it sits past drawingBounds.minZ). The Culling folder culls to the AABB of
+// the camera's view: freeze it, then orbit out to see the cut and its box. Disabled
+// bodies leave the broadphase, and a time-of-impact colour lasts a single
+// frame, so those two states are not in the scene.
 
 import type { Box3DModule, b3Quat, b3Vec3 } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -764,6 +765,60 @@ filter.add(filterProxy, 'maxY', -40, 40, 0.5).onChange(applyFilter);
 filter.add(filterProxy, 'maxZ', -40, 40, 0.5).onChange(applyFilter);
 filter.close();
 
+// Freeze copies the camera, so orbiting afterwards shows what the copy culls.
+const cullFolder = app.gui.addFolder('Culling');
+const cullProxy = {
+	followCamera: false,
+	cullDistance: 14,
+	freeze: false,
+	showBox: true,
+};
+const frozenCamera = app.camera.clone();
+const cullBox = new THREE.Box3();
+const cullHelper = new THREE.Box3Helper(cullBox, 0x44ddff);
+cullHelper.visible = false;
+app.scene.add(cullHelper);
+function applyCulling(): void {
+	const camera = cullProxy.freeze ? frozenCamera : app.camera;
+	settings.camera = cullProxy.followCamera ? camera : undefined;
+	settings.cullDistance = cullProxy.cullDistance;
+}
+cullFolder
+	.add(cullProxy, 'followCamera')
+	.name('cull to camera')
+	.onChange(applyCulling);
+cullFolder
+	.add(cullProxy, 'cullDistance', 2, 60, 0.5)
+	.name('cullDistance')
+	.onChange(applyCulling);
+cullFolder
+	.add(cullProxy, 'freeze')
+	.name('freeze camera')
+	.onChange((on: boolean) => {
+		if (on) frozenCamera.copy(app.camera);
+		applyCulling();
+	});
+cullFolder.add(cullProxy, 'showBox').name('show cull box');
+// The live camera's box has its near face right at the camera and would crowd
+// the view, so draw it only when frozen (or for the Filter folder's
+// drawingBounds).
+function syncCullHelper(): void {
+	const b = debug.cullBounds;
+	const live = cullProxy.followCamera && !cullProxy.freeze;
+	const show =
+		cullProxy.showBox &&
+		!live &&
+		b !== null &&
+		b[0] <= b[3] &&
+		b[1] <= b[4] &&
+		b[2] <= b[5];
+	cullHelper.visible = show;
+	if (show) {
+		cullBox.min.set(b[0], b[1], b[2]);
+		cullBox.max.set(b[3], b[4], b[5]);
+	}
+}
+
 await pipePieces;
 b3.b3Body_Enable(pipe);
 b3.b3Body_SetMotionLocks(pipe, {
@@ -824,5 +879,6 @@ app.onFrame((dt) => {
 		resetPipe();
 	}
 	debug.update();
+	syncCullHelper();
 });
 app.start();

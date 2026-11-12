@@ -60,6 +60,16 @@ export interface DebugThree {
 	DoubleSide: number;
 }
 
+/** Structural stand-in for a three Camera: a `PerspectiveCamera` or `OrthographicCamera`. */
+export interface DebugCamera {
+	matrixWorld: { elements: ArrayLike<number> };
+	projectionMatrixInverse: { elements: ArrayLike<number> };
+	near: number;
+	far: number;
+	isOrthographicCamera?: boolean;
+	updateMatrixWorld?(force?: boolean): void;
+}
+
 export type DebugColor = number | string | null;
 
 /** `null` keeps box3d's own colour. Mass has none, so `null` there is white. */
@@ -108,7 +118,27 @@ export interface DebugRendererSettings {
 	/** Stretches contact-normal segments. box3d draws them at 0.3 length units. */
 	normalScale?: number;
 	maskBits?: number;
+	/** Draw only shapes whose fat AABB overlaps this box, and the joints, contacts and mass markers of their bodies. */
 	drawingBounds?: b3AABB;
+	/**
+	 * Cull to this camera. Each `update` draws inside the AABB of its frustum,
+	 * cut down to `drawingBounds` when that is set too, and box3d skips
+	 * everything outside. The box is coarser than the frustum, so some things
+	 * just out of view are still drawn. Call `update` after moving the camera,
+	 * or culling lags a frame behind.
+	 */
+	camera?: DebugCamera | null;
+	/**
+	 * Pulls the camera's far plane in for culling. Defaults to `camera.far`. The
+	 * frustum's AABB grows with it, so a far plane of 1000 culls very little.
+	 */
+	cullDistance?: number;
+	/**
+	 * How many `update` calls a shape that stops being drawn (culled, filtered
+	 * out, or destroyed) keeps its Three objects, hidden, before they are freed.
+	 * Default 300. Panning back within that window reuses them.
+	 */
+	shapeCacheFrames?: number;
 	opacity?: number;
 	depthTest?: boolean;
 	renderOrder?: number;
@@ -119,6 +149,12 @@ export interface DebugRenderer {
 	/** Live. `update` reads it each call. */
 	settings: DebugRendererSettings;
 	object3d: DebugObject3D;
+	/**
+	 * The box the last `update` drew inside, or `null` when nothing limits it.
+	 * With a camera, a live array the next `update` overwrites. Min above max on
+	 * some axis means the camera and `drawingBounds` missed, and nothing was drawn.
+	 */
+	readonly cullBounds: b3AABB | null;
 	update(): void;
 	dispose(): void;
 }

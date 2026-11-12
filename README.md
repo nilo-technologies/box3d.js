@@ -1849,11 +1849,14 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 
 `box3d.js/three` turns the buffer into Three.js objects. It does not import `three`. Pass the same `THREE` namespace the rest of the page uses, so `three` and `three/webgpu` both work. `null` in `colors` keeps box3d's own colour. Mass has no box3d colour, so `colors.mass: null` is white.
 
+Set `settings.camera` to cull to that camera. Each `update` draws inside the AABB of the camera's frustum, cut down to `drawingBounds` when that is set too. box3d's broadphase skips every shape outside that box, along with those bodies' joints, contacts and mass markers. The box is coarser than the frustum, so some shapes and overlays just outside the view are still drawn, and it grows with the far plane, so set `cullDistance` to cap it. Three's own frustum culling then skips shape meshes and edge lines that are out of view. The shared lines and points (joints, contacts, bounds, mass) are drawn for everything inside the box. Shapes that leave the view stay cached, hidden, for `shapeCacheFrames` updates (300 by default), so panning back does not rebuild them.
+
 ```ts
 // `THREE` is the page's own three build (`three` or `three/webgpu`). `scene` is
 // any Object3D. This module does not import three itself.
 declare const THREE: Parameters<typeof createDebugRenderer>[2]['THREE'];
 declare const scene: Parameters<typeof createDebugRenderer>[2]['parent'];
+declare const camera: NonNullable<DebugRendererSettings['camera']>;
 
 const debug = createDebugRenderer(b3, world, {
     THREE,
@@ -1864,6 +1867,12 @@ const debug = createDebugRenderer(b3, world, {
 b3.b3World_Step(world, 1 / 60, 4);
 debug.update();
 debug.settings.contactNormals = true;
+
+// Cull to a camera: box3d only visits shapes inside the AABB of its frustum,
+// out to 60 units. That box is coarser than the frustum itself.
+debug.settings.camera = camera;
+debug.settings.cullDistance = 60;
+debug.update();
 
 // The buffer API is there when you draw it yourself. One buffer, refilled in place.
 const draw = b3.createDebugDrawBuffer();
