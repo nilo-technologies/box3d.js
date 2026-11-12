@@ -865,13 +865,13 @@ export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'non
 }
 
 /**
- * A 300 hp touge coupe for mountain passes such as the Akina track in the examples: one preset
+ * A 300 hp touge coupe for mountain passes such as the downhill and uphill tracks in the examples: one preset
  * (`touge`, RWD at 50% realism) built from its own car layer with the shared drivetrain and realism
  * layers, outside the matrix. Next to the sports car it is lighter, revs higher and is geared
  * short for hairpin exits, with more lock for the tightest hairpins (it turns about half a metre
  * tighter at hairpin speeds) and more of the braking on the front for long downhill stops.
  *
- * On Akina the run time is set by cornering grip: 70 kg less, or a flatter torque curve at the same
+ * On the mountain pass the run time is set by cornering grip: 70 kg less, or a flatter torque curve at the same
  * 300 hp, moved a keyboard run by under a second, while tires 7% stickier than the sports car's
  * (semi-slick road tires) took about 9 s off each direction.
  */

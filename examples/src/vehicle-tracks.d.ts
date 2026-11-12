@@ -8,11 +8,7 @@ import type {
 	b3WorldId,
 } from 'box3d.js';
 
-export type RaceTrackName =
-	| 'circuit'
-	| 'stage'
-	| 'akina-downhill'
-	| 'akina-uphill';
+export type RaceTrackName = 'circuit' | 'stage' | 'downhill' | 'uphill';
 
 export interface RaceTrackBumpDef {
 	kind: 'hump' | 'table';

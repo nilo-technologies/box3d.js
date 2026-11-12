@@ -1913,18 +1913,18 @@ async function vehicleScenarios( b3 )
 			results.laps[ name ] = lap.lapTime;
 		}
 
-		// Akina: a point to point mountain pass, run down and up. The road mesh never folds over
+		// Downhill and uphill: a point to point mountain pass, run down and up. The road mesh never folds over
 		// on the road itself, the guardrails are walls the wheels skip, and the touge coupe makes
 		// it from the start line to the finish line both ways without flipping.
 		const { railCategory, wheelsIgnoreRails } = await import( '../examples/src/vehicle-tracks.js' );
-		for ( const name of [ 'akina-downhill', 'akina-uphill' ] )
+		for ( const name of [ 'downhill', 'uphill' ] )
 		{
 			const track = buildRaceTrack( name );
 			const line = track.centerline;
 			assert.ok( !track.closed && track.finish, `${name}: a point to point track with a finish line` );
 			assert.ok( track.finish.s - track.start.s > 5000, `${name}: over 5 km from start to finish` );
 			const climb = track.finish.position[ 1 ] - track.start.position[ 1 ];
-			assert.ok( Math.abs( climb ) > 300 && ( name === 'akina-uphill' ) === ( climb > 0 ), `${name}: ${climb.toFixed( 0 )} m from start to finish` );
+			assert.ok( Math.abs( climb ) > 300 && ( name === 'uphill' ) === ( climb > 0 ), `${name}: ${climb.toFixed( 0 )} m from start to finish` );
 			assert.ok( track.rails.length > 10, `${name}: guardrails along the drops` );
 			const { positions, indices, verge } = track.road;
 			let folds = 0;
@@ -2238,7 +2238,7 @@ async function check( label, importPath, decompositionOptions )
 	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
 		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s, ` +
 		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s, ` +
-		`touge on Akina down ${vehicle.laps[ 'akina-downhill' ].toFixed( 1 )}s, up ${vehicle.laps[ 'akina-uphill' ].toFixed( 1 )}s`;
+		`touge downhill ${vehicle.laps[ 'downhill' ].toFixed( 1 )}s, uphill ${vehicle.laps[ 'uphill' ].toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );

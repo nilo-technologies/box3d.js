@@ -4,7 +4,7 @@
 //   node examples/scripts/vehicle-laps.mjs --track circuit --preset sports-50-rwd
 //   node examples/scripts/vehicle-laps.mjs --track stage --car rally
 //   node examples/scripts/vehicle-laps.mjs --all            every matrix preset on both tracks
-//   node examples/scripts/vehicle-laps.mjs --track akina-downhill --track akina-uphill --preset touge
+//   node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset touge
 //   add --keys to drive with keys instead, --pace 0.85 for the share of the grip it corners at,
 //   --json for machine readable output
 //
@@ -13,7 +13,7 @@
 // braking distance. It eases off the throttle when the driven wheels spin, as a player would
 // without traction control. Each track has an advisory speed for its bump section: the circuit's
 // bumps are taken flat out, the stage's whoops and jump at 60 km/h. A point to point track (the
-// Akina runs) is one run from its start line to its finish line.
+// downhill and uphill runs) is one run from its start line to its finish line.
 //
 // With --keys it drives as a keyboard player does, with the same plan: full lock (A or D) while
 // the heading to the point ahead is off by more than 2 degrees, through createSteeringLimiter as
@@ -273,7 +273,7 @@ if (isMain) {
 	});
 	if (names.length === 0) {
 		console.error(
-			'usage: vehicle-laps.mjs [--track circuit|stage|akina-downhill|akina-uphill] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--keys] [--json]',
+			'usage: vehicle-laps.mjs [--track circuit|stage|downhill|uphill] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--keys] [--json]',
 		);
 		process.exit(2);
 	}

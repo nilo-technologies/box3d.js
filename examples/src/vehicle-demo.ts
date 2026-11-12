@@ -38,7 +38,6 @@ import {
 import { addShowcase } from './vehicle-showcase';
 import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
-import { akinaCredit, akinaCreditUrl } from './vehicle-track-akina';
 import {
 	addRaceTrackArt,
 	applyTopoAtmosphere,
@@ -47,6 +46,7 @@ import {
 	topo,
 	topoMaterial,
 } from './vehicle-track-art';
+import { mountainCredit, mountainCreditUrl } from './vehicle-track-mountain';
 import {
 	buildRaceTrack,
 	createRaceTrackBodies,
@@ -63,7 +63,7 @@ import {
 
 /**
  * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. The rest are the race
- * tracks from vehicle-tracks.js: a paved circuit, an off-road stage, and the Akina mountain pass
+ * tracks from vehicle-tracks.js: a paved circuit, an off-road stage, and the mountain pass
  * run downhill or uphill.
  */
 export type WheeledVehicleTerrain = 'track' | 'offroad' | RaceTrackName;
@@ -983,10 +983,11 @@ export async function runWheeledVehicleDemo(
 		'',
 	];
 	let touchShown = false;
-	// The Akina track is traced from a CC-BY-4.0 model, which asks for this credit wherever it is shown
-	const trackCredit = options.terrain.startsWith('akina')
-		? `<br><a href="${akinaCreditUrl}" target="_blank" rel="noopener" style="color:inherit;opacity:.6;pointer-events:auto">${akinaCredit}</a>`
-		: '';
+	// The mountain pass is traced from a CC-BY-4.0 model, which asks for this credit wherever it is shown
+	const trackCredit =
+		options.terrain === 'downhill' || options.terrain === 'uphill'
+			? `<br><a href="${mountainCreditUrl}" target="_blank" rel="noopener" style="color:inherit;opacity:.6;pointer-events:auto">${mountainCredit}</a>`
+			: '';
 	function setInfo(title: string, blurb: string, extra = ''): void {
 		infoText = [title, blurb, extra];
 		// The extra line lists hotkeys, which a touch screen has no use for
@@ -1030,8 +1031,8 @@ export async function runWheeledVehicleDemo(
 	const hudLap = hud.querySelector('#hud-lap') as HTMLElement;
 
 	// ---- Lap timer on the race tracks: progress along the centreline, counted in simulated
-	// time so a slow frame rate does not change the lap time. A point to point track (the Akina
-	// runs) times one run instead: from the first metre past the start line to the finish line,
+	// time so a slow frame rate does not change the lap time. A point to point track (downhill and
+	// uphill) times one run instead: from the first metre past the start line to the finish line,
 	// then holds the time until T takes the car back to the start.
 	const lap = {
 		index: 0,

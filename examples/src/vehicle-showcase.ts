@@ -48,8 +48,8 @@ const terrains: WheeledVehicleTerrain[] = [
 	'offroad',
 	'circuit',
 	'stage',
-	'akina-downhill',
-	'akina-uphill',
+	'downhill',
+	'uphill',
 ];
 
 /** A car in the picker: a matrix car, or the touge coupe (one preset) */
@@ -274,8 +274,8 @@ export function addShowcase(host: ShowcaseHost): void {
 			'Off-road area': 'offroad',
 			'Race circuit': 'circuit',
 			'Off-road stage': 'stage',
-			'Akina downhill': 'akina-downhill',
-			'Akina uphill': 'akina-uphill',
+			Downhill: 'downhill',
+			Uphill: 'uphill',
 		})
 		.name('terrain (reloads)')
 		.onChange(() => {

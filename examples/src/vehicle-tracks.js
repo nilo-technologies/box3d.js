@@ -1,4 +1,4 @@
-// Race tracks for the vehicle examples: a paved circuit, an off-road stage and the Akina mountain
+// Race tracks for the vehicle examples: a paved circuit, an off-road stage and the mountain
 // pass, run downhill or uphill. Plain JS so Node tests can build the same physics as the examples;
 // types live in vehicle-tracks.d.ts.
 //
@@ -13,7 +13,7 @@
 // Where the ground beside the road drops away or rises into a bank, as between the legs of a
 // mountain pass, a track with `rails` gets guardrails: thin walls along the road edge.
 
-import { akinaPoints } from './vehicle-track-akina.js';
+import { mountainPoints } from './vehicle-track-mountain.js';
 
 const TAU = Math.PI * 2;
 
@@ -196,14 +196,14 @@ export const raceTracks = {
 			{ kind: 'hump', at: 112, height: 0.8, length: 10, label: 'jump' },
 		],
 	},
-	// Traced from the road of "Akina Map Low Poly" (see vehicle-track-akina.js for the credit):
+	// Traced from the road of a low poly map (see vehicle-track-mountain.js for the credit):
 	// 5.5 km and 323 m of drop, mostly 4-10% with stretches of 15%, about twenty corners under 25 m
 	// radius and a run of five hairpins. Uphill is the same road from the other end.
-	'akina-downhill': akina('Akina downhill', false),
-	'akina-uphill': akina('Akina uphill', true),
+	downhill: mountainPass('Downhill', false),
+	uphill: mountainPass('Uphill', true),
 };
 
-function akina(title, reverse) {
+function mountainPass(title, reverse) {
 	return {
 		title,
 		surface: 'asphalt',
@@ -214,7 +214,7 @@ function akina(title, reverse) {
 		// A short ramp keeps the road edges clear of the cliffs between stacked legs
 		road: { sink: 0.15, ramp: 1.5, strips: 12 },
 		farSpread: 70,
-		points: akinaPoints,
+		points: mountainPoints,
 		closed: false,
 		reverse,
 		run: { start: 30, finish: 30 },
