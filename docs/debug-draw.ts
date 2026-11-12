@@ -21,7 +21,8 @@ b3.b3World_Step(world, 1 / 60, 4);
 debug.update();
 debug.settings.contactNormals = true;
 
-// Cull to a camera: box3d only visits what lies in its frustum, out to 60 units.
+// Cull to a camera: box3d only visits shapes inside the AABB of its frustum,
+// out to 60 units. That box is coarser than the frustum itself.
 debug.settings.camera = camera;
 debug.settings.cullDistance = 60;
 debug.update();

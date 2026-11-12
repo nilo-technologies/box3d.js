@@ -2,8 +2,8 @@
 // colour box3d can hold, drawn by box3d.js/three. A decomposed pipe bounces on
 // its own pad from restitution alone. Each Debug checkbox changes the overlay.
 // The Filter folder hides the category-2 post (mask 1) and drops the joint row
-// (it sits past drawingBounds.minZ). The Culling folder draws only what the
-// camera sees: freeze it, then orbit out to see the cut and its box. Disabled
+// (it sits past drawingBounds.minZ). The Culling folder culls to the AABB of
+// the camera's view: freeze it, then orbit out to see the cut and its box. Disabled
 // bodies leave the broadphase, and a time-of-impact colour lasts a single
 // frame, so those two states are not in the scene.
 
@@ -799,8 +799,9 @@ cullFolder
 		applyCulling();
 	});
 cullFolder.add(cullProxy, 'showBox').name('show cull box');
-// The live camera sits inside its own box, so draw it only when frozen (or for
-// the Filter folder's drawingBounds).
+// The live camera's box has its near face right at the camera and would crowd
+// the view, so draw it only when frozen (or for the Filter folder's
+// drawingBounds).
 function syncCullHelper(): void {
 	const b = debug.cullBounds;
 	const live = cullProxy.followCamera && !cullProxy.freeze;

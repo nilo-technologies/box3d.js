@@ -7,8 +7,8 @@
 //   debug.update(); // after stepping
 //   debug.dispose();
 //
-// Set `settings.camera` (and `cullDistance`) to draw only what that camera can
-// see. See cameraBounds and resolveBounds below.
+// Set `settings.camera` (and `cullDistance`) to cull to the AABB of that
+// camera's frustum. See cameraBounds and resolveBounds below.
 
 // Matches DebugShapeState in src/bindings.cpp. Index is the buffer's state value.
 const STATE_NAMES = [

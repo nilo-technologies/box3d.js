@@ -121,10 +121,11 @@ export interface DebugRendererSettings {
 	/** Draw only shapes whose fat AABB overlaps this box, and the joints, contacts and mass markers of their bodies. */
 	drawingBounds?: b3AABB;
 	/**
-	 * Cull to this camera. Each `update` fits `drawingBounds` to the AABB of its
-	 * frustum (cut down to `drawingBounds` when that is set too), and box3d skips
-	 * everything outside. Call `update` after moving the camera, or culling lags
-	 * a frame behind.
+	 * Cull to this camera. Each `update` draws inside the AABB of its frustum,
+	 * cut down to `drawingBounds` when that is set too, and box3d skips
+	 * everything outside. The box is coarser than the frustum, so some things
+	 * just out of view are still drawn. Call `update` after moving the camera,
+	 * or culling lags a frame behind.
 	 */
 	camera?: DebugCamera | null;
 	/**
