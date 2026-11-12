@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.5.0
+
+The engine now rights a car lying flat on its roof, and the sports, rally and supercar presets turn in harder at full lock and ride on softer, visible suspension. The `box3d.js/three` debug renderer can cull to a camera, and the physics performance check on pull requests compares against upstream box3d.js and times world queries.
 
 - `vendor/box3d` points at nilo-technologies/box3d `main` (`6bdae6c`), and `dist/` is rebuilt from it. It brings two engine changes:
   - Self righting works on a level roof (nilo-technologies/box3d#15). A car lying flat on its roof stayed there: every wheel reported ground contact from a cast that started inside the ground, the righting direction flipped every step, and the stuck timer reset mid roll.
