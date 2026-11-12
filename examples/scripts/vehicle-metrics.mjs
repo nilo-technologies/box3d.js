@@ -3,6 +3,7 @@
 // from src/wheeled-vehicles.js so a tuning edit needs no rebuild.
 //
 //   node examples/scripts/vehicle-metrics.mjs --preset rally-50-awd
+//   node examples/scripts/vehicle-metrics.mjs --preset touge          a layered preset outside the matrix
 //   node examples/scripts/vehicle-metrics.mjs --car super            all 15 supercar presets
 //   node examples/scripts/vehicle-metrics.mjs --all                  all 45 matrix presets
 //   node examples/scripts/vehicle-metrics.mjs --file my-car.mjs      a preset module (see below)
@@ -746,6 +747,11 @@ if (isMain) {
 	const args = parseArgs(process.argv.slice(2));
 	const jobs = [];
 	for (const [name, preset] of Object.entries(wheeledVehiclePresets)) {
+		// A preset outside the matrix built from the same layers (touge) names its archetype
+		if (preset.layers && args.presets.includes(name)) {
+			const { archetype, realism, drive } = preset.layers;
+			jobs.push({ name, preset, target: { archetype, realism, drive } });
+		}
 		if (!preset.matrix) continue;
 		const { car, realism, drive } = preset.matrix;
 		if (args.all || args.car === car || args.presets.includes(name)) {
@@ -753,7 +759,8 @@ if (isMain) {
 		}
 	}
 	for (const name of args.presets) {
-		if (!wheeledVehiclePresets[name]?.matrix) throw new Error(`no matrix preset ${name}`);
+		const preset = wheeledVehiclePresets[name];
+		if (!preset?.matrix && !preset?.layers) throw new Error(`no matrix or layered preset ${name}`);
 	}
 	if (args.file) {
 		const mod = await import(pathToFileURL(path.resolve(args.file)).href);

@@ -38,6 +38,7 @@ import {
 import { addShowcase } from './vehicle-showcase';
 import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
+import { akinaCredit, akinaCreditUrl } from './vehicle-track-akina';
 import {
 	addRaceTrackArt,
 	applyTopoAtmosphere,
@@ -50,6 +51,8 @@ import {
 	buildRaceTrack,
 	createRaceTrackBodies,
 	type RaceTrack,
+	type RaceTrackName,
+	wheelsIgnoreRails,
 } from './vehicle-tracks';
 import { syncSettingsWithUrl, type UrlSettings } from './vehicle-url-settings';
 import {
@@ -59,10 +62,11 @@ import {
 } from './vehicle-weight-transfer';
 
 /**
- * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. circuit and stage:
- * the race tracks from vehicle-tracks.js, a paved circuit and an off-road stage.
+ * track: the test area (slalom, ramp, humps, hill). offroad: rough terrain. The rest are the race
+ * tracks from vehicle-tracks.js: a paved circuit, an off-road stage, and the Akina mountain pass
+ * run downhill or uphill.
  */
-export type WheeledVehicleTerrain = 'track' | 'offroad' | 'circuit' | 'stage';
+export type WheeledVehicleTerrain = 'track' | 'offroad' | RaceTrackName;
 
 export type WheeledVehicleDemoOptions = {
 	preset: WheeledVehiclePresetName;
@@ -370,10 +374,10 @@ export async function runWheeledVehicleDemo(
 		spawn = [0, heightAt(0, 0) + spawnClearance, 0];
 	}
 
-	function buildRaceTrackTerrain(name: 'circuit' | 'stage'): void {
+	function buildRaceTrackTerrain(name: RaceTrackName): void {
 		const track = buildRaceTrack(name);
 		raceTrack = track;
-		const { ground, road, bumpBodies, walls } = createRaceTrackBodies(
+		const { ground, road, bumpBodies, rails, walls } = createRaceTrackBodies(
 			b3,
 			world,
 			track,
@@ -381,6 +385,7 @@ export async function runWheeledVehicleDemo(
 		for (const body of [ground, ...bumpBodies, ...walls])
 			hidden.add(body.index1);
 		if (road) hidden.add(road.index1);
+		if (rails) hidden.add(rails.index1);
 		addRaceTrackArt(app.scene, track);
 		app.camera.far = 1000;
 		app.camera.updateProjectionMatrix();
@@ -513,7 +518,8 @@ export async function runWheeledVehicleDemo(
 		hidden.add(chassis.index1);
 
 		const presetDef = () => {
-			const d = createPresetWheeledVehicleDef(b3, name);
+			// Wheels never stand on a guardrail; the chassis still hits it
+			const d = wheelsIgnoreRails(createPresetWheeledVehicleDef(b3, name));
 			return turbo === 'none' ? d : applyTurbo(d, turbo);
 		};
 		const defaults: b3WheeledVehicleDef = presetDef();
@@ -694,9 +700,10 @@ export async function runWheeledVehicleDemo(
 	}
 
 	// ---- Skid marks: instanced quads dropped under sliding tires
-	// Just above the circuit's road strip (drawn 5 cm up) or the bare ground elsewhere; the
+	// Just above a paved track's road strip (drawn 5 cm up) or the bare ground elsewhere; the
 	// polygon offset keeps them in front of what they lie on
-	const markLift = options.terrain === 'circuit' ? 0.07 : 0.02;
+	// (raceTrack is set inside buildRaceTrackTerrain, which TypeScript's narrowing cannot see)
+	const markLift = (raceTrack as RaceTrack | null)?.road ? 0.07 : 0.02;
 	const maxMarks = 3000;
 	const marks = new THREE.InstancedMesh(
 		new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
@@ -865,6 +872,14 @@ export async function runWheeledVehicleDemo(
 		clearTrail();
 	}
 
+	/**
+	 * R, the touch ↻ and the gamepad's Y flip the car upright where it is; once a point to point
+	 * run is over they take it back to the start, which touch has no other way to do
+	 */
+	function flipOrRestart(): void {
+		resetCar(Boolean(raceTrack && !raceTrack.closed && lap.finished));
+	}
+
 	// Set once the whole panel is built, at the end of setup
 	let urlSettings: UrlSettings | undefined;
 
@@ -907,7 +922,7 @@ export async function runWheeledVehicleDemo(
 		if (code === 'KeyE') shift(1);
 		else if (code === 'KeyQ') shift(-1);
 		else if (code === 'KeyM') setManual(!isManual());
-		else if (code === 'KeyR') resetCar(false);
+		else if (code === 'KeyR') flipOrRestart();
 		else if (code === 'KeyT') resetCar(true);
 		else if (code === 'KeyN') toggleMute();
 		else if (code === 'KeyV') audio.blowOff(1);
@@ -943,7 +958,7 @@ export async function runWheeledVehicleDemo(
 			};
 			edge(5, () => shift(1));
 			edge(4, () => shift(-1));
-			edge(3, () => resetCar(false));
+			edge(3, flipOrRestart);
 		}
 
 		if (isManual())
@@ -968,13 +983,17 @@ export async function runWheeledVehicleDemo(
 		'',
 	];
 	let touchShown = false;
+	// The Akina track is traced from a CC-BY-4.0 model, which asks for this credit wherever it is shown
+	const trackCredit = options.terrain.startsWith('akina')
+		? `<br><a href="${akinaCreditUrl}" target="_blank" rel="noopener" style="color:inherit;opacity:.6;pointer-events:auto">${akinaCredit}</a>`
+		: '';
 	function setInfo(title: string, blurb: string, extra = ''): void {
 		infoText = [title, blurb, extra];
 		// The extra line lists hotkeys, which a touch screen has no use for
 		const help = touchShown ? touchHelp : controlsHelp + extra;
 		info.innerHTML =
 			`<b>${title}</b><br>${blurb}<br>` +
-			`<span style="opacity:.75">${help}</span>`;
+			`<span style="opacity:.75">${help}</span>${trackCredit}`;
 	}
 	document.body.appendChild(info);
 
@@ -1011,18 +1030,68 @@ export async function runWheeledVehicleDemo(
 	const hudLap = hud.querySelector('#hud-lap') as HTMLElement;
 
 	// ---- Lap timer on the race tracks: progress along the centreline, counted in simulated
-	// time so a slow frame rate does not change the lap time
-	const lap = { index: 0, progress: 0, start: 0, last: 0, best: 0, count: 0 };
+	// time so a slow frame rate does not change the lap time. A point to point track (the Akina
+	// runs) times one run instead: from the first metre past the start line to the finish line,
+	// then holds the time until T takes the car back to the start.
+	const lap = {
+		index: 0,
+		progress: 0,
+		start: 0,
+		last: 0,
+		best: 0,
+		count: 0,
+		running: false,
+		finished: false,
+	};
 	let simTime = 0;
 	function resetLap(): void {
 		if (!raceTrack) return;
 		lap.index = Math.round(raceTrack.start.s) % raceTrack.centerline.length;
 		lap.progress = 0;
 		lap.start = simTime;
+		lap.running = raceTrack.closed;
+		lap.finished = false;
 	}
 	resetLap();
+	function updateRun(track: RaceTrack): void {
+		const line = track.centerline;
+		const n = line.length;
+		const clamp = (i: number) => Math.min(Math.max(i, 0), n - 1);
+		let best = lap.index;
+		let bestD = Number.POSITIVE_INFINITY;
+		for (let k = -20; k <= 40; k++) {
+			const p = line[clamp(lap.index + k)];
+			const d = (p.x - currPos.x) ** 2 + (p.z - currPos.z) ** 2;
+			if (d < bestD) {
+				bestD = d;
+				best = clamp(lap.index + k);
+			}
+		}
+		if (bestD > 40 * 40) {
+			const r = track.roadAt(currPos.x, currPos.z);
+			if (r) best = Math.round(r.sample.s);
+		}
+		lap.index = best;
+		if (lap.finished) return;
+		const from = Math.round(track.start.s);
+		if (!lap.running && best > from) {
+			lap.running = true;
+			lap.start = simTime;
+		}
+		if (lap.running && track.finish && best >= Math.round(track.finish.s)) {
+			lap.running = false;
+			lap.finished = true;
+			lap.last = simTime - lap.start;
+			lap.best = lap.best ? Math.min(lap.best, lap.last) : lap.last;
+			lap.count++;
+		}
+	}
 	function updateLap(): void {
 		if (!raceTrack) return;
+		if (!raceTrack.closed) {
+			updateRun(raceTrack);
+			return;
+		}
 		const line = raceTrack.centerline;
 		const n = line.length;
 		// The nearest centreline sample in a window around the last one
@@ -1077,10 +1146,18 @@ export async function runWheeledVehicleDemo(
 			state.stuck ? (touchShown ? 'stuck: tap ↻' : 'stuck: press R') : '',
 		];
 		hudFlags.textContent = flags.filter(Boolean).join(' · ');
-		if (raceTrack) {
+		if (raceTrack?.closed) {
 			const parts = [`lap ${clock(simTime - lap.start)}`];
 			if (lap.last) parts.push(`last ${clock(lap.last)}`);
 			if (lap.best) parts.push(`best ${clock(lap.best)}`);
+			hudLap.textContent = parts.join(' · ');
+		} else if (raceTrack) {
+			const parts = lap.finished
+				? [`finish ${clock(lap.last)}`]
+				: [`run ${clock(lap.running ? simTime - lap.start : 0)}`];
+			if (lap.best) parts.push(`best ${clock(lap.best)}`);
+			if (lap.finished)
+				parts.push(touchShown ? '↻ back to start' : 'R: back to start');
 			hudLap.textContent = parts.join(' · ');
 		}
 	}

@@ -3957,7 +3957,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "lateralSlideAngle", &b3WheeledVehicleTire::lateralSlideAngle )
 		.field( "lateralSlideFriction", &b3WheeledVehicleTire::lateralSlideFriction )
 		.field( "rollingResistance", &b3WheeledVehicleTire::rollingResistance )
-		.field( "longitudinalRelaxationLength", &b3WheeledVehicleTire::longitudinalRelaxationLength );
+		.field( "longitudinalRelaxationLength", &b3WheeledVehicleTire::longitudinalRelaxationLength )
+		.field( "loadSensitivity", &b3WheeledVehicleTire::loadSensitivity )
+		.field( "referenceLoad", &b3WheeledVehicleTire::referenceLoad );
 
 	value_object<b3WheeledVehicleWheelDef>( "b3WheeledVehicleWheelDef" )
 		.field( "position", &b3WheeledVehicleWheelDef::position )

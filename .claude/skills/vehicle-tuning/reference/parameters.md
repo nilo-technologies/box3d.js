@@ -35,6 +35,7 @@ Each field, its default from `b3DefaultWheeledVehicleDef()`, and what the engine
 | `tire.lateralSlideAngle`, `lateralSlideFriction` | 20°, 0.92 | |
 | `tire.rollingResistance` | 0.015 | Torque = coefficient × load × radius. Downforce raises the load, so it also raises rolling resistance. |
 | `tire.longitudinalRelaxationLength` | 0.3 m | Distance the tire rolls for its slip ratio to build up. Near rest a small wheelspin no longer reads as a huge slip at once; at speed it settles within a step. Below 1 m/s it settles as if at 1 m/s. 0 is the old instant slip. |
+| `tire.loadSensitivity`, `tire.referenceLoad` | 0, 0 N | Grip per newton falls as the load rises: every friction coefficient × (1 - loadSensitivity × (load ÷ referenceLoad - 1)), the load ratio held between 0.25 and where more load would stop adding force (at most 4). `referenceLoad` 0 is the static load on the wheel, so a car at rest grips as its coefficients say. 0 is off (grip proportional to load), as every preset is today. Road tires are about 0.1-0.25. It makes anti-roll bars, springs and the center of mass move the balance (findings #51). |
 
 Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRICTION`), so default shapes scale grip by 1. Longitudinal and lateral forces share a friction ellipse: a locked or spinning wheel has little side grip left.
 
