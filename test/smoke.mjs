@@ -1895,6 +1895,38 @@ async function vehicleScenarios( b3 )
 			assert.ok( lap.minUp > 0.3, `${name}: ${presetName} does not flip (upright ${lap.minUp.toFixed( 2 )})` );
 			results.laps[ name ] = lap.lapTime;
 		}
+
+		// Downhill and uphill: a point to point mountain pass, run down and up. The road mesh never folds over
+		// on the road itself, the guardrails are walls the wheels skip, and the 50% RWD sports car makes
+		// it from the start line to the finish line both ways without flipping.
+		const { railCategory, wheelsIgnoreRails } = await import( '../examples/src/vehicle-tracks.js' );
+		for ( const name of [ 'downhill', 'uphill' ] )
+		{
+			const track = buildRaceTrack( name );
+			const line = track.centerline;
+			assert.ok( !track.closed && track.finish, `${name}: a point to point track with a finish line` );
+			assert.ok( track.finish.s - track.start.s > 5000, `${name}: over 5 km from start to finish` );
+			const climb = track.finish.position[ 1 ] - track.start.position[ 1 ];
+			assert.ok( Math.abs( climb ) > 300 && ( name === 'uphill' ) === ( climb > 0 ), `${name}: ${climb.toFixed( 0 )} m from start to finish` );
+			assert.ok( track.rails.length > 10, `${name}: guardrails along the drops` );
+			const { positions, indices, verge } = track.road;
+			let folds = 0;
+			for ( let i = 0; i < indices.length; i += 3 )
+			{
+				const [ a, b, c ] = [ indices[ i ], indices[ i + 1 ], indices[ i + 2 ] ];
+				if ( verge[ a ] > 0 || verge[ b ] > 0 || verge[ c ] > 0 ) continue;
+				const up = ( positions[ b * 3 + 2 ] - positions[ a * 3 + 2 ] ) * ( positions[ c * 3 ] - positions[ a * 3 ] ) - ( positions[ b * 3 ] - positions[ a * 3 ] ) * ( positions[ c * 3 + 2 ] - positions[ a * 3 + 2 ] );
+				if ( up < 0 ) folds++;
+			}
+			assert.equal( folds, 0, `${name}: no road triangle faces down` );
+			assert.ok( line.length > 5000, `${name}: centreline sampled every metre` );
+			const def = wheelsIgnoreRails( createPresetWheeledVehicleDef( b3, 'sports-50-rwd' ) );
+			assert.equal( def.chassis.castFilter.maskBits & railCategory, 0n, `${name}: the wheel casts skip the rails` );
+			const run = driveLap( name, wheeledVehiclePresets[ 'sports-50-rwd' ], { b3 } );
+			assert.ok( run.completed, `${name}: the sports car reaches the finish (${Math.round( run.progress * 100 )}%)` );
+			assert.ok( run.minUp > 0.3, `${name}: the sports car does not flip (upright ${run.minUp.toFixed( 2 )})` );
+			results.laps[ name ] = run.lapTime;
+		}
 	}
 
 	// 50 cars driving in circles cost under 1 ms per step
@@ -2188,7 +2220,8 @@ async function check( label, importPath, decompositionOptions )
 	const matrix = runs.filter( ( [ name ] ) => name.includes( '-' ) ).map( ( [ , t ] ) => t );
 	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
 		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s, ` +
-		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s`;
+		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s, ` +
+		`sports-50-rwd downhill ${vehicle.laps[ 'downhill' ].toFixed( 1 )}s, uphill ${vehicle.laps[ 'uphill' ].toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );

@@ -702,7 +702,9 @@ export type b3WheeledVehicleTire = {
   lateralSlideAngle: number,
   lateralSlideFriction: number,
   rollingResistance: number,
-  longitudinalRelaxationLength: number
+  longitudinalRelaxationLength: number,
+  loadSensitivity: number,
+  referenceLoad: number
 };
 
 export type b3WheeledVehicleWheelDef = {

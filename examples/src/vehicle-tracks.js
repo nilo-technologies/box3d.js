@@ -1,16 +1,42 @@
-// Race tracks for the vehicle examples: a paved circuit and an off-road stage. Plain JS so Node
-// tests can build the same physics as the examples; types live in vehicle-tracks.d.ts.
+// Race tracks for the vehicle examples: a paved circuit, an off-road stage and the mountain
+// pass, run downhill or uphill. Plain JS so Node tests can build the same physics as the examples;
+// types live in vehicle-tracks.d.ts.
 //
-// Each track is a closed Catmull-Rom spline through control points [x, z, elevation]. The
-// spline is resampled every metre, and the terrain is a height field: flat across the road at
-// the centreline's elevation, blending over the shoulder into a landscape that follows the
-// road's elevation plus some hills. A paved track also has its road as a triangle mesh along
-// the spline, a little above the terrain, with edges that ease down onto it, so the car drives
-// on the road it sees and can leave and rejoin it smoothly. Bumps are separate convex hull
-// bodies laid across the road along a straight bump section, so their shape is exact rather
-// than limited by the height field's grid.
+// Each track is a Catmull-Rom spline through control points [x, z, elevation]: closed for a
+// circuit, open from start to finish for a point to point run. The spline is resampled every
+// metre, and the terrain is a height field: flat across the road at the centreline's elevation,
+// blending over the shoulder into a landscape that follows the road's elevation plus some hills.
+// A paved track also has its road as a triangle mesh along the spline, a little above the
+// terrain, with edges that ease down onto it, so the car drives on the road it sees and can leave
+// and rejoin it smoothly. Bumps are separate convex hull bodies laid across the road along a
+// straight bump section, so their shape is exact rather than limited by the height field's grid.
+// Where the ground beside the road drops away or rises into a bank, as between the legs of a
+// mountain pass, a track with `rails` gets guardrails: thin walls along the road edge.
+
+import { mountainPoints } from './vehicle-track-mountain.js';
 
 const TAU = Math.PI * 2;
+
+/** Guardrail wall thickness and height above the road (m) */
+export const railThickness = 0.25;
+export const railHeight = 0.9;
+
+/**
+ * The guardrails' collision category. A wheel sticks out past the chassis box, so against a rail
+ * its cast lands on the rail's top and the car climbs it and stays there, leaning on it. The
+ * chassis collides with the rails as with anything; the wheel casts skip them.
+ */
+export const railCategory = 1n << 62n;
+
+/** Makes a vehicle def's wheel casts skip the guardrails */
+export function wheelsIgnoreRails(def) {
+	const filter = def.chassis.castFilter;
+	def.chassis.castFilter = {
+		...filter,
+		maskBits: filter.maskBits & ~railCategory,
+	};
+	return def;
+}
 
 // Bump shapes, as a profile along the road: height at a distance x from the bump's centre
 const profiles = {
@@ -170,7 +196,32 @@ export const raceTracks = {
 			{ kind: 'hump', at: 112, height: 0.8, length: 10, label: 'jump' },
 		],
 	},
+	// Traced from the road of a low poly map (see vehicle-track-mountain.js for the credit):
+	// 5.5 km and 323 m of drop, mostly 4-10% with stretches of 15%, about twenty corners under 25 m
+	// radius and a run of five hairpins. Uphill is the same road from the other end.
+	downhill: mountainPass('Downhill', false),
+	uphill: mountainPass('Uphill', true),
 };
+
+function mountainPass(title, reverse) {
+	return {
+		title,
+		surface: 'asphalt',
+		width: 9,
+		shoulder: 8,
+		hills: 3,
+		roughness: 0,
+		// A short ramp keeps the road edges clear of the cliffs between stacked legs
+		road: { sink: 0.15, ramp: 1.5, strips: 12 },
+		farSpread: 70,
+		points: mountainPoints,
+		closed: false,
+		reverse,
+		run: { start: 30, finish: 30 },
+		rails: { drop: 3 },
+		bumps: [],
+	};
+}
 
 function catmullRom(p0, p1, p2, p3, t) {
 	const t2 = t * t;
@@ -202,6 +253,33 @@ function hills(x, z, seed) {
 	return h;
 }
 
+/**
+ * How far out from the centreline the road may reach on one side (1 left, -1 right) at sample i:
+ * unlimited on the outside of a corner, 85% of the tightest radius within 3 m on the inside
+ */
+function innerReach(line, closed) {
+	const n = line.length;
+	const at = (k) =>
+		closed ? line[((k % n) + n) % n] : line[Math.min(Math.max(k, 0), n - 1)];
+	// Signed curvature: the turn over the 6 samples (6 m), negative turning left (toward +x
+	// heading +z)
+	const curvature = line.map((_, k) => {
+		const a = at(k - 3);
+		const b = at(k + 3);
+		return Math.atan2(a.tx * b.tz - a.tz * b.tx, a.tx * b.tx + a.tz * b.tz) / 6;
+	});
+	return (i, side) => {
+		let reach = Number.POSITIVE_INFINITY;
+		for (let k = i - 3; k <= i + 3; k++) {
+			const kappa =
+				curvature[closed ? ((k % n) + n) % n : Math.min(Math.max(k, 0), n - 1)];
+			// The inside of a left turn is the left side
+			if (side * kappa < 0) reach = Math.min(reach, 0.85 / Math.abs(kappa));
+		}
+		return reach;
+	};
+}
+
 const smoothstep = (e0, e1, x) => {
 	const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
 	return t * t * (3 - 2 * t);
@@ -210,19 +288,23 @@ const smoothstep = (e0, e1, x) => {
 /** Builds a track's centreline, terrain heights, bump hulls and start pose */
 export function buildRaceTrack(name) {
 	const def = raceTracks[name];
-	const pts = def.points;
+	const closed = def.closed !== false;
+	const pts = def.reverse ? [...def.points].reverse() : def.points;
 	const n = pts.length;
+	const point = (i) =>
+		closed ? pts[(i + n) % n] : pts[Math.min(Math.max(i, 0), n - 1)];
 
-	// Dense spline, then resampled every metre along its length
+	// Dense spline, then resampled every metre along its length. An open track ends at its last
+	// point; a closed one comes back to its first.
 	const dense = [];
-	for (let i = 0; i < n; i++) {
-		const p0 = pts[(i - 1 + n) % n];
-		const p1 = pts[i];
-		const p2 = pts[(i + 1) % n];
-		const p3 = pts[(i + 2) % n];
+	for (let i = 0; i < (closed ? n : n - 1); i++) {
+		const p0 = point(i - 1);
+		const p1 = point(i);
+		const p2 = point(i + 1);
+		const p3 = point(i + 2);
 		for (let k = 0; k < 60; k++) dense.push(catmullRom(p0, p1, p2, p3, k / 60));
 	}
-	dense.push(dense[0]);
+	dense.push(closed ? dense[0] : pts[n - 1]);
 	const lengths = [0];
 	for (let i = 1; i < dense.length; i++) {
 		lengths.push(
@@ -234,12 +316,14 @@ export function buildRaceTrack(name) {
 		);
 	}
 	const length = lengths[lengths.length - 1];
-	const count = Math.floor(length);
+	// A closed track's last sample is a metre short of its first; an open one has both ends
+	const count = closed ? Math.floor(length) : Math.floor(length) + 1;
+	const intervals = closed ? count : count - 1;
 	const centerline = [];
 	let j = 0;
 	for (let k = 0; k < count; k++) {
-		const s = (k * length) / count;
-		while (lengths[j + 1] < s) j++;
+		const s = (k * length) / intervals;
+		while (j < lengths.length - 2 && lengths[j + 1] < s) j++;
 		const t = (s - lengths[j]) / (lengths[j + 1] - lengths[j]);
 		const a = dense[j];
 		const b = dense[j + 1];
@@ -250,9 +334,13 @@ export function buildRaceTrack(name) {
 			y: a[2] + (b[2] - a[2]) * t,
 		});
 	}
+	const sample = (k) =>
+		closed
+			? centerline[((k % count) + count) % count]
+			: centerline[Math.min(Math.max(k, 0), count - 1)];
 	for (let k = 0; k < count; k++) {
-		const a = centerline[(k - 1 + count) % count];
-		const b = centerline[(k + 1) % count];
+		const a = sample(k - 1);
+		const b = sample(k + 1);
 		const d = Math.hypot(b.x - a.x, b.z - a.z);
 		centerline[k].tx = (b.x - a.x) / d;
 		centerline[k].tz = (b.z - a.z) / d;
@@ -273,17 +361,21 @@ export function buildRaceTrack(name) {
 	const at = (s) => centerline[((Math.round(s) % count) + count) % count];
 
 	// The bump section is level, so the bumps sit on a flat road
-	const bumpStart = nearestIndex(def.bumpSection[0], def.bumpSection[1]);
-	const bumpEnd =
-		bumpStart +
-		Math.max(
-			...def.bumps.map(
-				(b) => b.at + (b.count ?? 1) * (b.spacing ?? 0) + b.length,
-			),
-		) +
-		10;
+	const hasBumps = def.bumps.length > 0;
+	const bumpStart = hasBumps
+		? nearestIndex(def.bumpSection[0], def.bumpSection[1])
+		: 0;
+	const bumpEnd = hasBumps
+		? bumpStart +
+			Math.max(
+				...def.bumps.map(
+					(b) => b.at + (b.count ?? 1) * (b.spacing ?? 0) + b.length,
+				),
+			) +
+			10
+		: 0;
 	const flatY = centerline[bumpStart].y;
-	for (let k = bumpStart - 15; k <= bumpEnd + 15; k++) {
+	for (let k = bumpStart - 15; hasBumps && k <= bumpEnd + 15; k++) {
 		const c = centerline[((k % count) + count) % count];
 		const w = Math.min(
 			smoothstep(bumpStart - 15, bumpStart, k),
@@ -295,7 +387,7 @@ export function buildRaceTrack(name) {
 	// Spatial hash of the centreline for the terrain queries
 	const bucket = 10;
 	const grid = new Map();
-	const key = (gx, gz) => `${gx},${gz}`;
+	const key = (gx, gz) => gx * 65536 + gz;
 	for (const c of centerline) {
 		const k = key(Math.floor(c.x / bucket), Math.floor(c.z / bucket));
 		if (!grid.has(k)) grid.set(k, []);
@@ -356,18 +448,27 @@ export function buildRaceTrack(name) {
 	const cz = Math.ceil((countZ * cell) / coarse) + 2;
 	const baseGrid = new Float32Array(cx * cz);
 	// Near the road a narrow average follows it closely; further out it hands over to a wide one,
-	// so the land never drops away where the narrow average runs out of road
+	// so the land never drops away where the narrow average runs out of road. Past 4 far spreads
+	// from any road the land falls to height 0. A track with land far from its road (a mountain
+	// pass) sets a wider far spread, and its land falls to the mean road height instead.
 	const nearSpread = 12;
-	const farSpread = 40;
+	const farSpread = def.farSpread ?? 40;
+	const reach = 4 * farSpread;
+	const farFloor = def.farSpread
+		? centerline.reduce((sum, c) => sum + c.y, 0) / count
+		: 0;
 	for (let iz = 0; iz < cz; iz++) {
+		const z = z0 + iz * coarse;
+		// Only samples within reach of this row can count; the order stays the centreline's, so
+		// the sums come out the same as over the whole line
+		const band = centerline.filter((c) => Math.abs(c.z - z) <= reach);
 		for (let ix = 0; ix < cx; ix++) {
 			const x = x0 + ix * coarse;
-			const z = z0 + iz * coarse;
 			let wn = 0;
 			let yn = 0;
 			let wf = 1e-3;
-			let yf = 0;
-			for (const c of centerline) {
+			let yf = 1e-3 * farFloor;
+			for (const c of band) {
 				const d2 = (c.x - x) ** 2 + (c.z - z) ** 2;
 				if (d2 > 16 * farSpread * farSpread) continue;
 				const w = Math.exp(-d2 / (2 * farSpread * farSpread));
@@ -458,24 +559,52 @@ export function buildRaceTrack(name) {
 	// The paved road: flat across at the centreline's height, then easing down past each edge to
 	// 3 cm under the terrain, level where it leaves the road and where it meets the ground. Each
 	// sample has a row of points across it; `verge` is 0 on the road and rises to 1 at the outer
-	// edge of the ramp.
+	// edge of the ramp. On a mountain pass the ground beside the ramp can be a cliff down to the
+	// leg below (the height field's 2 m cells smear it toward the road), so there the ramp stops a
+	// metre down rather than following it.
+	// In a hairpin tighter than the verge, the rows across the inside would cross each other and
+	// fold the mesh over, so on the inside of a corner no point goes further out than 85% of the
+	// tightest radius within 3 m.
+	const reachInside = innerReach(centerline, closed);
 	let roadMesh = null;
 	if (def.road) {
 		const steps = [0, 0.25, 0.5, 0.75, 1];
+		// [side, t, f]: f × half out to the road edge, then t of the ramp. Each row is level across
+		// and turns with the road, so on a graded corner two rows are level lines at different
+		// heights and headings, and the quad between them twists: its triangles meet at a crease a
+		// few millimetres high, which the dampers feel as chatter. `strips` splits the road across
+		// into that many equal quads, and the crease shrinks with the square of their width. Every
+		// split is also a seam along the road that a chassis touching down can snag on, most of all
+		// one down the middle where a car lands, so an odd count (no centre seam) suits a track
+		// with jumps.
+		const strips = def.road.strips ?? 1;
+		const inside = [];
+		for (let k = 1; k < strips; k++) {
+			const w = -1 + (2 * k) / strips;
+			inside.push([Math.sign(w) || 1, 0, Math.abs(w)]);
+		}
 		const across = [
-			...[...steps].reverse().map((t) => [-1, t]),
-			...steps.map((t) => [1, t]),
+			...[...steps].reverse().map((t) => [-1, t, 1]),
+			...inside,
+			...steps.map((t) => [1, t, 1]),
 		];
 		const positions = [];
 		const vergeAmount = [];
-		for (const c of centerline) {
+		for (let i = 0; i < count; i++) {
+			const c = centerline[i];
 			// Left of the direction of travel is +x when it is +z, so the normal is (tz, -tx)
-			const ends = [-1, 1].map(
-				(side) =>
-					groundAt(c.x + c.tz * side * verge, c.z - c.tx * side * verge) - 0.03,
+			const out = (side, w) => Math.min(w, reachInside(i, side));
+			const ends = [-1, 1].map((side) =>
+				Math.max(
+					groundAt(
+						c.x + c.tz * side * out(side, verge),
+						c.z - c.tx * side * out(side, verge),
+					) - 0.03,
+					c.y - 1,
+				),
 			);
-			for (const [side, t] of across) {
-				const w = side * (half + ramp * t);
+			for (const [side, t, f] of across) {
+				const w = side * out(side, f * half + ramp * t);
 				const end = ends[side < 0 ? 0 : 1];
 				positions.push(
 					c.x + c.tz * w,
@@ -487,7 +616,7 @@ export function buildRaceTrack(name) {
 		}
 		const m = across.length;
 		const indices = [];
-		for (let i = 0; i < count; i++) {
+		for (let i = 0; i < (closed ? count : count - 1); i++) {
 			const next = ((i + 1) % count) * m;
 			for (let j = 0; j < m - 1; j++) {
 				const a = i * m + j;
@@ -536,23 +665,82 @@ export function buildRaceTrack(name) {
 		}
 	}
 
-	const s0 = at(nearestIndex(def.start[0], def.start[1]));
+	// Guardrails along each side where the ground a few metres past the road edge sits more than
+	// `rails.drop` above or below the road: the cliffs and banks between the stacked legs of a
+	// mountain pass. Each stretch grows 8 m both ways, gaps under 20 m close and stretches under
+	// 15 m go, so the rails run in whole lengths. Open tracks only: a stretch does not wrap.
+	const rails = [];
+	if (def.rails) {
+		const probes = [
+			verge + 2,
+			verge + def.shoulder / 2,
+			verge + def.shoulder + 4,
+		];
+		const offset = half + 0.6;
+		for (const side of [-1, 1]) {
+			const need = centerline.map((c) =>
+				probes.some(
+					(d) =>
+						Math.abs(
+							groundAt(c.x + c.tz * side * d, c.z - c.tx * side * d) - c.y,
+						) > def.rails.drop,
+				),
+			);
+			const grown = need.map((_, i) => {
+				for (let k = Math.max(0, i - 8); k <= Math.min(count - 1, i + 8); k++) {
+					if (need[k]) return true;
+				}
+				return false;
+			});
+			let runs = [];
+			for (let i = 0; i < count; i++) {
+				// Not round the inside of a hairpin, where the rail line would cross itself
+				if (!grown[i] || reachInside(i, side) < offset + 1) continue;
+				const last = runs[runs.length - 1];
+				if (last && i - last[1] < 20) last[1] = i;
+				else runs.push([i, i]);
+			}
+			runs = runs.filter(([a, b]) => b - a >= 15);
+			for (const [a, b] of runs) {
+				const points = [];
+				for (let i = a; i <= b; i += 2) {
+					const c = centerline[Math.min(i, b)];
+					points.push(
+						c.x + c.tz * side * offset,
+						c.y,
+						c.z - c.tx * side * offset,
+					);
+				}
+				rails.push({ side, from: a, to: b, points });
+			}
+		}
+	}
+
+	const pose = (c) => ({
+		position: [c.x, c.y, c.z],
+		yaw: Math.atan2(c.tx, c.tz),
+		s: c.s,
+	});
+	const s0 = closed
+		? at(nearestIndex(def.start[0], def.start[1]))
+		: centerline[Math.round(def.run.start)];
 	return {
 		name,
 		title: def.title,
 		surface: def.surface,
 		width: def.width,
+		closed,
 		length,
 		centerline,
-		bumpSection: { from: bumpStart, to: bumpEnd },
+		bumpSection: hasBumps ? { from: bumpStart, to: bumpEnd } : null,
 		field: { heights, countX, countZ, cell, origin: [x0, z0] },
 		road: roadMesh,
 		bumps,
-		start: {
-			position: [s0.x, s0.y, s0.z],
-			yaw: Math.atan2(s0.tx, s0.tz),
-			s: s0.s,
-		},
+		rails,
+		start: pose(s0),
+		finish: closed
+			? null
+			: pose(centerline[count - 1 - Math.round(def.run.finish)]),
 		roadAt,
 		groundAt,
 	};
@@ -599,10 +787,46 @@ export function createRaceTrackBodies(b3, world, track) {
 		b3.b3DestroyHull(hull);
 		bumpBodies.push(body);
 	}
+	// Guardrails: a thin wall per 2 m of rail, from under the verge to 0.9 m above the road, its
+	// inner face on the rail line
+	let rails = null;
+	if (track.rails.length) {
+		rails = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
+		const railDef = b3.b3DefaultShapeDef();
+		railDef.filter = { ...railDef.filter, categoryBits: railCategory };
+		// Slippery, so a car that meets a rail at an angle slides along it rather than stopping dead
+		railDef.baseMaterial = { ...railDef.baseMaterial, friction: 0.1 };
+		for (const rail of track.rails) {
+			const p = rail.points;
+			for (let i = 0; i + 5 < p.length; i += 3) {
+				// Outward, away from the road: the left normal (dz, -dx) on the left side (+1)
+				const dx = p[i + 3] - p[i];
+				const dz = p[i + 5] - p[i + 2];
+				const len = Math.hypot(dx, dz);
+				if (len < 1e-3) continue;
+				const ox = ((rail.side * dz) / len) * railThickness;
+				const oz = ((-rail.side * dx) / len) * railThickness;
+				const points = [];
+				for (const k of [i, i + 3]) {
+					for (const [x, z] of [
+						[p[k], p[k + 2]],
+						[p[k] + ox, p[k + 2] + oz],
+					]) {
+						points.push(x, p[k + 1] - 0.6, z, x, p[k + 1] + railHeight, z);
+					}
+				}
+				const hull = b3.b3CreateHull(points);
+				b3.b3CreateHullShape(rails, railDef, hull);
+				b3.b3DestroyHull(hull);
+			}
+		}
+	}
 	// Invisible walls just inside the edge of the field, behind the bank
 	const width = (countX - 1) * cell;
 	const depth = (countZ - 1) * cell;
-	const top = Math.max(...heights) + 20;
+	let top = 0;
+	for (const h of heights) top = Math.max(top, h);
+	top += 20;
 	const walls = [];
 	for (const [cx, cz, hx, hz] of [
 		[origin[0] + 5, origin[1] + depth / 2, 1, depth / 2],
@@ -616,5 +840,5 @@ export function createRaceTrackBodies(b3, world, track) {
 		b3.b3CreateBoxShape(wall, b3.b3DefaultShapeDef(), hx, top, hz);
 		walls.push(wall);
 	}
-	return { ground, road, bumpBodies, walls, field, mesh };
+	return { ground, road, bumpBodies, rails, walls, field, mesh };
 }

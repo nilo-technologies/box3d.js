@@ -44,6 +44,8 @@ const terrains: WheeledVehicleTerrain[] = [
 	'offroad',
 	'circuit',
 	'stage',
+	'downhill',
+	'uphill',
 ];
 
 /**
@@ -252,6 +254,8 @@ export function addShowcase(host: ShowcaseHost): void {
 			'Off-road area': 'offroad',
 			'Race circuit': 'circuit',
 			'Off-road stage': 'stage',
+			Downhill: 'downhill',
+			Uphill: 'uphill',
 		})
 		.name('terrain (reloads)')
 		.onChange(() => {
