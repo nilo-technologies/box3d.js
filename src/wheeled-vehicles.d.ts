@@ -18,28 +18,17 @@ export type WheeledVehiclePresetName =
 	| 'rwd'
 	| 'awd'
 	| 'offroad'
-	| WheeledVehicleMatrixPresetName
-	| 'touge';
+	| WheeledVehicleMatrixPresetName;
 
 export interface WheeledVehiclePreset {
 	title: string;
 	/** Half extents of the chassis collision box (m) */
 	halfExtents: b3Vec3;
-	/** Where a matrix preset sits in the matrix. Absent on the four original presets and touge. */
+	/** Where a matrix preset sits in the matrix. Absent on the four original presets. */
 	matrix?: {
 		car: WheeledVehicleCarName;
 		realism: WheeledVehicleRealism;
 		drive: WheeledVehicleDrive;
-	};
-	/**
-	 * A preset outside the matrix built from the same layers (touge): its car (`tougeCar`), realism
-	 * level and drivetrain, and the archetype whose targets vehicle-metrics.mjs checks it against
-	 */
-	layers?: {
-		car: 'touge';
-		realism: WheeledVehicleRealism;
-		drive: WheeledVehicleDrive;
-		archetype: 'sports' | 'rally' | 'super' | 'hatch';
 	};
 	/** Tunes a b3DefaultWheeledVehicleDef() in place and returns it */
 	apply(def: b3WheeledVehicleDef): b3WheeledVehicleDef;
@@ -199,11 +188,6 @@ export interface WheeledVehicleTurboType {
 }
 
 export const wheeledVehicleCars: Record<WheeledVehicleCarName, WheeledVehicleCar>;
-/**
- * The car layer of the `touge` preset: a 300 hp coupe for mountain passes, built as one preset
- * (RWD, 50% realistic) outside the matrix
- */
-export const tougeCar: WheeledVehicleCar;
 export const drivetrainLayers: Record<WheeledVehicleDrive, WheeledVehicleDrivetrainLayer>;
 export const realismLevels: Record<WheeledVehicleRealism, WheeledVehicleRealismLevel>;
 export const turboTypes: Record<WheeledVehicleTurboName, WheeledVehicleTurboType>;

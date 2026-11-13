@@ -4,7 +4,7 @@
 //   node examples/scripts/vehicle-laps.mjs --track circuit --preset sports-50-rwd
 //   node examples/scripts/vehicle-laps.mjs --track stage --car rally
 //   node examples/scripts/vehicle-laps.mjs --all            every matrix preset on both tracks
-//   node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset touge
+//   node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset sports-50-rwd
 //   add --keys to drive with keys instead, --pace 0.85 for the share of the grip it corners at,
 //   --json for machine readable output
 //

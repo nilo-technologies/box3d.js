@@ -1,17 +1,13 @@
 // Preset picker for the vehicle showcase: car, realism, drivetrain and turbo dropdowns that swap
 // the car in place, hotkeys for the same, a terrain switch, and a button that copies the live
-// settings as JSON (including anything changed in the Vehicle folder). Most cars have a turbo by
-// default (carTurbos), so the showcase plays the turbo whistle, blow-off and stutter. Next to the
-// three matrix cars the picker offers the touge coupe, a single preset whose realism level and
-// drivetrain are fixed.
+// settings as JSON (including anything changed in the Vehicle folder). Each car has a turbo by
+// default (carTurbos), so the showcase plays the turbo whistle, blow-off and stutter.
 
 import type { Box3DModule, b3WheeledVehicleId } from 'box3d.js';
 import {
 	drivetrainLayers,
 	realismLevels,
-	tougeCar,
 	turboTypes,
-	type WheeledVehicleCar,
 	type WheeledVehicleCarName,
 	type WheeledVehicleDrive,
 	type WheeledVehiclePresetName,
@@ -52,38 +48,23 @@ const terrains: WheeledVehicleTerrain[] = [
 	'uphill',
 ];
 
-/** A car in the picker: a matrix car, or the touge coupe (one preset) */
-export type ShowcaseCar = WheeledVehicleCarName | 'touge';
-
-export const showcaseCars: Record<ShowcaseCar, WheeledVehicleCar> = {
-	...wheeledVehicleCars,
-	touge: tougeCar,
-};
-
-/** The picker's car for a preset (the sports car for the four original presets) */
-export function showcaseCarOf(name: WheeledVehiclePresetName): ShowcaseCar {
-	const preset = wheeledVehiclePresets[name];
-	return preset.matrix?.car ?? preset.layers?.car ?? 'sports';
-}
-
 /**
  * The turbo each car gets unless another is picked, so the showcase plays the turbo sound. All
- * 45 presets pass vehicle-metrics.mjs with these (--car <car> --turbo <type>). The touge coupe's
- * 300 hp comes without a turbo, for an instant throttle out of the hairpins.
+ * 45 presets pass vehicle-metrics.mjs with these (--car <car> --turbo <type>).
  */
-export const carTurbos: Record<ShowcaseCar, WheeledVehicleTurboName> = {
-	sports: 'twinScroll',
-	rally: 'antiLag',
-	super: 'parallel',
-	touge: 'none',
-};
+export const carTurbos: Record<WheeledVehicleCarName, WheeledVehicleTurboName> =
+	{
+		sports: 'twinScroll',
+		rally: 'antiLag',
+		super: 'parallel',
+	};
 
 /** 'car' follows the car (carTurbos), anything else is that turbo type on every car */
 export type ShowcaseTurbo = 'car' | WheeledVehicleTurboName;
 
 export function showcaseTurbo(
 	choice: ShowcaseTurbo,
-	car: ShowcaseCar,
+	car: WheeledVehicleCarName,
 ): WheeledVehicleTurboName {
 	return choice === 'car' ? carTurbos[car] : choice;
 }
@@ -100,12 +81,11 @@ export function showcaseStart(): {
 	const params = new URLSearchParams(location.search);
 	const preset = params.get('preset') as WheeledVehiclePresetName | null;
 	const turbo = params.get('turbo') as WheeledVehicleTurboName | null;
-	const known =
-		preset &&
-		(wheeledVehiclePresets[preset]?.matrix ||
-			wheeledVehiclePresets[preset]?.layers);
 	return {
-		preset: known ? preset : 'sports-50-rwd',
+		preset:
+			preset && wheeledVehiclePresets[preset]?.matrix
+				? preset
+				: 'sports-50-rwd',
 		terrain: terrains.find((t) => t === params.get('terrain')) ?? 'track',
 		turbo: turbo && turbo in turboTypes ? turbo : 'car',
 	};
@@ -200,14 +180,14 @@ export async function copyText(text: string): Promise<boolean> {
 
 export function addShowcase(host: ShowcaseHost): void {
 	const { gui, b3 } = host;
-	const start = wheeledVehiclePresets[host.current().name];
-	const matrix = start.matrix ??
-		start.layers ?? {
-			realism: 50 as WheeledVehicleRealism,
-			drive: 'rwd' as WheeledVehicleDrive,
-		};
+	const start = host.current().name;
+	const matrix = wheeledVehiclePresets[start].matrix ?? {
+		car: 'sports' as WheeledVehicleCarName,
+		realism: 50 as WheeledVehicleRealism,
+		drive: 'rwd' as WheeledVehicleDrive,
+	};
 	const params = {
-		car: showcaseCarOf(host.current().name),
+		car: matrix.car,
 		realism: matrix.realism,
 		drive: matrix.drive,
 		turbo: showcaseStart().turbo,
@@ -235,9 +215,9 @@ export function addShowcase(host: ShowcaseHost): void {
 		gui.$children.insertBefore(folder.domElement, vehicleFolder.domElement);
 	}
 
-	const carOptions: Record<string, ShowcaseCar> = {};
-	for (const [key, car] of Object.entries(showcaseCars)) {
-		carOptions[car.title] = key as ShowcaseCar;
+	const carOptions: Record<string, WheeledVehicleCarName> = {};
+	for (const [key, car] of Object.entries(wheeledVehicleCars)) {
+		carOptions[car.title] = key as WheeledVehicleCarName;
 	}
 	const realismOptions: Record<string, WheeledVehicleRealism> = {};
 	for (const realism of realismOrder) {
@@ -250,7 +230,7 @@ export function addShowcase(host: ShowcaseHost): void {
 
 	const carController = folder
 		.add(params, 'car', carOptions)
-		.name('car (1/2/3/4)')
+		.name('car (1/2/3)')
 		.onChange(apply);
 	const realismController = folder
 		.add(params, 'realism', realismOptions)
@@ -285,10 +265,7 @@ export function addShowcase(host: ShowcaseHost): void {
 	folder.add(params, 'copy').name('copy settings JSON');
 	folder.add(params, 'link').name('copy share link');
 
-	// The touge coupe is one preset: its realism level and drivetrain are fixed
-	const touge = wheeledVehiclePresets.touge.layers;
 	function presetName(): WheeledVehiclePresetName {
-		if (params.car === 'touge') return 'touge';
 		return wheeledVehiclePresetName(params.car, params.realism, params.drive);
 	}
 
@@ -302,28 +279,21 @@ export function addShowcase(host: ShowcaseHost): void {
 	}
 
 	function updateInfo(): void {
-		const car = showcaseCars[params.car];
+		const car = wheeledVehicleCars[params.car];
 		host.setInfo(
 			wheeledVehiclePresets[presetName()].title,
 			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.realism)}.` +
 				`<br>${turboTypes[showcaseTurbo(params.turbo, params.car)].title}.`,
-			'<br>1/2/3/4 sports, rally, supercar, touge coupe · [ ] less or more realistic · F/G/H front, rear, all wheel drive · Y turbo',
+			'<br>1/2/3 sports, rally, supercar · [ ] less or more realistic · F/G/H front, rear, all wheel drive · Y turbo',
 		);
 	}
 
 	function apply(): void {
 		// lil-gui hands option values back as given, but a stale string would build a bad name
 		params.realism = Number(params.realism) as WheeledVehicleRealism;
-		const fixed = params.car === 'touge' && touge;
-		if (fixed) {
-			params.realism = fixed.realism;
-			params.drive = fixed.drive;
-		}
-		realismController.enable(!fixed);
-		driveController.enable(!fixed);
 		host.swap(
 			presetName(),
-			showcaseCars[params.car].color,
+			wheeledVehicleCars[params.car].color,
 			showcaseTurbo(params.turbo, params.car),
 		);
 		for (const c of [
@@ -337,17 +307,15 @@ export function addShowcase(host: ShowcaseHost): void {
 		updateInfo();
 	}
 
-	const setCar = (car: ShowcaseCar) => () => {
+	const setCar = (car: WheeledVehicleCarName) => () => {
 		params.car = car;
 		apply();
 	};
 	const setDrive = (drive: WheeledVehicleDrive) => () => {
-		if (params.car === 'touge') return;
 		params.drive = drive;
 		apply();
 	};
 	const stepRealism = (delta: number) => () => {
-		if (params.car === 'touge') return;
 		const i = realismOrder.indexOf(params.realism);
 		const next = realismOrder[Math.min(Math.max(i + delta, 0), 4)];
 		if (next === params.realism) return;
@@ -357,7 +325,6 @@ export function addShowcase(host: ShowcaseHost): void {
 	host.onPress.set('Digit1', setCar('sports'));
 	host.onPress.set('Digit2', setCar('rally'));
 	host.onPress.set('Digit3', setCar('super'));
-	host.onPress.set('Digit4', setCar('touge'));
 	// [ moves toward arcade, ] toward realistic
 	host.onPress.set('BracketLeft', stepRealism(1));
 	host.onPress.set('BracketRight', stepRealism(-1));
@@ -372,10 +339,6 @@ export function addShowcase(host: ShowcaseHost): void {
 		apply();
 	});
 
-	if (params.car === 'touge') {
-		realismController.disable();
-		driveController.disable();
-	}
 	updateUrl();
 	updateInfo();
 }

@@ -25,7 +25,6 @@ export const carEngines: Record<
 	sports: { cylinders: 6, voice: 'inline6' },
 	rally: { cylinders: 4, voice: 'boxer4' },
 	super: { cylinders: 8, voice: 'flatplaneV8' },
-	touge: { cylinders: 6, voice: 'inline6' },
 };
 
 const voiceOptions: Record<string, EngineVoiceChoice> = {

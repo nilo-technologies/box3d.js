@@ -1509,11 +1509,11 @@ function meshRestOffset( b3 )
 }
 
 // Vehicle controller: ride height, acceleration, braking, turning, slope hold,
-// determinism, live setters, the presets in box3d.js/wheeled-vehicles (the four originals, the 45 car matrix and the touge coupe),
+// determinism, live setters, the presets in box3d.js/wheeled-vehicles (the four originals and the 45 car matrix),
 // the preset layers, and a 50 car perf check.
 async function vehicleScenarios( b3 )
 {
-	const { wheeledVehiclePresets, createPresetWheeledVehicleDef, realismLevels, wheeledVehicleCars, tougeCar, drivetrainLayers, buildWheeledVehiclePreset } =
+	const { wheeledVehiclePresets, createPresetWheeledVehicleDef, realismLevels, wheeledVehicleCars, drivetrainLayers, buildWheeledVehiclePreset } =
 		await import( '../dist/wheeled-vehicles.mjs' );
 	const dt = 1 / 60;
 
@@ -1816,24 +1816,7 @@ async function vehicleScenarios( b3 )
 			for ( const key of rising ) assert.ok( b[ key ] >= a[ key ], `realism ${order[ i ]}: ${key} does not fall` );
 			assert.ok( b.driftGripScale <= a.driftGripScale, `realism ${order[ i ]}: drift grip does not rise` );
 		}
-		assert.equal( Object.keys( wheeledVehiclePresets ).length, 4 + 45 + 1, '4 original presets, 45 matrix presets and the touge coupe' );
-		// The touge coupe is the touge car through the RWD and 50% layers
-		{
-			const touge = createPresetWheeledVehicleDef( b3, 'touge' );
-			const { realism, drive } = wheeledVehiclePresets.touge.layers;
-			assert.equal( touge.chassis.mass, tougeCar.mass, 'touge: car mass' );
-			assert.deepEqual( touge.drivetrain.differentials.slice( 0, touge.drivetrain.differentialCount ).flatMap( ( d ) => [ d.leftWheel, d.rightWheel ] ), drive === 'rwd' ? [ 2, 3 ] : [ 0, 1, 2, 3 ], 'touge: drives the rear wheels' );
-			assert.ok( Math.abs( touge.wheels[ 0 ].tire.lateralPeakFriction / tougeCar.tire.latPeak - realismLevels[ realism ].tireGrip ) < 1e-5, 'touge: its realism level scales the grip' );
-			// 300 hp: the curve is linear from the peak torque down to maxRpmTorqueScale of it at the limiter
-			const e = touge.engine;
-			let peak = 0;
-			for ( let rpm = e.peakTorqueRpm; rpm <= e.maxRpm; rpm += 10 )
-			{
-				const torque = e.maxTorque * ( 1 - ( 1 - e.maxRpmTorqueScale ) * ( rpm - e.peakTorqueRpm ) / ( e.maxRpm - e.peakTorqueRpm ) );
-				peak = Math.max( peak, torque * rpm * Math.PI / 30 );
-			}
-			assert.ok( Math.abs( peak / 745.7 - 300 ) < 3, `touge: 300 hp (${( peak / 745.7 ).toFixed( 0 )})` );
-		}
+		assert.equal( Object.keys( wheeledVehiclePresets ).length, 4 + 45, '4 original presets and 45 matrix presets' );
 		for ( const car of Object.keys( wheeledVehicleCars ) )
 		{
 			for ( const drive of Object.keys( drivetrainLayers ) )
@@ -1914,7 +1897,7 @@ async function vehicleScenarios( b3 )
 		}
 
 		// Downhill and uphill: a point to point mountain pass, run down and up. The road mesh never folds over
-		// on the road itself, the guardrails are walls the wheels skip, and the touge coupe makes
+		// on the road itself, the guardrails are walls the wheels skip, and the 50% RWD sports car makes
 		// it from the start line to the finish line both ways without flipping.
 		const { railCategory, wheelsIgnoreRails } = await import( '../examples/src/vehicle-tracks.js' );
 		for ( const name of [ 'downhill', 'uphill' ] )
@@ -1937,11 +1920,11 @@ async function vehicleScenarios( b3 )
 			}
 			assert.equal( folds, 0, `${name}: no road triangle faces down` );
 			assert.ok( line.length > 5000, `${name}: centreline sampled every metre` );
-			const def = wheelsIgnoreRails( createPresetWheeledVehicleDef( b3, 'touge' ) );
+			const def = wheelsIgnoreRails( createPresetWheeledVehicleDef( b3, 'sports-50-rwd' ) );
 			assert.equal( def.chassis.castFilter.maskBits & railCategory, 0n, `${name}: the wheel casts skip the rails` );
-			const run = driveLap( name, wheeledVehiclePresets.touge, { b3 } );
-			assert.ok( run.completed, `${name}: the touge coupe reaches the finish (${Math.round( run.progress * 100 )}%)` );
-			assert.ok( run.minUp > 0.3, `${name}: the touge coupe does not flip (upright ${run.minUp.toFixed( 2 )})` );
+			const run = driveLap( name, wheeledVehiclePresets[ 'sports-50-rwd' ], { b3 } );
+			assert.ok( run.completed, `${name}: the sports car reaches the finish (${Math.round( run.progress * 100 )}%)` );
+			assert.ok( run.minUp > 0.3, `${name}: the sports car does not flip (upright ${run.minUp.toFixed( 2 )})` );
 			results.laps[ name ] = run.lapTime;
 		}
 	}
@@ -2238,7 +2221,7 @@ async function check( label, importPath, decompositionOptions )
 	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
 		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s, ` +
 		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s, ` +
-		`touge downhill ${vehicle.laps[ 'downhill' ].toFixed( 1 )}s, uphill ${vehicle.laps[ 'uphill' ].toFixed( 1 )}s`;
+		`sports-50-rwd downhill ${vehicle.laps[ 'downhill' ].toFixed( 1 )}s, uphill ${vehicle.laps[ 'uphill' ].toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );

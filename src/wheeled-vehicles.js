@@ -1,7 +1,6 @@
-// Vehicle presets for box3d.js: the four original cars, a 45 car matrix (sports, rally,
-// super x realism 100/75/50/25/0 x fwd/rwd/awd) and a 300 hp touge coupe, built in layers: car,
-// then drivetrain, then realism level, then an optional turbo. Each preset tunes a
-// b3DefaultWheeledVehicleDef() in place.
+// Vehicle presets for box3d.js: the four original cars and a 45 car matrix (sports, rally,
+// super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers: car, then drivetrain, then
+// realism level, then an optional turbo. Each preset tunes a b3DefaultWheeledVehicleDef() in place.
 //
 //   import { createPresetWheeledVehicleDef, wheeledVehiclePresets } from 'box3d.js/wheeled-vehicles';
 //   const [hx, hy, hz] = wheeledVehiclePresets['rally-50-awd'].halfExtents; // chassis box
@@ -851,98 +850,14 @@ export function applyTurbo(def, type) {
 	return def;
 }
 
-function applyLayers(def, car, realism, drive, turbo) {
-	applyCar(def, car);
-	drivetrainLayers[drive].apply(def, car);
+/** Tunes a b3DefaultWheeledVehicleDef() in place: car, then drivetrain, then realism, then turbo */
+export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'none') {
+	applyCar(def, wheeledVehicleCars[car]);
+	drivetrainLayers[drive].apply(def, wheeledVehicleCars[car]);
 	applyRealism(def, realismLevels[realism]);
 	if (turbo !== 'none') applyTurbo(def, turbo);
 	return def;
 }
-
-/** Tunes a b3DefaultWheeledVehicleDef() in place: car, then drivetrain, then realism, then turbo */
-export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'none') {
-	return applyLayers(def, wheeledVehicleCars[car], realism, drive, turbo);
-}
-
-/**
- * A 300 hp touge coupe for mountain passes such as the downhill and uphill tracks in the examples: one preset
- * (`touge`, RWD at 50% realism) built from its own car layer with the shared drivetrain and realism
- * layers, outside the matrix. Next to the sports car it is lighter, revs higher and is geared
- * short for hairpin exits, with more lock for the tightest hairpins (it turns about half a metre
- * tighter at hairpin speeds) and more of the braking on the front for long downhill stops.
- *
- * On the mountain pass the run time is set by cornering grip: 70 kg less, or a flatter torque curve at the same
- * 300 hp, moved a keyboard run by under a second, while tires 7% stickier than the sports car's
- * (semi-slick road tires) took about 9 s off each direction.
- */
-export const tougeCar = {
-	title: 'Touge coupe',
-	blurb:
-		'Front engine coupe for mountain passes: 1250 kg, 300 hp at 7350 rpm, semi-slick tires, short gears, extra lock.',
-	color: 0xf2f2ee,
-	halfExtents: [0.7, 0.28, 2.08],
-	mass: 1250,
-	comHeight: 0.1,
-	comForward: 0.05,
-	layout: [0.78, -0.02, 1.26, -1.24],
-	wheelRadius: 0.32,
-	wheelInertia: 0.95,
-	front: { width: 0.235, brake: 2250, frequency: 1.5 },
-	// The sports car's balance: the rear grips as hard as the front but peaks sooner and holds it
-	rear: {
-		width: 0.255,
-		brake: 750,
-		frequency: 1.65,
-		tire: { latPeakAngle: 5.5, latSlide: 1.18 },
-	},
-	handbrake: 2300,
-	suspension: {
-		minLength: 0.15,
-		maxLength: 0.38,
-		compressionDamping: 0.3,
-		reboundDamping: 0.75,
-	},
-	// Semi-slick road tires: the sports car's, 7% stickier
-	tire: {
-		peakSlip: 0.1,
-		longPeak: 1.23,
-		slideSlip: 0.4,
-		longSlide: 1.02,
-		latPeakAngle: 7,
-		latPeak: 1.18,
-		latSlideAngle: 18,
-		latSlide: 1.13,
-		rolling: 0.013,
-	},
-	// The curve is linear from the peak torque to 75% of it at the limiter, so the power peaks at
-	// 7350 rpm: 291 N·m there, 224 kW, 300 hp
-	engine: {
-		maxTorque: 364,
-		peakTorqueRpm: 5500,
-		idleRpm: 900,
-		maxRpm: 7800,
-		inertia: 0.18,
-	},
-	gears: [3.4, 2.25, 1.65, 1.3, 1.07, 0.85],
-	finalDrive: 4.1,
-	shiftUpRpm: 6750,
-	shiftDownRpm: 3600,
-	shiftTime: 0.1,
-	antiRoll: [18000, 14500],
-	steering: {
-		maxAngle: 38,
-		speedReference: 13,
-		steerSpeed: 4.5,
-		returnSpeed: 6.5,
-	},
-	downforce: 0.2,
-	drag: 0.36,
-	tractionControl: true,
-	abs: true,
-	drive: { frontLsd: 1.0, rearLsd: 1.4, centerLsd: 1.3, awdFront: 0.4, awdRearGrip: 0.985 },
-};
-
-const tougeLayers = { car: 'touge', realism: 50, drive: 'rwd', archetype: 'sports' };
 
 export function buildWheeledVehiclePreset(b3, car, realism, drive, turbo = 'none') {
 	return applyWheeledVehiclePreset(
@@ -981,13 +896,6 @@ export const wheeledVehiclePresets = {
 		apply: offroad,
 	},
 	...matrixPresets,
-	touge: {
-		title: 'Touge coupe, RWD, 50% realistic',
-		halfExtents: tougeCar.halfExtents,
-		layers: tougeLayers,
-		apply: (def) =>
-			applyLayers(def, tougeCar, tougeLayers.realism, tougeLayers.drive, 'none'),
-	},
 };
 
 // Steering limit: a driver aid applied to the input before it reaches the vehicle. A keyboard
