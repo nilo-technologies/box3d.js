@@ -13,6 +13,7 @@ The threaded builds stop corrupting their heap as their threads start, which abo
   - In headless Chrome, a fresh worker loading the threaded build, building 2,000 boxes on 16 workers and stepping them: 13 of 220 runs failed before (2 of 40 on `dist/`, 6 of 80 on the same build with function names, 5 of 100 on one with box3d's asserts and `SAFE_HEAP`), none of 150 after.
   - The smoke test starts 15 threads and checks that `_outMeta()` and `_retMeta()` stay as the main thread left them.
   - The same in V-HACD's own threads (`useThreads`): 1 of 60 runs aborted before, none of 60 after.
+  - An AddressSanitizer build of the threaded module, starting 15 threads in Node: in 4 of 8 runs before, a starting thread wrote a `std::string` into a freed or outgrown buffer the size of one of the two vectors (64, 128 or 256 rows); none of 8 after, and 2,000 boxes then stepped on 8 and 16 workers with no report.
 
 The threaded builds start 4 threads as they load, not 32, and the factory takes how many (`pthreadPoolSize`).
 
