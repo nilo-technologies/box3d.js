@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.0
+
+Number-only entry points for another Wasm module to call box3d directly, with no JavaScript in between: Nilo's game classes compiled to Wasm import them. Nothing changes for JavaScript callers.
+
+- `src/bindings.cpp` exports fourteen plain C functions beside the embind bindings, in every build (separate, inline, threaded): `_nilo_body_is_valid`, `_nilo_body_type`, `_nilo_body_set_type`, `_nilo_body_mass`, `_nilo_body_position`, `_nilo_body_rotation`, `_nilo_body_linear_velocity`, `_nilo_body_angular_velocity`, `_nilo_body_set_linear_velocity`, `_nilo_body_set_angular_velocity`, `_nilo_body_set_transform`, `_nilo_body_set_target_transform`, `_nilo_body_apply_linear_impulse_to_center` and `_nilo_body_apply_force_to_center`. A body is its three id fields (`index1`, `world0`, `generation`), a vector its components, and a getter returns one component per call. Floats are rounded as embind rounds a JavaScript number, and positions stay double precision in a large-world build, so they run the same box3d functions on the same values as the facade. They are on the module, typed in `dist/box3d.d.ts` as `_nilo_*` members, and not part of the facade.
+- The smoke test checks every one against its facade twin in every build, and steps a world driven through them against one driven through the facade, bit for bit.
+
 ## v0.5.0
 
 The engine now rights a car lying flat on its roof, and the sports, rally and supercar presets turn in harder at full lock and ride on softer, visible suspension. The `box3d.js/three` debug renderer can cull to a camera, and the physics performance check on pull requests compares against upstream box3d.js and times world queries.

@@ -2147,6 +2147,97 @@ function dynamicMover( b3 )
 	return { standY, stepY, rideZ: endZ - startZ };
 }
 
+// The number-only entry points another Wasm module imports (a game class
+// compiled to Wasm calls box3d with no JavaScript in between): each reads and
+// writes what its facade twin does, and a world driven through them steps to
+// the same bits as one driven through the facade.
+function numberOnlyEntryPoints( b3 )
+{
+	const id = ( body ) => [ body.index1, body.world0, body.generation ];
+	const scene = () =>
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -10, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const ground = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+		b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = [ 0.3, 4, -0.2 ];
+		const body = b3.b3CreateBody( world, bodyDef );
+		b3.b3CreateBoxShape( body, b3.b3DefaultShapeDef(), 0.5, 0.25, 0.75 );
+		return { world, body };
+	};
+
+	const { world, body } = scene();
+	const ids = id( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 1 );
+	assert.equal( b3._nilo_body_type( ...ids ), b3.b3Body_GetType( body ).value ?? b3.b3Body_GetType( body ) );
+	assert.equal( b3._nilo_body_mass( ...ids ), Math.fround( b3.b3Body_GetMass( body ) ) );
+	b3.b3Body_SetLinearVelocity( body, [ 1.1, 2.2, -3.3 ] );
+	b3.b3Body_SetAngularVelocity( body, [ -0.4, 0.5, 0.6 ] );
+	for ( let i = 0; i < 20; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const linear = b3.b3Body_GetLinearVelocity( [ 0, 0, 0 ], body );
+	const angular = b3.b3Body_GetAngularVelocity( [ 0, 0, 0 ], body );
+	const position = b3.b3Body_GetPosition( [ 0, 0, 0 ], body );
+	const rotation = b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], body );
+	for ( let axis = 0; axis < 3; axis++ )
+	{
+		assert.equal( b3._nilo_body_linear_velocity( ...ids, axis ), linear[ axis ], `linear velocity ${axis}` );
+		assert.equal( b3._nilo_body_angular_velocity( ...ids, axis ), angular[ axis ], `angular velocity ${axis}` );
+		assert.equal( b3._nilo_body_position( ...ids, axis ), position[ axis ], `position ${axis}` );
+	}
+	for ( let component = 0; component < 4; component++ )
+		assert.equal( b3._nilo_body_rotation( ...ids, component ), rotation[ component ], `rotation ${component}` );
+
+	// The same writes, one world through the facade and one through the entry points.
+	const drive = ( { world: w, body: b }, direct ) =>
+	{
+		const i = id( b );
+		const steps = [];
+		for ( let frame = 0; frame < 90; frame++ )
+		{
+			const t = frame / 60;
+			const v = [ Math.sin( t ) * 2.000001, 0.3333333, Math.cos( t ) / 3 ];
+			if ( direct )
+			{
+				b3._nilo_body_set_linear_velocity( ...i, ...v );
+				if ( frame % 7 === 0 ) b3._nilo_body_apply_linear_impulse_to_center( ...i, 0.1, 0.7, -0.05, 1 );
+				if ( frame % 11 === 0 ) b3._nilo_body_apply_force_to_center( ...i, 3, 0, 1.5, 1 );
+				if ( frame === 45 ) b3._nilo_body_set_transform( ...i, 1.25, 3.5, -2.75, 0, 0.3826834, 0, 0.9238795 );
+				if ( frame === 60 ) b3._nilo_body_set_angular_velocity( ...i, 0.1, 0.2, 0.3 );
+			}
+			else
+			{
+				b3.b3Body_SetLinearVelocity( b, v );
+				if ( frame % 7 === 0 ) b3.b3Body_ApplyLinearImpulseToCenter( b, [ 0.1, 0.7, -0.05 ], true );
+				if ( frame % 11 === 0 ) b3.b3Body_ApplyForceToCenter( b, [ 3, 0, 1.5 ], true );
+				if ( frame === 45 ) b3.b3Body_SetTransform( b, [ 1.25, 3.5, -2.75 ], [ 0, 0.3826834, 0, 0.9238795 ] );
+				if ( frame === 60 ) b3.b3Body_SetAngularVelocity( b, [ 0.1, 0.2, 0.3 ] );
+			}
+			b3.b3World_Step( w, 1 / 60, 4 );
+			steps.push( ...b3.b3Body_GetPosition( [ 0, 0, 0 ], b ), ...b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], b ) );
+		}
+		return steps;
+	};
+	const facade = drive( scene(), false );
+	const direct = drive( scene(), true );
+	assert.deepEqual( direct, facade, 'a world driven through the entry points steps as one driven through the facade' );
+
+	// Kinematic targets and type changes.
+	const kinematic = scene();
+	const k = id( kinematic.body );
+	b3._nilo_body_set_type( ...k, b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	assert.equal( b3._nilo_body_type( ...k ), b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	b3._nilo_body_set_target_transform( ...k, 2, 5, 0, 0, 0, 0, 1, 1 / 60, 1 );
+	b3.b3World_Step( kinematic.world, 1 / 60, 4 );
+	assert.ok( Math.abs( b3._nilo_body_position( ...k, 0 ) - 2 ) < 1e-4, 'a kinematic body reaches its target' );
+
+	b3.b3DestroyBody( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 0, 'a destroyed body is not valid' );
+	return { frames: facade.length / 7 };
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -2194,13 +2285,15 @@ async function check( label, importPath, decompositionOptions )
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
 
 	const mover = dynamicMover( b3 );
+	const direct = numberOnlyEntryPoints( b3 );
 
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
-		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform` );
+		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
+		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }
 
 console.log( 'box3d.js smoke test' );
@@ -2214,5 +2307,11 @@ for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 
 await check( 'separate-wasm', '../dist/box3d.mjs' );
 await check( 'inline       ', '../dist/box3d.inline.mjs' );
 await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
+// The threaded single-file build ships the same entry points: published games step on threads.
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.inline.mjs' );
+	const direct = numberOnlyEntryPoints( await Box3D() );
+	console.log( `  mt-inline    : number-only entry points stepped ${direct.frames} frames as the facade did` );
+}
 console.log( 'OK' );
 process.exit( 0 ); // the MT build's pthread pool keeps Node alive
