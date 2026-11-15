@@ -16,10 +16,11 @@ const isolated = self.crossOriginIsolated === true;
 const factory = isolated
 	? (await import('box3d.js/mt-inline')).default
 	: (await import('box3d.js/inline')).default;
-const b3: Box3DModule = await factory();
 
 const hardware = navigator.hardwareConcurrency ?? 4;
 const maxWorkers = Math.min(hardware, 16);
+// The multithreaded build starts a thread for each worker past the calling thread.
+const b3: Box3DModule = await factory({ pthreadPoolSize: maxWorkers - 1 });
 
 const app = createHarness({ camera: [0, 14, 20], target: [0, 5, 0] });
 

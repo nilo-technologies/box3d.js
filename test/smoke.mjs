@@ -2241,8 +2241,8 @@ function numberOnlyEntryPoints( b3 )
 // Every pthread runs the embind bindings block again when it first starts, and a
 // world's threads start together. They must leave the main thread's binding metadata
 // (_outMeta, _retMeta) alone: appending to it from several threads at once corrupted
-// the heap and aborted the module now and then (0.6.0 and earlier). Destroying the
-// world joins its threads, so every one of them has run the block by then.
+// the heap and aborted the module now and then (before 0.6.0). Destroying the world
+// joins its threads, so every one of them has run the block by then.
 function threadStarts( b3, workerCount )
 {
 	const rows = () => [ b3._outMeta().length, b3._retMeta().length ];
@@ -2250,16 +2250,49 @@ function threadStarts( b3, workerCount )
 	const def = b3.b3DefaultWorldDef();
 	def.workerCount = workerCount;
 	const world = b3.b3CreateWorld( def );
+	assert.equal( b3.b3World_GetWorkerCount( world ), workerCount, 'the world got the workers it asked for' );
 	b3.b3World_Step( world, 1 / 60, 4 );
 	b3.b3DestroyWorld( world );
 	assert.deepEqual( rows(), loaded, 'threads that start leave the binding metadata as the main thread recorded it' );
 	return { threads: workerCount - 1, outRows: loaded[ 0 ], retRows: loaded[ 1 ] };
 }
 
-async function check( label, importPath, decompositionOptions )
+// The threaded builds' pool (pthreadPoolSize, 4 by default). A world takes its threads
+// synchronously and joins them when destroyed, so it gets the idle pool threads plus
+// the calling one, never a thread that starts only once the caller yields. Async
+// decompositions start threads on demand when the pool has none idle.
+async function threadPool( Box3D )
+{
+	const counts = [];
+	for ( const options of [ {}, { pthreadPoolSize: 0 }, { pthreadPoolSize: 2 } ] )
+	{
+		const b3 = await Box3D( options );
+		const def = b3.b3DefaultWorldDef();
+		def.workerCount = 16;
+		const first = b3.b3CreateWorld( def );
+		const second = b3.b3CreateWorld( def ); // the first holds every idle thread
+		counts.push( [ b3.b3World_GetWorkerCount( first ), b3.b3World_GetWorkerCount( second ) ] );
+		b3.b3World_Step( first, 1 / 60, 4 );
+		b3.b3DestroyWorld( second );
+		b3.b3DestroyWorld( first );
+		const third = b3.b3CreateWorld( def ); // the first's threads are back in the pool
+		counts.push( [ b3.b3World_GetWorkerCount( third ) ] );
+		b3.b3DestroyWorld( third );
+	}
+	assert.deepEqual( counts, [ [ 5, 1 ], [ 5 ], [ 1, 1 ], [ 1 ], [ 3, 1 ], [ 3 ] ], 'a world steps on the idle pool threads plus the calling one' );
+
+	const b3 = await Box3D( { pthreadPoolSize: 0 } );
+	const { positions, indices } = torusMesh();
+	const options = { maxConvexHulls: 4, resolution: 10000, cache: false };
+	const pieces = await Promise.all( [ 1, 2, 3 ].map( () => b3.b3ComputeConvexDecompositionAsync( positions, indices, options ) ) );
+	assert.ok( pieces.every( ( p ) => p.offsets.length > 2 ), 'async decompositions on an empty pool start threads of their own' );
+	return { defaultWorkers: counts[ 0 ][ 0 ], decompositions: pieces.length };
+}
+
+async function check( label, importPath, decompositionOptions, moduleOptions )
 {
 	const { default: Box3D } = await import( importPath );
-	const b3 = await Box3D();
+	const b3 = await Box3D( moduleOptions );
 
 	const v = b3.b3GetVersion();
 	const { startY, endY } = fallingBox( b3 );
@@ -2324,7 +2357,8 @@ for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 
 }
 await check( 'separate-wasm', '../dist/box3d.mjs' );
 await check( 'inline       ', '../dist/box3d.inline.mjs' );
-await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
+// The blocking decomposition uses V-HACD's 8 threads only when the pool has them idle.
+await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true }, { pthreadPoolSize: 9 } );
 // The threaded single-file build ships the same entry points: published games step on threads.
 {
 	const { default: Box3D } = await import( '../dist/box3d.mt.inline.mjs' );
@@ -2333,8 +2367,10 @@ await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
 }
 {
 	const { default: Box3D } = await import( '../dist/box3d.mt.mjs' );
-	const started = threadStarts( await Box3D(), 16 );
+	const started = threadStarts( await Box3D( { pthreadPoolSize: 15 } ), 16 );
 	console.log( `  mt threads   : ${started.threads} threads started and joined; _outMeta() still ${started.outRows} rows, _retMeta() ${started.retRows}` );
+	const pool = await threadPool( Box3D );
+	console.log( `  mt pool      : a world asking for 16 workers got ${pool.defaultWorkers} on the default pool; ${pool.decompositions} async decompositions on an empty one` );
 }
 console.log( 'OK' );
 process.exit( 0 ); // the MT build's pthread pool keeps Node alive

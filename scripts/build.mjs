@@ -23,10 +23,14 @@ import { dirname, join, resolve } from 'node:path';
 const root = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const debug = process.argv.includes( '--debug' );
 
-// box3d clamps workerCount to [1, B3_MAX_WORKERS] (=32). The Emscripten pthread
-// pool must be >= the max threads the scheduler can spawn or it deadlocks
-// (the well-documented JoltPhysics.js gotcha), so size the pool to 32.
-const PTHREAD_POOL_SIZE = 32;
+// Threads the threaded builds start as they load, each a Web Worker running its own
+// instance of the module (about 8 MB resident each). A world, recording player or
+// blocking V-HACD run must take its threads from this pool, since a thread made on
+// demand starts only once the calling thread yields; the facade (src/facade.js) holds
+// them to the idle pool threads. 4 by default: a world on 4 workers and one async
+// convex decomposition; callers pick their own with the factory's `pthreadPoolSize`
+// option. The expression is emitted into the module's JS as is.
+const PTHREAD_POOL_SIZE = "Math.max(0,Math.floor(Module['pthreadPoolSize']??4))";
 const MAXIMUM_MEMORY = 2147483648; // 2 GiB — required with growth + shared memory
 
 // Pin the Emscripten toolchain. The ESM post-processing in validateESModule()
@@ -629,6 +633,17 @@ let tsd = readFileSync( tsdPath, 'utf8' )
 		`${facadeTypes}\nexport type Box3DModule = WasmModule & EmbindModule & Box3DFacade;`,
 	);
 if ( !tsd.includes( '& Box3DFacade' ) ) throw new Error( 'tsd: Box3DModule alias not found — did --emit-tsd output change?' );
+const factoryLine = 'export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;';
+if ( !tsd.includes( factoryLine ) ) throw new Error( 'tsd: Box3DFactory declaration not found — did --emit-tsd output change?' );
+tsd = tsd.replace( factoryLine, `/** Options for the factory, passed on to Emscripten's module object. */
+export interface Box3DOptions {
+  /** Threaded builds only: the threads started as the module loads (4 by default). A world or
+   * recording player steps on at most one worker per idle thread, plus the calling thread, and
+   * a blocking decomposition uses V-HACD's own threads only when ${VHACD_THREADS} are idle. */
+  pthreadPoolSize?: number;
+  [option: string]: unknown;
+}
+export default function Box3DFactory (options?: Box3DOptions): Promise<Box3DModule>;` );
 
 // val-returning functions emit as `... : any;`; retype the return from _retMeta
 // (declared at the binding site via the ret_function ": T" DSL). Keeps the params
@@ -706,11 +721,12 @@ writeFileSync( tsdPath, tsd );
 // browser). bindings.cpp stays the source of truth — these values come from it, via the
 // probe, on every build. Emitted to build/ (not dist/) so it is not published.
 const facadeSrc = readFileSync( join( root, 'src', 'facade.js' ), 'utf8' );
-if ( !facadeSrc.includes( '__B3_LAYOUT__' ) || !facadeSrc.includes( '__B3_OUT_META__' ) )
-	throw new Error( 'facade codegen: __B3_LAYOUT__/__B3_OUT_META__ token missing from src/facade.js' );
+if ( !facadeSrc.includes( '__B3_LAYOUT__' ) || !facadeSrc.includes( '__B3_OUT_META__' ) || !facadeSrc.includes( '__B3_VHACD_THREADS__' ) )
+	throw new Error( 'facade codegen: __B3_LAYOUT__/__B3_OUT_META__/__B3_VHACD_THREADS__ token missing from src/facade.js' );
 const facadeGen = facadeSrc
 	.replaceAll( '__B3_LAYOUT__', JSON.stringify( layoutMeta ) )
-	.replaceAll( '__B3_OUT_META__', JSON.stringify( outMeta ) );
+	.replaceAll( '__B3_OUT_META__', JSON.stringify( outMeta ) )
+	.replaceAll( '__B3_VHACD_THREADS__', String( VHACD_THREADS ) );
 const facadePost = 'build/facade.generated.js';
 writeFileSync( join( root, facadePost ), facadeGen );
 const post = [ '--post-js', facadePost ];

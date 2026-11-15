@@ -1866,4 +1866,12 @@ export interface Box3DFacade {
   b3WheeledVehicle_GetWheelLocalData(out: Float32Array | number[], wheeledVehicleId: b3WheeledVehicleId): number;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
-export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;
+/** Options for the factory, passed on to Emscripten's module object. */
+export interface Box3DOptions {
+  /** Threaded builds only: the threads started as the module loads (4 by default). A world or
+   * recording player steps on at most one worker per idle thread, plus the calling thread, and
+   * a blocking decomposition uses V-HACD's own threads only when 8 are idle. */
+  pthreadPoolSize?: number;
+  [option: string]: unknown;
+}
+export default function Box3DFactory (options?: Box3DOptions): Promise<Box3DModule>;
