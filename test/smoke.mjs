@@ -2238,6 +2238,24 @@ function numberOnlyEntryPoints( b3 )
 	return { frames: facade.length / 7 };
 }
 
+// Every pthread runs the embind bindings block again when it first starts, and a
+// world's threads start together. They must leave the main thread's binding metadata
+// (_outMeta, _retMeta) alone: appending to it from several threads at once corrupted
+// the heap and aborted the module now and then (0.6.0 and earlier). Destroying the
+// world joins its threads, so every one of them has run the block by then.
+function threadStarts( b3, workerCount )
+{
+	const rows = () => [ b3._outMeta().length, b3._retMeta().length ];
+	const loaded = rows();
+	const def = b3.b3DefaultWorldDef();
+	def.workerCount = workerCount;
+	const world = b3.b3CreateWorld( def );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	b3.b3DestroyWorld( world );
+	assert.deepEqual( rows(), loaded, 'threads that start leave the binding metadata as the main thread recorded it' );
+	return { threads: workerCount - 1, outRows: loaded[ 0 ], retRows: loaded[ 1 ] };
+}
+
 async function check( label, importPath, decompositionOptions )
 {
 	const { default: Box3D } = await import( importPath );
@@ -2312,6 +2330,11 @@ await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
 	const { default: Box3D } = await import( '../dist/box3d.mt.inline.mjs' );
 	const direct = numberOnlyEntryPoints( await Box3D() );
 	console.log( `  mt-inline    : number-only entry points stepped ${direct.frames} frames as the facade did` );
+}
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.mjs' );
+	const started = threadStarts( await Box3D(), 16 );
+	console.log( `  mt threads   : ${started.threads} threads started and joined; _outMeta() still ${started.outRows} rows, _retMeta() ${started.retRows}` );
 }
 console.log( 'OK' );
 process.exit( 0 ); // the MT build's pthread pool keeps Node alive

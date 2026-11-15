@@ -46,6 +46,7 @@
 
 #include <emscripten/bind.h>
 #include <emscripten/em_macros.h>
+#include <emscripten/threading.h>
 #include <emscripten/val.h>
 
 #include <box3d/box3d.h>
@@ -134,6 +135,20 @@ inline void writeAABB( uintptr_t out, b3AABB a )
 // (scripts/build.mjs reads the same _outMeta()). Adding/editing an out
 // getter needs no matching edit in facade.js or build.mjs — metadata carries it.
 
+// Whether this thread fills the metadata registries below. In the threaded builds
+// Emscripten runs EMSCRIPTEN_BINDINGS again on every pthread the first time it runs
+// (embind sets up its JS on each thread), so the block runs once per box3d worker
+// thread, and threads that start together run it at the same time. A pthread that
+// appended to a registry would race the others' appends, and two threads growing
+// one std::vector free each other's buffers: the heap corruption behind the
+// threaded builds' "memory access out of bounds" aborts up to 0.6.0. The
+// registries are the main thread's: only it records them, and only it reads
+// them back (_outMeta, _retMeta).
+inline bool recordsBindingMetadata()
+{
+	return emscripten_is_main_runtime_thread();
+}
+
 // One row per out-param getter, filled during EMSCRIPTEN_BINDINGS by out_function
 // and published by the _outMeta() getter. `method` is the public name (no "Into"),
 // `sizes` the float count of each out slot, `trailing` the count of forwarded input
@@ -213,6 +228,7 @@ void out_fn_core( const char* sig, Fn fn, Descs... )
 	while ( !method.empty() && method.back() == ' ' ) method.pop_back();
 	std::string intoSig = method + "Into" + ( paren ? paren : "()" );
 	emscripten::function( intoSig.c_str(), fn );
+	if ( !recordsBindingMetadata() ) return;
 	std::vector<int> szVec; DI::sizes( szVec );
 	std::vector<std::string> tsVec; DI::tsTypes( tsVec );
 	g_outRegistry.push_back( { method, szVec, tsVec, DI::trailing } );
@@ -250,7 +266,7 @@ void ret_function( const char* sig, Fn fn, Opts&&... opts )
 	const char* ret = colon + 1;
 	while ( *ret == ' ' ) ++ret; // "Float32Array"
 	emscripten::function( embSig.c_str(), fn, std::forward<Opts>( opts )... );
-	g_retRegistry.push_back( { method, std::string( ret ) } );
+	if ( recordsBindingMetadata() ) g_retRegistry.push_back( { method, std::string( ret ) } );
 }
 
 // Copy a POD std::vector into a JS-owned typed array. typed_memory_view aliases
