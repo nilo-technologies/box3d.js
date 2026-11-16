@@ -2147,10 +2147,152 @@ function dynamicMover( b3 )
 	return { standY, stepY, rideZ: endZ - startZ };
 }
 
-async function check( label, importPath, decompositionOptions )
+// The number-only entry points another Wasm module imports (a game class
+// compiled to Wasm calls box3d with no JavaScript in between): each reads and
+// writes what its facade twin does, and a world driven through them steps to
+// the same bits as one driven through the facade.
+function numberOnlyEntryPoints( b3 )
+{
+	const id = ( body ) => [ body.index1, body.world0, body.generation ];
+	const scene = () =>
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -10, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const ground = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+		b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = [ 0.3, 4, -0.2 ];
+		const body = b3.b3CreateBody( world, bodyDef );
+		b3.b3CreateBoxShape( body, b3.b3DefaultShapeDef(), 0.5, 0.25, 0.75 );
+		return { world, body };
+	};
+
+	const { world, body } = scene();
+	const ids = id( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 1 );
+	assert.equal( b3._nilo_body_type( ...ids ), b3.b3Body_GetType( body ).value ?? b3.b3Body_GetType( body ) );
+	assert.equal( b3._nilo_body_mass( ...ids ), Math.fround( b3.b3Body_GetMass( body ) ) );
+	b3.b3Body_SetLinearVelocity( body, [ 1.1, 2.2, -3.3 ] );
+	b3.b3Body_SetAngularVelocity( body, [ -0.4, 0.5, 0.6 ] );
+	for ( let i = 0; i < 20; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const linear = b3.b3Body_GetLinearVelocity( [ 0, 0, 0 ], body );
+	const angular = b3.b3Body_GetAngularVelocity( [ 0, 0, 0 ], body );
+	const position = b3.b3Body_GetPosition( [ 0, 0, 0 ], body );
+	const rotation = b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], body );
+	for ( let axis = 0; axis < 3; axis++ )
+	{
+		assert.equal( b3._nilo_body_linear_velocity( ...ids, axis ), linear[ axis ], `linear velocity ${axis}` );
+		assert.equal( b3._nilo_body_angular_velocity( ...ids, axis ), angular[ axis ], `angular velocity ${axis}` );
+		assert.equal( b3._nilo_body_position( ...ids, axis ), position[ axis ], `position ${axis}` );
+	}
+	for ( let component = 0; component < 4; component++ )
+		assert.equal( b3._nilo_body_rotation( ...ids, component ), rotation[ component ], `rotation ${component}` );
+
+	// The same writes, one world through the facade and one through the entry points.
+	const drive = ( { world: w, body: b }, direct ) =>
+	{
+		const i = id( b );
+		const steps = [];
+		for ( let frame = 0; frame < 90; frame++ )
+		{
+			const t = frame / 60;
+			const v = [ Math.sin( t ) * 2.000001, 0.3333333, Math.cos( t ) / 3 ];
+			if ( direct )
+			{
+				b3._nilo_body_set_linear_velocity( ...i, ...v );
+				if ( frame % 7 === 0 ) b3._nilo_body_apply_linear_impulse_to_center( ...i, 0.1, 0.7, -0.05, 1 );
+				if ( frame % 11 === 0 ) b3._nilo_body_apply_force_to_center( ...i, 3, 0, 1.5, 1 );
+				if ( frame === 45 ) b3._nilo_body_set_transform( ...i, 1.25, 3.5, -2.75, 0, 0.3826834, 0, 0.9238795 );
+				if ( frame === 60 ) b3._nilo_body_set_angular_velocity( ...i, 0.1, 0.2, 0.3 );
+			}
+			else
+			{
+				b3.b3Body_SetLinearVelocity( b, v );
+				if ( frame % 7 === 0 ) b3.b3Body_ApplyLinearImpulseToCenter( b, [ 0.1, 0.7, -0.05 ], true );
+				if ( frame % 11 === 0 ) b3.b3Body_ApplyForceToCenter( b, [ 3, 0, 1.5 ], true );
+				if ( frame === 45 ) b3.b3Body_SetTransform( b, [ 1.25, 3.5, -2.75 ], [ 0, 0.3826834, 0, 0.9238795 ] );
+				if ( frame === 60 ) b3.b3Body_SetAngularVelocity( b, [ 0.1, 0.2, 0.3 ] );
+			}
+			b3.b3World_Step( w, 1 / 60, 4 );
+			steps.push( ...b3.b3Body_GetPosition( [ 0, 0, 0 ], b ), ...b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], b ) );
+		}
+		return steps;
+	};
+	const facade = drive( scene(), false );
+	const direct = drive( scene(), true );
+	assert.deepEqual( direct, facade, 'a world driven through the entry points steps as one driven through the facade' );
+
+	// Kinematic targets and type changes.
+	const kinematic = scene();
+	const k = id( kinematic.body );
+	b3._nilo_body_set_type( ...k, b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	assert.equal( b3._nilo_body_type( ...k ), b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	b3._nilo_body_set_target_transform( ...k, 2, 5, 0, 0, 0, 0, 1, 1 / 60, 1 );
+	b3.b3World_Step( kinematic.world, 1 / 60, 4 );
+	assert.ok( Math.abs( b3._nilo_body_position( ...k, 0 ) - 2 ) < 1e-4, 'a kinematic body reaches its target' );
+
+	b3.b3DestroyBody( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 0, 'a destroyed body is not valid' );
+	return { frames: facade.length / 7 };
+}
+
+// Every pthread runs the embind bindings block again when it first starts, and a
+// world's threads start together. They must leave the main thread's binding metadata
+// (_outMeta, _retMeta) alone: appending to it from several threads at once corrupted
+// the heap and aborted the module now and then (before 0.6.0). Destroying the world
+// joins its threads, so every one of them has run the block by then.
+function threadStarts( b3, workerCount )
+{
+	const rows = () => [ b3._outMeta().length, b3._retMeta().length ];
+	const loaded = rows();
+	const def = b3.b3DefaultWorldDef();
+	def.workerCount = workerCount;
+	const world = b3.b3CreateWorld( def );
+	assert.equal( b3.b3World_GetWorkerCount( world ), workerCount, 'the world got the workers it asked for' );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	b3.b3DestroyWorld( world );
+	assert.deepEqual( rows(), loaded, 'threads that start leave the binding metadata as the main thread recorded it' );
+	return { threads: workerCount - 1, outRows: loaded[ 0 ], retRows: loaded[ 1 ] };
+}
+
+// The threaded builds' pool (pthreadPoolSize, 4 by default). A world takes its threads
+// synchronously and joins them when destroyed, so it gets the idle pool threads plus
+// the calling one, never a thread that starts only once the caller yields. Async
+// decompositions start threads on demand when the pool has none idle.
+async function threadPool( Box3D )
+{
+	const counts = [];
+	for ( const options of [ {}, { pthreadPoolSize: 0 }, { pthreadPoolSize: 2 }, { pthreadPoolSize: Infinity } ] )
+	{
+		const b3 = await Box3D( options );
+		const def = b3.b3DefaultWorldDef();
+		def.workerCount = 16;
+		const first = b3.b3CreateWorld( def );
+		const second = b3.b3CreateWorld( def ); // the first holds every idle thread
+		counts.push( [ b3.b3World_GetWorkerCount( first ), b3.b3World_GetWorkerCount( second ) ] );
+		b3.b3World_Step( first, 1 / 60, 4 );
+		b3.b3DestroyWorld( second );
+		b3.b3DestroyWorld( first );
+		const third = b3.b3CreateWorld( def ); // the first's threads are back in the pool
+		counts.push( [ b3.b3World_GetWorkerCount( third ) ] );
+		b3.b3DestroyWorld( third );
+	}
+	assert.deepEqual( counts, [ [ 5, 1 ], [ 5 ], [ 1, 1 ], [ 1 ], [ 3, 1 ], [ 3 ], [ 5, 1 ], [ 5 ] ], 'a world steps on the idle pool threads plus the calling one, and a pool size that is not finite takes the default' );
+
+	const b3 = await Box3D( { pthreadPoolSize: 0 } );
+	const { positions, indices } = torusMesh();
+	const options = { maxConvexHulls: 4, resolution: 10000, cache: false };
+	const pieces = await Promise.all( [ 1, 2, 3 ].map( () => b3.b3ComputeConvexDecompositionAsync( positions, indices, options ) ) );
+	assert.ok( pieces.every( ( p ) => p.offsets.length > 2 ), 'async decompositions on an empty pool start threads of their own' );
+	return { defaultWorkers: counts[ 0 ][ 0 ], decompositions: pieces.length };
+}
+
+async function check( label, importPath, decompositionOptions, moduleOptions )
 {
 	const { default: Box3D } = await import( importPath );
-	const b3 = await Box3D();
+	const b3 = await Box3D( moduleOptions );
 
 	const v = b3.b3GetVersion();
 	const { startY, endY } = fallingBox( b3 );
@@ -2194,13 +2336,15 @@ async function check( label, importPath, decompositionOptions )
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
 
 	const mover = dynamicMover( b3 );
+	const direct = numberOnlyEntryPoints( b3 );
 
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
-		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform` );
+		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
+		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }
 
 console.log( 'box3d.js smoke test' );
@@ -2213,6 +2357,20 @@ for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 
 }
 await check( 'separate-wasm', '../dist/box3d.mjs' );
 await check( 'inline       ', '../dist/box3d.inline.mjs' );
-await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
+// The blocking decomposition uses V-HACD's 8 threads only when the pool has them idle.
+await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true }, { pthreadPoolSize: 9 } );
+// The threaded single-file build ships the same entry points: published games step on threads.
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.inline.mjs' );
+	const direct = numberOnlyEntryPoints( await Box3D() );
+	console.log( `  mt-inline    : number-only entry points stepped ${direct.frames} frames as the facade did` );
+}
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.mjs' );
+	const started = threadStarts( await Box3D( { pthreadPoolSize: 15 } ), 16 );
+	console.log( `  mt threads   : ${started.threads} threads started and joined; _outMeta() still ${started.outRows} rows, _retMeta() ${started.retRows}` );
+	const pool = await threadPool( Box3D );
+	console.log( `  mt pool      : a world asking for 16 workers got ${pool.defaultWorkers} on the default pool; ${pool.decompositions} async decompositions on an empty one` );
+}
 console.log( 'OK' );
 process.exit( 0 ); // the MT build's pthread pool keeps Node alive

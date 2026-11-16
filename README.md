@@ -1021,7 +1021,7 @@ const asyncShapes = await b3.b3CreateConvexDecompositionShapesAsync(
 b3.b3Body_Enable(asyncBody);
 ```
 
-In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stages on 8 worker threads. These come from the same 32-thread pool as box3d's world workers, so leave room for them. The blocking call spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
+In the multithreaded builds, the Promise variants run V-HACD on a thread of their own, and `useThreads: true` also runs its internal stages on 8 more threads. The Promise variants' threads start on demand when the pool has none idle. The blocking call needs all 8 idle in the pool (`pthreadPoolSize`) and runs without them otherwise; it also spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
 
 ```ts
 // Static bodies: put every piece into one compound shape instead.
@@ -1958,12 +1958,17 @@ Cross-Origin-Embedder-Policy: require-corp
 //   Cross-Origin-Embedder-Policy: require-corp
 const isolated = self.crossOriginIsolated === true;
 
-// Pick the right build at runtime; fall back gracefully when isolation is absent
-const factory = isolated
-    ? (await import('box3d.js/mt-inline')).default
-    : (await import('box3d.js/inline')).default;
+// The workers a world will step on, the calling thread counted.
+const hwThreads = navigator.hardwareConcurrency ?? 4;
+// At most 32, box3d's limit (B3_MAX_WORKERS): every worker past the first is a thread started as the build loads.
+const workerCount = isolated ? Math.min(32, Math.max(2, hwThreads - 1)) : 0;
 
-const b3: Box3DModule = await factory();
+// Pick the right build at runtime; fall back gracefully when isolation is absent.
+// The threaded build starts its threads as it loads (pthreadPoolSize, 4 by default):
+// one for each worker past the calling thread.
+const b3: Box3DModule = isolated
+    ? await (await import('box3d.js/mt-inline')).default({ pthreadPoolSize: workerCount - 1 })
+    : await (await import('box3d.js/inline')).default();
 ```
 
 ### World Setup
@@ -1972,10 +1977,10 @@ const b3: Box3DModule = await factory();
 const worldDef = b3.b3DefaultWorldDef();
 worldDef.gravity = [0, -10, 0];
 
-// Set workerCount to enable box3d's internal multi-threaded solver.
-// box3d clamps this to [1, 32] (B3_MAX_WORKERS). Leave at 0 for single-threaded.
-const hwThreads = navigator.hardwareConcurrency ?? 4;
-worldDef.workerCount = isolated ? Math.max(2, hwThreads - 1) : 0;
+// Set workerCount to enable box3d's internal multi-threaded solver. box3d clamps
+// it to [1, 32] (B3_MAX_WORKERS), and the threaded build to the pool's idle
+// threads plus the calling one. Leave at 0 for single-threaded.
+worldDef.workerCount = workerCount;
 
 const world = b3.b3CreateWorld(worldDef);
 ```
@@ -1989,6 +1994,10 @@ b3.b3World_Step(world, 1 / 60, 4);
 ```
 
 The simulation API is identical to the single-threaded build - only the import path and `workerCount` differ.
+
+### Threads
+
+The threaded build starts a pool of threads as it loads, each a Web Worker running its own instance of the module: 4 by default, or `pthreadPoolSize` in the factory's options. A world (and a recording player) takes one thread per worker past the calling thread, synchronously, and joins them when destroyed. A thread made on demand starts only once the calling thread returns to its event loop, so a world takes only idle pool threads: one asking for more workers steps on the idle threads plus the calling one. box3d steps a world to the same bits at any worker count, so this changes only its speed. `b3World_GetWorkerCount` reads what the world got.
 
 <table>
   <tr>

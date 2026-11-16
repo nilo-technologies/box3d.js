@@ -45,6 +45,8 @@
 #include <vector>
 
 #include <emscripten/bind.h>
+#include <emscripten/em_macros.h>
+#include <emscripten/threading.h>
 #include <emscripten/val.h>
 
 #include <box3d/box3d.h>
@@ -133,6 +135,20 @@ inline void writeAABB( uintptr_t out, b3AABB a )
 // (scripts/build.mjs reads the same _outMeta()). Adding/editing an out
 // getter needs no matching edit in facade.js or build.mjs — metadata carries it.
 
+// Whether this thread fills the metadata registries below. In the threaded builds
+// Emscripten runs EMSCRIPTEN_BINDINGS again on every pthread the first time it runs
+// (embind sets up its JS on each thread), so the block runs once per box3d worker
+// thread, and threads that start together run it at the same time. A pthread that
+// appended to a registry would race the others' appends, and two threads growing
+// one std::vector free each other's buffers: the heap corruption behind the
+// threaded builds' "memory access out of bounds" aborts up to 0.6.0. The
+// registries are the main thread's: only it records them, and only it reads
+// them back (_outMeta, _retMeta).
+inline bool recordsBindingMetadata()
+{
+	return emscripten_is_main_runtime_thread();
+}
+
 // One row per out-param getter, filled during EMSCRIPTEN_BINDINGS by out_function
 // and published by the _outMeta() getter. `method` is the public name (no "Into"),
 // `sizes` the float count of each out slot, `trailing` the count of forwarded input
@@ -212,6 +228,7 @@ void out_fn_core( const char* sig, Fn fn, Descs... )
 	while ( !method.empty() && method.back() == ' ' ) method.pop_back();
 	std::string intoSig = method + "Into" + ( paren ? paren : "()" );
 	emscripten::function( intoSig.c_str(), fn );
+	if ( !recordsBindingMetadata() ) return;
 	std::vector<int> szVec; DI::sizes( szVec );
 	std::vector<std::string> tsVec; DI::tsTypes( tsVec );
 	g_outRegistry.push_back( { method, szVec, tsVec, DI::trailing } );
@@ -249,7 +266,7 @@ void ret_function( const char* sig, Fn fn, Opts&&... opts )
 	const char* ret = colon + 1;
 	while ( *ret == ' ' ) ++ret; // "Float32Array"
 	emscripten::function( embSig.c_str(), fn, std::forward<Opts>( opts )... );
-	g_retRegistry.push_back( { method, std::string( ret ) } );
+	if ( recordsBindingMetadata() ) g_retRegistry.push_back( { method, std::string( ret ) } );
 }
 
 // Copy a POD std::vector into a JS-owned typed array. typed_memory_view aliases
@@ -4184,4 +4201,123 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.function( "i32Ptr", &WheeledVehicleStateBuffer::i32Ptr )
 		.function( "f32Ptr", &WheeledVehicleStateBuffer::f32Ptr )
 		.function( "f64Ptr", &WheeledVehicleStateBuffer::f64Ptr );
+}
+
+// ---------------------------------------------------------------------------
+// Number-only entry points.
+//
+// Another Wasm module (a game class compiled to Wasm) imports these and calls
+// box3d Wasm to Wasm, with no JavaScript in between. Everything is a plain
+// number: a body is its three id fields, a vector its components, a getter
+// returns one component per call. They run the same box3d functions on the
+// same values as the embind bindings: a float parameter is rounded as embind
+// rounds a JavaScript number, and a position stays double precision in a
+// large-world build. They are not part of the facade; the generated .d.ts types
+// them as `_nilo_*` members of the module.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+inline b3BodyId niloBody( int32_t index1, int32_t world0, int32_t generation )
+{
+	return b3BodyId{ index1, static_cast<uint16_t>( world0 ), static_cast<uint16_t>( generation ) };
+}
+
+inline float niloAxis( b3Vec3 v, int32_t axis )
+{
+	return axis == 0 ? v.x : axis == 1 ? v.y : v.z;
+}
+} // namespace
+
+extern "C"
+{
+EMSCRIPTEN_KEEPALIVE int32_t nilo_body_is_valid( int32_t index1, int32_t world0, int32_t generation )
+{
+	return b3Body_IsValid( niloBody( index1, world0, generation ) ) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int32_t nilo_body_type( int32_t index1, int32_t world0, int32_t generation )
+{
+	return static_cast<int32_t>( b3Body_GetType( niloBody( index1, world0, generation ) ) );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_set_type( int32_t index1, int32_t world0, int32_t generation, int32_t type )
+{
+	b3Body_SetType( niloBody( index1, world0, generation ), static_cast<b3BodyType>( type ) );
+}
+
+EMSCRIPTEN_KEEPALIVE float nilo_body_mass( int32_t index1, int32_t world0, int32_t generation )
+{
+	return b3Body_GetMass( niloBody( index1, world0, generation ) );
+}
+
+/// One axis (0, 1, 2) of the body's origin.
+EMSCRIPTEN_KEEPALIVE double nilo_body_position( int32_t index1, int32_t world0, int32_t generation, int32_t axis )
+{
+	b3Pos p = b3Body_GetPosition( niloBody( index1, world0, generation ) );
+	return axis == 0 ? p.x : axis == 1 ? p.y : p.z;
+}
+
+/// One component (x, y, z, w) of the body's rotation.
+EMSCRIPTEN_KEEPALIVE float nilo_body_rotation( int32_t index1, int32_t world0, int32_t generation, int32_t component )
+{
+	b3Quat q = b3Body_GetRotation( niloBody( index1, world0, generation ) );
+	return component < 3 ? niloAxis( q.v, component ) : q.s;
+}
+
+EMSCRIPTEN_KEEPALIVE float nilo_body_linear_velocity( int32_t index1, int32_t world0, int32_t generation, int32_t axis )
+{
+	return niloAxis( b3Body_GetLinearVelocity( niloBody( index1, world0, generation ) ), axis );
+}
+
+EMSCRIPTEN_KEEPALIVE float nilo_body_angular_velocity( int32_t index1, int32_t world0, int32_t generation, int32_t axis )
+{
+	return niloAxis( b3Body_GetAngularVelocity( niloBody( index1, world0, generation ) ), axis );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_set_linear_velocity( int32_t index1, int32_t world0, int32_t generation, float x, float y,
+														 float z )
+{
+	b3Body_SetLinearVelocity( niloBody( index1, world0, generation ), b3Vec3{ x, y, z } );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_set_angular_velocity( int32_t index1, int32_t world0, int32_t generation, float x, float y,
+														  float z )
+{
+	b3Body_SetAngularVelocity( niloBody( index1, world0, generation ), b3Vec3{ x, y, z } );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_set_transform( int32_t index1, int32_t world0, int32_t generation, double px, double py,
+												   double pz, float qx, float qy, float qz, float qw )
+{
+	b3Pos position{};
+	position.x = px;
+	position.y = py;
+	position.z = pz;
+	b3Body_SetTransform( niloBody( index1, world0, generation ), position, b3Quat{ b3Vec3{ qx, qy, qz }, qw } );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_set_target_transform( int32_t index1, int32_t world0, int32_t generation, double px,
+														  double py, double pz, float qx, float qy, float qz, float qw,
+														  float timeStep, int32_t wake )
+{
+	b3WorldTransform target{};
+	target.p.x = px;
+	target.p.y = py;
+	target.p.z = pz;
+	target.q = b3Quat{ b3Vec3{ qx, qy, qz }, qw };
+	b3Body_SetTargetTransform( niloBody( index1, world0, generation ), target, timeStep, wake != 0 );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_apply_linear_impulse_to_center( int32_t index1, int32_t world0, int32_t generation,
+																	float x, float y, float z, int32_t wake )
+{
+	b3Body_ApplyLinearImpulseToCenter( niloBody( index1, world0, generation ), b3Vec3{ x, y, z }, wake != 0 );
+}
+
+EMSCRIPTEN_KEEPALIVE void nilo_body_apply_force_to_center( int32_t index1, int32_t world0, int32_t generation, float x,
+														   float y, float z, int32_t wake )
+{
+	b3Body_ApplyForceToCenter( niloBody( index1, world0, generation ), b3Vec3{ x, y, z }, wake != 0 );
+}
 }

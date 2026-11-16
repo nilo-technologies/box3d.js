@@ -28,11 +28,12 @@
 // order in each reader still has to match the C++ packing order by hand.
 //
 // This file is a TEMPLATE, not linked directly. scripts/build.mjs reads bindings.cpp's
-// compiled _layoutMeta()/_outMeta() getters off a probe module and substitutes the two
-// placeholder tokens below (the LAYOUT stride table and the OUT-META reader list) with
-// literals, emitting build/facade.generated.js — which is what gets linked. So the
-// metadata still originates in bindings.cpp, but the shipped runtime never decodes those
-// strings. (Keep the raw tokens out of comments — the build substitutes them by name.)
+// compiled _layoutMeta()/_outMeta() getters off a probe module and substitutes the
+// placeholder tokens below (the LAYOUT stride table, the OUT-META reader list and
+// V-HACD's thread count) with literals, emitting build/facade.generated.js — which is
+// what gets linked. So the metadata still originates in bindings.cpp, but the shipped
+// runtime never decodes those strings. (Keep the raw tokens out of comments — the build
+// substitutes them by name.)
 
 // Tier strides, published by src/bindings.cpp's layout namespace (injected at build).
 const LAYOUT = __B3_LAYOUT__;
@@ -1307,6 +1308,36 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	Module.b3CreateConvexDecompositionShapesFromPacked = ( bodyId, shapeDef, packed, maxVerticesPerHull ) =>
 		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
 	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
+
+	// Threaded builds start a pool of threads as they load: `pthreadPoolSize` in the
+	// factory's options, 4 by default. A world, a recording player and a blocking V-HACD
+	// run with useThreads take their threads synchronously and join them when done, so
+	// those threads must come from the pool: one made on demand starts only after this
+	// thread returns to its event loop, and joining it first never returns. So a world or
+	// player steps on at most one worker per idle pool thread plus the calling thread
+	// (box3d steps a world to the same bits at any worker count, so only speed changes),
+	// and a blocking V-HACD run without enough idle threads runs without its own. An
+	// async decomposition's thread, and V-HACD's own under it, may start on demand.
+	if ( typeof PThread !== 'undefined' )
+	{
+		const idleThreads = () => PThread.unusedWorkers.length;
+		const workersFor = ( count ) => ( count > 1 ? Math.min( count, idleThreads() + 1 ) : count );
+		const VHACD_THREADS = __B3_VHACD_THREADS__;
+		const blockingOptions = ( options ) =>
+			( options?.useThreads && idleThreads() < VHACD_THREADS ? { ...options, useThreads: false } : options );
+		const rawCreateWorld = Module.b3CreateWorld;
+		const rawCreatePlayer = Module.b3RecPlayer_CreateFromRecording;
+		const rawSetPlayerWorkers = Module.b3RecPlayer_SetWorkerCount;
+		Module.b3CreateWorld = ( def ) =>
+			rawCreateWorld( def.workerCount > 1 ? { ...def, workerCount: workersFor( def.workerCount ) } : def );
+		Module.b3RecPlayer_CreateFromRecording = ( recording, workerCount ) =>
+			rawCreatePlayer( recording, workersFor( workerCount ) );
+		Module.b3RecPlayer_SetWorkerCount = ( player, count ) => rawSetPlayerWorkers( player, workersFor( count ) );
+		Module.b3ComputeConvexDecomposition = ( positions, indices, options ) =>
+			rawCompute( positions, indices, blockingOptions( options ) );
+		Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
+			rawShapes( bodyId, shapeDef, positions, indices, blockingOptions( options ) );
+	}
 
 	// Every wheel's chassis-space pose and raw spin in one call. The raw writer packs the records
 	// into a static wasm scratch (stable address, so resolved once); copy them into the caller's

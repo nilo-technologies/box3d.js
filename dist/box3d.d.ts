@@ -1,5 +1,19 @@
 // TypeScript bindings for emscripten-generated code.  Automatically generated at compile time.
 interface WasmModule {
+  _nilo_body_is_valid(_0: number, _1: number, _2: number): number;
+  _nilo_body_type(_0: number, _1: number, _2: number): number;
+  _nilo_body_set_type(_0: number, _1: number, _2: number, _3: number): void;
+  _nilo_body_mass(_0: number, _1: number, _2: number): number;
+  _nilo_body_position(_0: number, _1: number, _2: number, _3: number): number;
+  _nilo_body_rotation(_0: number, _1: number, _2: number, _3: number): number;
+  _nilo_body_linear_velocity(_0: number, _1: number, _2: number, _3: number): number;
+  _nilo_body_angular_velocity(_0: number, _1: number, _2: number, _3: number): number;
+  _nilo_body_set_linear_velocity(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number): void;
+  _nilo_body_set_angular_velocity(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number): void;
+  _nilo_body_set_transform(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number, _6: number, _7: number, _8: number, _9: number): void;
+  _nilo_body_set_target_transform(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number, _6: number, _7: number, _8: number, _9: number, _10: number, _11: number): void;
+  _nilo_body_apply_linear_impulse_to_center(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number, _6: number): void;
+  _nilo_body_apply_force_to_center(_0: number, _1: number, _2: number, _3: number, _4: number, _5: number, _6: number): void;
 }
 
 type EmbindString = ArrayBuffer|Uint8Array|Uint8ClampedArray|Int8Array|string;
@@ -1852,4 +1866,13 @@ export interface Box3DFacade {
   b3WheeledVehicle_GetWheelLocalData(out: Float32Array | number[], wheeledVehicleId: b3WheeledVehicleId): number;
 }
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
-export default function Box3DFactory (options?: unknown): Promise<Box3DModule>;
+/** Options for the factory, passed on to Emscripten's module object. */
+export interface Box3DOptions {
+  /** Threaded builds only: the threads started as the module loads (4 by default, at most 32;
+   * a value that is not a finite number takes the default). A world or
+   * recording player steps on at most one worker per idle thread, plus the calling thread, and
+   * a blocking decomposition uses V-HACD's own threads only when 8 are idle. */
+  pthreadPoolSize?: number;
+  [option: string]: unknown;
+}
+export default function Box3DFactory (options?: Box3DOptions): Promise<Box3DModule>;

@@ -242,7 +242,7 @@ The result follows the same `{ count, data }` layout as the other shape id buffe
 
 <Snippet source="./shapes.ts" select="decomposition-async" />
 
-In the multithreaded builds, `useThreads: true` also runs V-HACD's internal stages on 8 worker threads. These come from the same 32-thread pool as box3d's world workers, so leave room for them. The blocking call spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
+In the multithreaded builds, the Promise variants run V-HACD on a thread of their own, and `useThreads: true` also runs its internal stages on 8 more threads. The Promise variants' threads start on demand when the pool has none idle. The blocking call needs all 8 idle in the pool (`pthreadPoolSize`) and runs without them otherwise; it also spin-waits on the browser main thread, so prefer the Promise variant (or a Web Worker) there.
 
 <Snippet source="./shapes.ts" select="decomposition-static" />
 
@@ -465,6 +465,10 @@ Cross-Origin-Embedder-Policy: require-corp
 <Snippet source="./multithreading.ts" select="mt-step" />
 
 The simulation API is identical to the single-threaded build - only the import path and `workerCount` differ.
+
+### Threads
+
+The threaded build starts a pool of threads as it loads, each a Web Worker running its own instance of the module: 4 by default, or `pthreadPoolSize` in the factory's options. A world (and a recording player) takes one thread per worker past the calling thread, synchronously, and joins them when destroyed. A thread made on demand starts only once the calling thread returns to its event loop, so a world takes only idle pool threads: one asking for more workers steps on the idle threads plus the calling one. box3d steps a world to the same bits at any worker count, so this changes only its speed. `b3World_GetWorkerCount` reads what the world got.
 
 <ExamplesTable ids="example-multithreading" />
 
