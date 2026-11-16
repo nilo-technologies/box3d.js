@@ -75,7 +75,7 @@ export function tubeMesh( curve, tube, segments, sides )
 	{
 		const a = i * sides + j, b = ( ( i + 1 ) % segments ) * sides + j;
 		const c = ( ( i + 1 ) % segments ) * sides + ( ( j + 1 ) % sides ), d = i * sides + ( ( j + 1 ) % sides );
-		indices.push( a, b, d, b, c, d );
+		indices.push( a, d, b, b, d, c );
 	}
 	return { positions: new Float32Array( positions ), indices: new Uint32Array( indices ) };
 }

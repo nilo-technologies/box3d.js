@@ -1052,7 +1052,7 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
 
 #### Keeping openings open: the surface merge
 
-V-HACD cuts the mesh into many small pieces and then merges them down to `maxConvexHulls` by volume. An opening is cheap in volume, so that merge can close a doorway or a window, and it always uses the whole hull budget. With a `maxConcavity` option, V-HACD hands over all its pieces and box3d merges them against the mesh surface instead (`b3MergeConvexPieces` in the engine). Neighboring pieces merge cheapest first, the way [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) collapses the edges of its dual graph. The cost of a merge is the depth of open space the merged hull would seal, measured as Roblox describes in [A Search for Better Convex Decomposition](https://medium.com/@val.v.gorbunov/a-search-for-better-convex-decomposition-671ea647cec): points are sampled on the mesh triangles, a ray is cast outward from each, and the run of the ray inside the hull is what the hull seals there. Merging stops when the next merge would seal more than `maxConcavity`.
+V-HACD cuts the mesh into many small pieces and then merges them down to `maxConvexHulls` by volume. An opening is cheap in volume, so that merge can close a doorway or a window, and it stops as soon as the budget is met, however many pieces could still merge for free. With a `maxConcavity` option, V-HACD hands over all its pieces and box3d merges them against the mesh surface instead (`b3MergeConvexPieces` in the engine). Neighboring pieces merge cheapest first, the way [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) collapses the edges of its dual graph. The cost of a merge is the depth of open space the merged hull would seal, measured as Roblox describes in [A Search for Better Convex Decomposition](https://medium.com/@val.v.gorbunov/a-search-for-better-convex-decomposition-671ea647cec): points are sampled on the mesh triangles, a ray is cast outward from each, and the run of the ray inside the hull is what the hull seals there. Merging stops when the next merge would seal more than `maxConcavity`.
 
 ```ts
 // Merge the pieces against the mesh surface instead of by volume. maxConcavity is the
@@ -1071,15 +1071,16 @@ const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices,
     maxConcavity: 0.05,
     maxConvexHulls: 16, // optional budget: merging goes on past the limit to meet it
 });
-b3.b3CreateConvexDecompositionShapesFromPacked(cachedBody, sd, remerged);
+const remergedBody = b3.b3CreateBody(world, decompBodyDef);
+b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
 ```
 
-- `maxConcavity` is a length in mesh units. A doorway reads as its width, so `0.05` keeps every opening wider than 5 cm, while a sliver of hull lying against a wall reads as its thickness.
+- `maxConcavity` is a length in mesh units. A doorway reads as its width, so `0.05` aims to keep every opening wider than 5 cm, while a sliver of hull lying against a wall reads as its thickness. Two things can seal more: merges forced by `maxConvexHulls`, and an opening thin enough to fall between the sample points (`concavitySamples`).
 - The hull count follows from the shape: a wall with a doorway needs 6 hulls where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed.
 - The result carries `concavities` (one per piece) and `maxConcavity`, the depth each hull seals.
 - The merge can only be as tight as V-HACD's pieces, which overshoot the surface by about a voxel. Raise `resolution` for a closer fit.
 - The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works.
-- The whole call takes about as long as before: 7% less over the test meshes in total, from 19% less to 33% more on a single mesh. V-HACD skips its own merge, which compares every pair of pieces, and the surface merge only looks at neighbors.
+- The whole call takes about as long as before: 9% less over the test meshes in total, from 23% less to 33% more on a single mesh. V-HACD skips its own merge, which compares every pair of pieces, and the surface merge only looks at neighbors.
 - It trades volume for depth. Where it merges further than V-HACD it can cover more volume outside the mesh, a few centimeters deep over a wide area: a table top and its legs become 5 hulls that cover 14% more than the table, where V-HACD's 16 cover 3%. Lower `maxConcavity` for a closer fit.
 
 ![A wall with a doorway: V-HACD with 16 hulls, the surface merge under the same budget, and the surface merge alone](./docs/images/decomposition/doorway.png)

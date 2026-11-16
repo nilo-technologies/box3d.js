@@ -9,8 +9,10 @@
 // static-only), built from b3ComputeConvexDecompositionAsync. The "show" control draws
 // the hull shapes, the source mesh they approximate, or both overlaid. The "merge"
 // control picks how V-HACD's pieces are joined: by volume down to a hull budget (V-HACD's
-// own merge), or against the mesh surface with `maxConcavity`, where a merged hull may
-// only seal a few centimeters of open space and the hull count follows from the shape.
+// own merge), or against the mesh surface with `maxConcavity`, where merging stops before
+// a hull would seal more than a few centimeters of open space and the hull count follows
+// from the shape. The hull budget still caps it: past the budget, merging goes on,
+// shallowest first.
 
 import type { Box3DModule, b3BodyId, b3CompoundData } from 'box3d.js';
 import Box3D from 'box3d.js/inline';

@@ -199,7 +199,8 @@ const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices,
     maxConcavity: 0.05,
     maxConvexHulls: 16, // optional budget: merging goes on past the limit to meet it
 });
-b3.b3CreateConvexDecompositionShapesFromPacked(cachedBody, sd, remerged);
+const remergedBody = b3.b3CreateBody(world, decompBodyDef);
+b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
 /* SNIPPET_END: decomposition-merge */
 
 /* SNIPPET_START: resize-disable */

@@ -633,6 +633,12 @@ async function surfaceMerge( b3, extraOptions = {} )
 	assert.equal( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 8192 } ), 'the default sample count is normalized' );
 	assert.notEqual( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 1000 } ), 'the sample count is part of the key' );
 	assert.equal( key( { concavitySamples: 1000 } ), key( {} ), 'the sample count means nothing without a limit' );
+	assert.equal( key( { maxConcavity: NaN } ), key( { maxConcavity: 0 } ), 'a NaN limit is zero, as in the binding' );
+	assert.equal( key( { maxConcavity: -1 } ), key( { maxConcavity: 0 } ), 'a negative limit is zero' );
+	assert.equal( key( { maxConcavity: Infinity } ), key( { maxConcavity: 3e38 } ), 'the limit is held to 3e38' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: NaN } ), key( { maxConcavity: 0.05, concavitySamples: 64 } ), 'a NaN sample count is the minimum' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: 1e9 } ), key( { maxConcavity: 0.05, concavitySamples: 1048576 } ), 'the sample count is clamped' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: null } ), key( { maxConcavity: 0.05 } ), 'a null sample count is the default' );
 	b3.b3ClearConvexDecompositionCache();
 
 	b3.b3DestroyWorld( world );

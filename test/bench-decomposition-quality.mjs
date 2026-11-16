@@ -89,6 +89,9 @@ function print( title, rows )
 	for ( const row of table ) console.log( `  ${row.map( ( c, i ) => ( i === 0 ? c.padEnd( widths[ i ] ) : c.padStart( widths[ i ] ) ) ).join( '  ' )}` );
 }
 
+// A cap no decomposition reaches. Finite, so the dumped options survive JSON.
+const NO_BUDGET = 1e9;
+
 const summary = [];
 for ( const name of meshNames )
 {
@@ -100,7 +103,7 @@ for ( const name of meshNames )
 		rows.push( run( name, mesh, `V-HACD ${n}`, { maxConvexHulls: n } ) );
 		rows.push( run( name, mesh, `surface ${n}`, { maxConvexHulls: n, maxConcavity: concavity } ) );
 	}
-	rows.push( run( name, mesh, 'surface', { maxConvexHulls: Infinity, maxConcavity: concavity } ) );
+	rows.push( run( name, mesh, 'surface', { maxConvexHulls: NO_BUDGET, maxConcavity: concavity } ) );
 	print( `${name}: ${MESHES[ name ].note} (${info.triangles} triangles)`, rows );
 	summary.push( { name, rows } );
 }

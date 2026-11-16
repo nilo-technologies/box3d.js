@@ -62,15 +62,25 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 // evenly spread hues, shuffled so neighbors in the list differ
 const color = ( i, n ) => new THREE.Color().setHSL( ( ( i * 0.61803398875 ) % 1 ), 0.62, 0.56 );
 
+// what the last picture allocated: freed before the next one is drawn
+let disposables = [];
+const keep = ( resource ) => { disposables.push( resource ); return resource; };
+
 window.draw = ( runs ) =>
 {
+	for ( const resource of disposables )
+	{
+		resource.dispose();
+		resource.forceContextLoss?.();
+	}
+	disposables = [];
 	const row = document.getElementById( 'row' );
 	row.replaceChildren();
 	for ( const run of runs )
 	{
 		const panel = document.createElement( 'div' );
 		panel.className = 'panel';
-		const renderer = new THREE.WebGLRenderer( { antialias: true, preserveDrawingBuffer: true } );
+		const renderer = keep( new THREE.WebGLRenderer( { antialias: true, preserveDrawingBuffer: true } ) );
 		renderer.setPixelRatio( window.devicePixelRatio );
 		renderer.setSize( ${PANEL}, ${PANEL} );
 		renderer.setClearColor( 0x14161a );
@@ -82,7 +92,7 @@ window.draw = ( runs ) =>
 		sun.position.set( 3, 5, 4 );
 		scene.add( sun );
 
-		const source = new THREE.BufferGeometry();
+		const source = keep( new THREE.BufferGeometry() );
 		source.setAttribute( 'position', new THREE.Float32BufferAttribute( run.positions, 3 ) );
 		source.setIndex( run.indices );
 		source.computeBoundingSphere();
@@ -93,15 +103,15 @@ window.draw = ( runs ) =>
 			const vertices = [];
 			for ( let p = 0; p < points.length; p += 3 ) vertices.push( new THREE.Vector3( points[ p ], points[ p + 1 ], points[ p + 2 ] ) );
 			let geometry;
-			try { geometry = new ConvexGeometry( vertices ); }
+			try { geometry = keep( new ConvexGeometry( vertices ) ); }
 			catch { return; }
 			const c = color( i, run.pieces.length );
-			scene.add( new THREE.Mesh( geometry, new THREE.MeshStandardMaterial( { color: c, roughness: 0.7, flatShading: true, transparent: true, opacity: 0.9 } ) ) );
-			scene.add( new THREE.LineSegments( new THREE.EdgesGeometry( geometry, 20 ), new THREE.LineBasicMaterial( { color: c.clone().multiplyScalar( 0.45 ) } ) ) );
+			scene.add( new THREE.Mesh( geometry, keep( new THREE.MeshStandardMaterial( { color: c, roughness: 0.7, flatShading: true, transparent: true, opacity: 0.9 } ) ) ) );
+			scene.add( new THREE.LineSegments( keep( new THREE.EdgesGeometry( geometry, 20 ) ), keep( new THREE.LineBasicMaterial( { color: c.clone().multiplyScalar( 0.45 ) } ) ) ) );
 		} );
 		// the source mesh on top, so what the hulls cover beyond it shows
-		scene.add( new THREE.LineSegments( new THREE.EdgesGeometry( source, 20 ),
-			new THREE.LineBasicMaterial( { color: 0xffffff, depthTest: false, transparent: true, opacity: 0.55 } ) ) );
+		scene.add( new THREE.LineSegments( keep( new THREE.EdgesGeometry( source, 20 ) ),
+			keep( new THREE.LineBasicMaterial( { color: 0xffffff, depthTest: false, transparent: true, opacity: 0.55 } ) ) ) );
 
 		const camera = new THREE.PerspectiveCamera( 32, 1, radius * 0.05, radius * 20 );
 		camera.position.copy( center ).add( new THREE.Vector3( 0.55, 0.5, 1 ).normalize().multiplyScalar( radius * 4.3 ) );

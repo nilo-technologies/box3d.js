@@ -763,11 +763,12 @@ function b3ConvexDecompositionCacheKey( positions, indices, options )
 		num( o.minVolumePercentError, 1 ),
 		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
 		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
-		// the surface merge: off unless maxConcavity is given (the binding reads NaN as 0)
+		// the surface merge: off unless maxConcavity is given. As in the binding, NaN falls to
+		// the lower bound (0, and 64 samples) and the limit is held to 3e38 as a float.
 		...( o.maxConcavity === undefined || o.maxConcavity === null
 			? [ '-' ]
-			: [ Math.fround( Math.max( 0, num( o.maxConcavity, 0 ) ) || 0 ),
-				Math.trunc( Math.min( 1048576, Math.max( 64, num( o.concavitySamples ?? undefined, 8192 ) ) ) ) ] ),
+			: [ Math.fround( Math.min( 3e38, Math.max( 0, num( o.maxConcavity, 0 ) ) || 0 ) ),
+				Math.trunc( Math.min( 1048576, Math.max( 64, num( o.concavitySamples ?? undefined, 8192 ) ) || 64 ) ) ] ),
 	].join( '|' );
 }
 
