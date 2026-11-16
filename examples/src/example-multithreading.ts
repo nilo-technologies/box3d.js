@@ -18,7 +18,8 @@ const factory = isolated
 	: (await import('box3d.js/inline')).default;
 
 const hardware = navigator.hardwareConcurrency ?? 4;
-const maxWorkers = Math.min(hardware, 16);
+// At least two, as the world below asks for two even on one core.
+const maxWorkers = Math.max(2, Math.min(hardware, 16));
 // The multithreaded build starts a thread for each worker past the calling thread.
 const b3: Box3DModule = await factory({ pthreadPoolSize: maxWorkers - 1 });
 

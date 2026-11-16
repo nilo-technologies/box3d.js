@@ -29,8 +29,11 @@ const debug = process.argv.includes( '--debug' );
 // demand starts only once the calling thread yields; the facade (src/facade.js) holds
 // them to the idle pool threads. 4 by default: a world on 4 workers and one async
 // convex decomposition; callers pick their own with the factory's `pthreadPoolSize`
-// option. The expression is emitted into the module's JS as is.
-const PTHREAD_POOL_SIZE = "Math.max(0,Math.floor(Module['pthreadPoolSize']??4))";
+// option, a whole number from 0 to 32 (box3d's B3_MAX_WORKERS, and v0.5.0's fixed
+// pool); one that is not a finite number takes the default. The expression is emitted
+// into the module's JS as is.
+const PTHREAD_POOL_SIZE =
+	"Math.min(32,Math.max(0,Math.floor(Number.isFinite(Module['pthreadPoolSize'])?Module['pthreadPoolSize']:4)))";
 const MAXIMUM_MEMORY = 2147483648; // 2 GiB — required with growth + shared memory
 
 // Pin the Emscripten toolchain. The ESM post-processing in validateESModule()
@@ -637,7 +640,8 @@ const factoryLine = 'export default function Box3DFactory (options?: unknown): P
 if ( !tsd.includes( factoryLine ) ) throw new Error( 'tsd: Box3DFactory declaration not found — did --emit-tsd output change?' );
 tsd = tsd.replace( factoryLine, `/** Options for the factory, passed on to Emscripten's module object. */
 export interface Box3DOptions {
-  /** Threaded builds only: the threads started as the module loads (4 by default). A world or
+  /** Threaded builds only: the threads started as the module loads (4 by default, at most 32;
+   * a value that is not a finite number takes the default). A world or
    * recording player steps on at most one worker per idle thread, plus the calling thread, and
    * a blocking decomposition uses V-HACD's own threads only when ${VHACD_THREADS} are idle. */
   pthreadPoolSize?: number;

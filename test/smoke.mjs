@@ -2264,7 +2264,7 @@ function threadStarts( b3, workerCount )
 async function threadPool( Box3D )
 {
 	const counts = [];
-	for ( const options of [ {}, { pthreadPoolSize: 0 }, { pthreadPoolSize: 2 } ] )
+	for ( const options of [ {}, { pthreadPoolSize: 0 }, { pthreadPoolSize: 2 }, { pthreadPoolSize: Infinity } ] )
 	{
 		const b3 = await Box3D( options );
 		const def = b3.b3DefaultWorldDef();
@@ -2279,7 +2279,7 @@ async function threadPool( Box3D )
 		counts.push( [ b3.b3World_GetWorkerCount( third ) ] );
 		b3.b3DestroyWorld( third );
 	}
-	assert.deepEqual( counts, [ [ 5, 1 ], [ 5 ], [ 1, 1 ], [ 1 ], [ 3, 1 ], [ 3 ] ], 'a world steps on the idle pool threads plus the calling one' );
+	assert.deepEqual( counts, [ [ 5, 1 ], [ 5 ], [ 1, 1 ], [ 1 ], [ 3, 1 ], [ 3 ], [ 5, 1 ], [ 5 ] ], 'a world steps on the idle pool threads plus the calling one, and a pool size that is not finite takes the default' );
 
 	const b3 = await Box3D( { pthreadPoolSize: 0 } );
 	const { positions, indices } = torusMesh();

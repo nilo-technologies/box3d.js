@@ -1868,7 +1868,8 @@ export interface Box3DFacade {
 export type Box3DModule = WasmModule & EmbindModule & Box3DFacade;
 /** Options for the factory, passed on to Emscripten's module object. */
 export interface Box3DOptions {
-  /** Threaded builds only: the threads started as the module loads (4 by default). A world or
+  /** Threaded builds only: the threads started as the module loads (4 by default, at most 32;
+   * a value that is not a finite number takes the default). A world or
    * recording player steps on at most one worker per idle thread, plus the calling thread, and
    * a blocking decomposition uses V-HACD's own threads only when 8 are idle. */
   pthreadPoolSize?: number;

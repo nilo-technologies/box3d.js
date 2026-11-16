@@ -4212,7 +4212,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 // returns one component per call. They run the same box3d functions on the
 // same values as the embind bindings: a float parameter is rounded as embind
 // rounds a JavaScript number, and a position stays double precision in a
-// large-world build. They are not part of the facade or the .d.ts.
+// large-world build. They are not part of the facade; the generated .d.ts types
+// them as `_nilo_*` members of the module.
 // ---------------------------------------------------------------------------
 
 namespace

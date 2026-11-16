@@ -9,7 +9,8 @@ const isolated = self.crossOriginIsolated === true;
 
 // The workers a world will step on, the calling thread counted.
 const hwThreads = navigator.hardwareConcurrency ?? 4;
-const workerCount = isolated ? Math.max(2, hwThreads - 1) : 0;
+// At most 32, box3d's limit (B3_MAX_WORKERS): every worker past the first is a thread started as the build loads.
+const workerCount = isolated ? Math.min(32, Math.max(2, hwThreads - 1)) : 0;
 
 // Pick the right build at runtime; fall back gracefully when isolation is absent.
 // The threaded build starts its threads as it loads (pthreadPoolSize, 4 by default):
