@@ -1485,6 +1485,7 @@ interface EmbindModule {
   b3ComputeConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3ConvexDecomposition;
   b3CreateConvexDecompositionShapes(bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3DecompositionShapes;
   b3CreateConvexDecompositionShapesFromPacked(bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number): b3DecompositionShapes;
+  b3MergeConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, packed: b3ConvexDecomposition, options?: b3ConvexMergeOptions): b3ConvexDecomposition;
   b3CreateDecompositionCompound(packed: b3ConvexDecomposition, material?: b3SurfaceMaterial): b3DecompositionCompound;
   b3CreateHeightField(heights: any, countX: number, countZ: number, scale: b3Vec3): b3HeightFieldData | null;
   b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, callback: any): number;
@@ -1651,7 +1652,15 @@ export interface Manifold {
 }
 /** Packed convex decomposition: xyz points for every piece back to back, and
  * pieceCount + 1 vertex offsets (piece i is vertices offsets[i] .. offsets[i+1]). */
-export interface b3ConvexDecomposition { points: Float32Array; offsets: Uint32Array; }
+export interface b3ConvexDecomposition {
+  points: Float32Array;
+  offsets: Uint32Array;
+  /** Set by the surface merge (a `maxConcavity` option, or b3MergeConvexDecomposition): the depth
+   * of open space each piece seals, in mesh units. */
+  concavities?: Float32Array;
+  /** Set by the surface merge: the largest value in concavities. */
+  maxConcavity?: number;
+}
 export interface b3ConvexDecompositionOptions {
   /** Maximum number of pieces. Default 32. */
   maxConvexHulls?: number;
@@ -1667,6 +1676,20 @@ export interface b3ConvexDecompositionOptions {
   shrinkWrap?: boolean;
   /** Use V-HACD's worker threads (multithreaded builds only; ignored otherwise). Default false. */
   useThreads?: boolean;
+  /** Merge the pieces against the mesh surface instead of by volume. V-HACD merges its pieces
+   * down to maxConvexHulls by volume, and an opening is cheap in volume, so it can close a
+   * doorway or a window. With this set, V-HACD hands over all its pieces and box3d's
+   * b3MergeConvexPieces joins neighbors cheapest first, where a merge costs the depth of open
+   * space the merged hull would seal (measured with rays cast outward from points on the mesh,
+   * after Roblox's "A Search for Better Convex Decomposition"). The value is the deepest open
+   * space a hull may seal, in mesh units: 0.05 lets a hull reach 5 cm across an opening when the
+   * mesh is in meters. The hull count then follows from the shape; maxConvexHulls stays a hard
+   * cap: when the limit leaves more hulls, merging goes on past it, shallowest first. The mesh
+   * should be closed. Unset by default. */
+  maxConcavity?: number;
+  /** Points sampled on the mesh surface for the maxConcavity merge, clamped to
+   * [64, 1048576]. More samples see thinner openings and take longer. Default 8192. */
+  concavitySamples?: number;
   /** Async variants only: reuse an earlier result for the same mesh + options instead of
    * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
    * in place afterwards (their hash is memoized per array object). */
@@ -1674,6 +1697,17 @@ export interface b3ConvexDecompositionOptions {
   /** Async variants only: identifies the mesh in the cache (e.g. an asset id) instead of
    * hashing its contents. Change it whenever the mesh changes. */
   cacheKey?: string;
+}
+export interface b3ConvexMergeOptions {
+  /** The deepest open space a merged hull may seal, in mesh units. Default 0.05. */
+  maxConcavity?: number;
+  /** Hull budget: merging continues past maxConcavity, shallowest first, until this many
+   * hulls remain. Default 0, no budget. */
+  maxConvexHulls?: number;
+  /** Vertex budget per merged hull, clamped to [4, 255]. Default 32. */
+  maxVerticesPerHull?: number;
+  /** Points sampled on the mesh surface, clamped to [64, 1048576]. Default 8192. */
+  concavitySamples?: number;
 }
 export interface b3ConvexDecompositionCacheStats { entries: number; hits: number; misses: number; }
 /** Shape ids created from a decomposition (ShapeIdBuffer layout, read with getShapeIdAt),

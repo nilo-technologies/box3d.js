@@ -7,7 +7,10 @@
 // reuses the result and only builds its hull shapes. Bodies are created disabled and
 // enabled once their shapes exist. The static bowl is one compound shape (compounds are
 // static-only), built from b3ComputeConvexDecompositionAsync. The "show" control draws
-// the hull shapes, the source mesh they approximate, or both overlaid.
+// the hull shapes, the source mesh they approximate, or both overlaid. The "merge"
+// control picks how V-HACD's pieces are joined: by volume down to a hull budget (V-HACD's
+// own merge), or against the mesh surface with `maxConcavity`, where a merged hull may
+// only seal a few centimeters of open space and the hull count follows from the shape.
 
 import type { Box3DModule, b3BodyId, b3CompoundData } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -213,6 +216,21 @@ function applyView() {
 }
 applyView();
 
+// The merge mode lives in the URL, so switching it starts the scene over with every
+// decomposition made the new way.
+type MergeMode = 'volume' | 'surface';
+const params = new URLSearchParams(location.search);
+const merge: { mode: MergeMode } = {
+	mode: params.get('merge') === 'surface' ? 'surface' : 'volume',
+};
+// 4 cm: under the tube radius of the torus and the wall of the bowl, so the merge keeps
+// their hollows open
+const MAX_CONCAVITY = 0.04;
+const mergeOptions = (maxConvexHulls: number) =>
+	merge.mode === 'surface'
+		? { maxConvexHulls, maxConcavity: MAX_CONCAVITY }
+		: { maxConvexHulls };
+
 const status = {
 	bowl: 'decomposing…',
 	decomposing: 0,
@@ -229,6 +247,16 @@ app.gui
 	})
 	.name('show')
 	.onChange(applyView);
+app.gui
+	.add(merge, 'mode', {
+		'volume (V-HACD)': 'volume',
+		'surface (maxConcavity)': 'surface',
+	})
+	.name('merge')
+	.onChange((mode: MergeMode) => {
+		params.set('merge', mode);
+		location.search = params.toString();
+	});
 const statusFolder = app.gui.addFolder('Decomposition');
 for (const key of Object.keys(status) as (keyof typeof status)[])
 	statusFolder.add(status, key).disable().listen();
@@ -255,7 +283,7 @@ async function buildBowl() {
 		mesh.positions,
 		mesh.indices,
 		{
-			maxConvexHulls: 32,
+			...mergeOptions(32),
 			resolution: 100000,
 		},
 	);
@@ -335,7 +363,7 @@ async function drop(kind: keyof typeof meshes) {
 			shapeDef,
 			mesh.positions,
 			mesh.indices,
-			{ maxConvexHulls, resolution: 50000 },
+			{ ...mergeOptions(maxConvexHulls), resolution: 50000 },
 		);
 		if (disposed) return;
 		b3.b3Body_Enable(body);

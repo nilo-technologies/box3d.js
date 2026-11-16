@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DynamicMover } from '../dist/character.mjs';
 import { createDebugRenderer } from '../dist/three.mjs';
+import { MESHES } from './decomposition-meshes.mjs';
+import { hullPlanes } from './decomposition-metrics.mjs';
 
 function fallingBox( b3 )
 {
@@ -569,6 +571,72 @@ async function convexDecomposition( b3, extraOptions = {} )
 	b3.b3DestroyWorld( world );
 	b3.b3DestroyCompound( compound );
 	return { pieces: res.count, restY };
+}
+
+// The surface merge (maxConcavity, b3MergeConvexDecomposition): a wall with a doorway keeps
+// its doorway open at a fraction of V-HACD's hull count, a hull budget is met by force, and
+// the Promise variants and the cache carry the option.
+async function surfaceMerge( b3, extraOptions = {} )
+{
+	const { positions, indices } = MESHES.doorway.mesh();
+	const base = { resolution: 50000, ...extraOptions };
+	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
+		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
+	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ], lintel = [ 0, 2.6, 0 ];
+
+	const volume = b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 32 } );
+	assert.equal( volume.concavities, undefined, 'no concavities without maxConcavity' );
+	const merged = b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 32, maxConcavity: 0.05 } );
+	const count = merged.offsets.length - 1;
+	assert.ok( count >= 3 && count < volume.offsets.length - 1, `surface merge needs fewer hulls (${count} against ${volume.offsets.length - 1})` );
+	assert.ok( merged.concavities instanceof Float32Array && merged.concavities.length === count, 'one concavity per piece' );
+	assert.equal( merged.maxConcavity, Math.max( ...merged.concavities ), 'maxConcavity is the largest concavity' );
+	assert.ok( merged.maxConcavity < 0.25, `merged hulls seal little (${merged.maxConcavity.toFixed( 3 )} m)` );
+	assert.ok( covers( merged, wall ) && covers( merged, lintel ), 'the wall is covered' );
+	assert.ok( !covers( merged, doorway ), 'the doorway stays open' );
+
+	// a hull budget under what the limit leaves is met by forced merges, and the result says what they sealed
+	const forced = b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 1, maxConcavity: 0.05 } );
+	assert.equal( forced.offsets.length - 1, 1, 'maxConvexHulls is a hard cap' );
+	assert.ok( forced.maxConcavity > 0.8 && covers( forced, doorway ), `one hull seals the doorway (${forced.maxConcavity.toFixed( 2 )} m)` );
+
+	// the merge on its own, over a packed decomposition from anywhere
+	const again = b3.b3MergeConvexDecomposition( positions, indices, volume, { maxConcavity: 0.05 } );
+	assert.ok( again.offsets.length - 1 <= count + 2 && !covers( again, doorway ), 'merging V-HACD output keeps the doorway open' );
+	assert.equal( b3.b3MergeConvexDecomposition( positions, indices, volume, { maxConvexHulls: 2 } ).offsets.length - 1, 2, 'merge meets a budget' );
+	assert.ok( b3.b3MergeConvexDecomposition( positions, indices, volume ).offsets.length - 1 >= 3, 'options may be omitted' );
+	assert.throws( () => b3.b3MergeConvexDecomposition( positions, indices ), /packed decomposition is required/, 'merge needs a decomposition' );
+	assert.throws( () => b3.b3MergeConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), volume ),
+		/out of range/, 'merge checks the mesh' );
+
+	// shapes straight from a merged decomposition
+	const world = groundedWorld( b3 );
+	const body = dynamicBody( b3, world, 5 );
+	const shapes = b3.b3CreateConvexDecompositionShapes( body, b3.b3DefaultShapeDef(), positions, indices, { ...base, maxConcavity: 0.05 } );
+	assert.equal( shapes.count, count, 'one hull shape per merged piece' );
+	assert.equal( shapes.skipped, 0, 'no merged piece skipped' );
+
+	// the Promise variants run the merge too, and the cache keeps merged and unmerged apart
+	b3.b3ClearConvexDecompositionCache();
+	const options = { ...base, maxConvexHulls: 32, maxConcavity: 0.05 };
+	const asyncMerged = await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	assert.equal( asyncMerged.offsets.length - 1, count, 'async compute merges the same' );
+	assert.deepEqual( Array.from( asyncMerged.points ), Array.from( merged.points ), 'async compute yields the same hulls' );
+	assert.ok( asyncMerged.concavities instanceof Float32Array && asyncMerged.maxConcavity === merged.maxConcavity, 'async compute carries the concavities' );
+	const cached = await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the merged decomposition is cached' );
+	assert.deepEqual( Array.from( cached.concavities ), Array.from( merged.concavities ), 'a cache hit carries the concavities' );
+	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, o );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( {} ), 'maxConcavity changes the key' );
+	assert.notEqual( key( { maxConcavity: 0 } ), key( {} ), 'a zero limit is still a merge' );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.1 } ), 'the limit is part of the key' );
+	assert.equal( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 8192 } ), 'the default sample count is normalized' );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 1000 } ), 'the sample count is part of the key' );
+	assert.equal( key( { concavitySamples: 1000 } ), key( {} ), 'the sample count means nothing without a limit' );
+	b3.b3ClearConvexDecompositionCache();
+
+	b3.b3DestroyWorld( world );
+	return { volumeHulls: volume.offsets.length - 1, mergedHulls: count };
 }
 
 // The async variants' cache: hits, in-flight sharing, key normalization, asset ids,
@@ -2319,6 +2387,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 	const { height, speed } = moverAndPogoJoints( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
+	const doorway = await surfaceMerge( b3, decompositionOptions );
 
 	debugDraw( b3 );
 	debugRendererCulling( b3 );
@@ -2343,6 +2412,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
+		`a wall with a doorway took ${doorway.mergedHulls} hulls with the surface merge, ${doorway.volumeHulls} without; ` +
 		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
 		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }

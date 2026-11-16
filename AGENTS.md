@@ -40,12 +40,18 @@ pnpm test           # smoke tests against dist/
 pnpm docs:build     # regenerates README.md from docs/README.template.md
 pnpm docs:check     # type-checks doc snippets
 pnpm check          # biome lint + format check for examples/src
+pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (maxConcavity)
 ```
 
 ## Vehicle presets
 
 - `src/wheeled-vehicles.js` (with `src/wheeled-vehicles.d.ts`, shipped as `box3d.js/wheeled-vehicles`) holds the vehicle presets: the four originals and a 45 car matrix (sports, rally, super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers (car, then drivetrain, then realism level). The metrics and laps scripts read `src/wheeled-vehicles.js` directly, so tuning needs no rebuild, but `dist/wheeled-vehicles.mjs` and `dist/wheeled-vehicles.d.ts` are plain copies that must be refreshed before committing (`pnpm build` does it; `pnpm test` fails on a stale copy).
 - To build or tune a car, follow the skill in `.claude/skills/vehicle-tuning/SKILL.md`, and check the result with `node examples/scripts/vehicle-metrics.mjs` (`--preset <name>`, `--car <name>`, `--all`, or `--file <module>`). Every matrix preset must pass it. For how easy a car is to drive with a keyboard, run `node examples/scripts/vehicle-wasd.mjs --car <name>`: a WASD driver through `createSteeringLimiter`, reporting the highest clean cornering pace and how the car fails above it.
+
+## Convex decomposition
+
+- `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With a `maxConcavity` option V-HACD hands over all its pieces and the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) merges them against the mesh surface instead of by volume; `b3MergeConvexDecomposition` runs that merge on its own.
+- `test/bench-decomposition-quality.mjs` compares the two merges on the procedural meshes in `test/decomposition-meshes.mjs`, with the metrics in `test/decomposition-metrics.mjs` (hull count, time, deepest open space sealed, volume over and missing). Run it before and after touching either merge. `--dump <dir>` writes each result as JSON, and `node examples/scripts/decomposition-screenshots.mjs <dir> <out>` draws them side by side.
 
 ## Conventions
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Convex decomposition can merge its pieces against the mesh surface, so openings stay open and the hull count follows from the shape. It only adds to the API: without the new option a decomposition is what it was.
+
+- `maxConcavity` on `b3ComputeConvexDecomposition`, `b3CreateConvexDecompositionShapes` and their Promise variants. V-HACD cuts the mesh into many small pieces and merges them down to `maxConvexHulls` by volume. An opening is cheap in volume, so that merge can close a doorway or a window, and it always spends the whole budget. With `maxConcavity`, V-HACD hands over all its pieces and the engine's new `b3MergeConvexPieces` merges them instead. Neighboring pieces merge cheapest first, the way HACD collapses the edges of its dual graph, and the cost of a merge is the depth of open space the merged hull would seal. That depth is measured as Roblox describes in "A Search for Better Convex Decomposition": points are sampled on the mesh triangles, a ray is cast outward from each, and the run of the ray inside the hull is what the hull seals there. The run is capped at twice the farthest the ray gets from the surface, so a doorway reads as its width and a sliver of hull lying against a wall as its thickness. Merging stops when the next merge would seal more than `maxConcavity`, a length in mesh units.
+  - `maxConvexHulls` stays a hard cap. When the limit leaves more hulls than that, merging goes on past it, still shallowest first.
+  - The result carries `concavities` (a `Float32Array`, the depth each hull seals) and `maxConcavity`, also through the Promise variants and their cache. The cache key includes the option, and its version moves to `b3cd2`.
+  - `concavitySamples` sets how many points are sampled on the mesh (8192 by default).
+  - In the threaded builds the Promise variants run V-HACD and the merge back to back on one thread of the job's own, in place of V-HACD's async wrapper.
+- `b3MergeConvexDecomposition(positions, indices, packed, options)` runs the merge on its own over a packed decomposition from anywhere, with `maxConcavity` (0.05 by default), an optional `maxConvexHulls` budget, `maxVerticesPerHull` and `concavitySamples`.
+- `vendor/box3d` points at the branch of nilo-technologies/box3d that adds `b3MergeConvexPieces` (`0b027f2`, on top of `main` at `42d771d`), and `dist/` is rebuilt from it. That also brings in tire load sensitivity (nilo-technologies/box3d#16), which is off by default and not bound here.
+- `pnpm bench:decomposition:quality` (`test/bench-decomposition-quality.mjs`) compares the two merges on eleven procedural meshes: walls with openings, a room, furniture, stairs, a torus, a torus knot and a mug. For each it reports the hull count, the time, the deepest open space a hull seals, and the hull volume outside the mesh and the mesh volume no hull covers. With `maxConcavity: 0.05` against V-HACD at budgets of 16 and 32 hulls (22 comparisons, single-threaded build, Node 22):
+  - Hulls: never more. A wall with a doorway takes 6 hulls where V-HACD spends 16, a U channel 5 against 15, a torus 15 against 32.
+  - Deepest open space sealed: the same or less in 20 of 22. On the torus at 16 hulls it is 4.5 cm against 17.4 cm, on the room 22.6 cm against 34.6 cm. It is more on the torus knot at 16 hulls (23.7 cm against 20.9 cm) and the chair at 32 (2.8 cm against 2.4 cm).
+  - Mesh volume left uncovered: the same or less in 21 of 22.
+  - Hull volume outside the mesh: the same or less in only 10 of 22. Where the merge goes further than V-HACD it gives up volume, a few centimeters deep over a wide area: the table's 5 hulls cover 14.1% more than the table where V-HACD's 16 cover 3.0%, and the bookcase at 16 hulls 46.4% against 33.2%.
+  - Time: 7% less than plain V-HACD over the 22 in total (47.3 s against 50.9 s), the same or less in 14 of them, from 19% less to 33% more on a single mesh. The two slowest against V-HACD are the table and the chair at 32 hulls, both under 0.7 s. V-HACD skips its own merge, which compares every pair of pieces, and the surface merge only looks at neighbors.
+- `examples/scripts/decomposition-screenshots.mjs` draws the benchmark's `--dump` output side by side. The pictures for these meshes are in `docs/images/decomposition/`.
+- The convex decomposition example has a merge control that switches between the two.
+- The smoke test decomposes a wall with a doorway both ways in every build: the surface merge takes 5 hulls against 11, keeps the doorway open, meets a budget of one hull by sealing it, and gives the same hulls through the Promise variants and the cache.
+
 ## v0.6.0
 
 Number-only entry points for another Wasm module to call box3d directly, with no JavaScript in between: Nilo's game classes compiled to Wasm import them. They only add to the API; the threaded builds' thread pool does change for JavaScript callers, below.

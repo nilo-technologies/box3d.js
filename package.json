@@ -43,6 +43,7 @@
     "build:debug": "node scripts/build.mjs --debug",
     "test": "node test/smoke.mjs",
     "bench:decomposition": "node test/bench-decomposition-cache.mjs",
+    "bench:decomposition:quality": "node test/bench-decomposition-quality.mjs",
     "bench:physics": "node test/bench-physics.mjs",
     "bench:physics:compare": "node test/bench-physics-compare.mjs",
     "docs:build": "node docs/build.js",

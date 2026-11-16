@@ -495,6 +495,10 @@ function getBodyPlaneResultAt( out, buf, i )
 //   const id = b3.createShapeId();
 //   for ( let i = 0; i < b3.getNumShapeIds( res ); i++ ) b3.getShapeIdAt( id, res, i );
 //
+// With a `maxConcavity` option V-HACD hands over all its pieces and box3d's surface merge
+// (b3MergeConvexPieces) joins them instead: neighbors merge cheapest first, and a merge
+// costs the depth of open space the merged hull would seal, so a doorway stays open.
+//
 // The blocking bindings live in src/bindings.cpp. The Promise variants below keep
 // the calling thread free while V-HACD runs:
 //
@@ -655,7 +659,7 @@ function decomposeAsync( positions, indices, options )
 // `options.cacheKey` (e.g. an asset id) replaces the mesh hash entirely.
 
 const DECOMPOSITION_CACHE_LIMIT = 512;
-const DECOMPOSITION_KEY_VERSION = 'b3cd1';
+const DECOMPOSITION_KEY_VERSION = 'b3cd2';
 
 let decompositionCache = new Map(); // key -> Promise<packed>; Map order = LRU order
 let decompositionMeshHashes = new WeakMap(); // positions -> WeakMap<indices, { hash, positionsLength, indicesLength }>
@@ -759,6 +763,11 @@ function b3ConvexDecompositionCacheKey( positions, indices, options )
 		num( o.minVolumePercentError, 1 ),
 		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
 		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
+		// the surface merge: off unless maxConcavity is given (the binding reads NaN as 0)
+		...( o.maxConcavity === undefined || o.maxConcavity === null
+			? [ '-' ]
+			: [ Math.fround( Math.max( 0, num( o.maxConcavity, 0 ) ) || 0 ),
+				Math.trunc( Math.min( 1048576, Math.max( 64, num( o.concavitySamples ?? undefined, 8192 ) ) ) ) ] ),
 	].join( '|' );
 }
 
@@ -801,8 +810,11 @@ function b3ComputeConvexDecompositionAsync( positions, indices, options )
 {
 	if ( options?.cache === false ) return decomposeAsync( positions, indices, options );
 	// callers get their own copy, so editing the result can't corrupt the cache
-	return cachedDecomposition( positions, indices, options ).then( ( packed ) =>
-		( { points: packed.points.slice(), offsets: packed.offsets.slice() } ) );
+	return cachedDecomposition( positions, indices, options ).then( ( packed ) => ( {
+		points: packed.points.slice(),
+		offsets: packed.offsets.slice(),
+		...( packed.concavities && { concavities: packed.concavities.slice(), maxConcavity: packed.maxConcavity } ),
+	} ) );
 }
 
 function assertBodyStillValid( bodyId )
@@ -1302,12 +1314,14 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	const rawShapes = Module.b3CreateConvexDecompositionShapes;
 	const rawShapesFromPacked = Module.b3CreateConvexDecompositionShapesFromPacked;
 	const rawCompound = Module.b3CreateDecompositionCompound;
+	const rawMerge = Module.b3MergeConvexDecomposition;
 	Module.b3ComputeConvexDecomposition = ( positions, indices, options ) => rawCompute( positions, indices, options );
 	Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
 		rawShapes( bodyId, shapeDef, positions, indices, options );
 	Module.b3CreateConvexDecompositionShapesFromPacked = ( bodyId, shapeDef, packed, maxVerticesPerHull ) =>
 		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
 	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
+	Module.b3MergeConvexDecomposition = ( positions, indices, packed, options ) => rawMerge( positions, indices, packed, options );
 
 	// Threaded builds start a pool of threads as they load: `pthreadPoolSize` in the
 	// factory's options, 4 by default. A world, a recording player and a blocking V-HACD

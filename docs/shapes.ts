@@ -182,6 +182,26 @@ const pieces = b3.b3UnpackConvexDecomposition(loaded);
 const repacked = b3.b3PackConvexDecomposition(pieces);
 /* SNIPPET_END: decomposition-cache */
 
+/* SNIPPET_START: decomposition-merge */
+// Merge the pieces against the mesh surface instead of by volume. maxConcavity is the
+// deepest open space a merged hull may seal, in mesh units: with the mesh in meters, an
+// opening wider than 5 cm stays open here. The hull count then follows from the shape,
+// and maxConvexHulls is a cap that is only met by force.
+const merged = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+    maxConvexHulls: 32,
+    maxConcavity: 0.05,
+});
+console.log(`${merged.offsets.length - 1} hulls, sealing at most ${merged.maxConcavity} m`);
+
+// The merge also runs on its own, over a decomposition from anywhere: V-HACD output with
+// a generous hull budget, or a stored asset.
+const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices, packed, {
+    maxConcavity: 0.05,
+    maxConvexHulls: 16, // optional budget: merging goes on past the limit to meet it
+});
+b3.b3CreateConvexDecompositionShapesFromPacked(cachedBody, sd, remerged);
+/* SNIPPET_END: decomposition-merge */
+
 /* SNIPPET_START: resize-disable */
 // Resize or reshape a hull shape in place: the hull is baked with a transform and a
 // (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to

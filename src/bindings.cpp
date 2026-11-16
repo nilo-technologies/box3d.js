@@ -34,10 +34,13 @@
 // The file is organized into sections so it stays buildable as coverage grows.
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -1303,6 +1306,8 @@ void DebugDrawBuffer::loadFrom( b3WorldId worldId, val options )
 // A decomposition crosses the boundary in one packed form, both directions:
 // { points: Float32Array (xyz per vertex, all pieces back to back),
 //   offsets: Uint32Array (pieceCount + 1 vertex offsets; piece i = [offsets[i], offsets[i+1])) }.
+// One that went through the surface merge (b3MergeConvexPieces) also carries
+// { concavities: Float32Array (one per piece), maxConcavity: number }.
 
 [[noreturn]] void throwJsError( DecompositionError code )
 {
@@ -1310,11 +1315,43 @@ void DebugDrawBuffer::loadFrom( b3WorldId worldId, val options )
 	__builtin_unreachable();
 }
 
+// Options of the surface merge, shared by the decomposition and b3MergeConvexDecomposition.
+struct MergeOptions
+{
+	float maxConcavity = 0.0f;
+	int maxHulls = 0; // 0: no budget
+	int maxVerticesPerHull = 32;
+	int sampleCount = 8192;
+};
+
 struct DecompositionOptions
 {
 	VHACD::IVHACD::Parameters params;
 	int maxVerticesPerHull = 32;
+	// Set by a `maxConcavity` option: V-HACD hands over every piece and the surface merge
+	// takes its place, with maxConvexHulls as the budget.
+	bool surfaceMerge = false;
+	MergeOptions merge;
 };
+
+bool hasOption( val options, const char* key )
+{
+	if ( options.isUndefined() || options.isNull() ) return false;
+	val v = options[key];
+	return !v.isUndefined() && !v.isNull();
+}
+
+// NaN falls to the lower bound, as in readDecompositionOptions.
+double clampOption( val options, const char* key, double fallback, double lo, double hi )
+{
+	const double v = hasOption( options, key ) ? options[key].as<double>() : fallback;
+	return std::min( hi, std::max( lo, v ) );
+}
+
+int readSampleCount( val options )
+{
+	return (int)clampOption( options, "concavitySamples", 8192.0, 64.0, 1048576.0 );
+}
 
 DecompositionOptions readDecompositionOptions( val options )
 {
@@ -1350,6 +1387,16 @@ DecompositionOptions readDecompositionOptions( val options )
 #else
 	p.m_asyncACD = false;
 #endif
+	if ( hasOption( options, "maxConcavity" ) )
+	{
+		o.surfaceMerge = true;
+		o.merge.maxConcavity = (float)clampOption( options, "maxConcavity", 0.0, 0.0, 3.0e38 );
+		o.merge.maxHulls = (int)std::min( p.m_maxConvexHulls, (uint32_t)INT32_MAX );
+		o.merge.maxVerticesPerHull = o.maxVerticesPerHull;
+		o.merge.sampleCount = readSampleCount( options );
+		// V-HACD merges only while it holds more hulls than this
+		p.m_maxConvexHulls = UINT32_MAX;
+	}
 	return o;
 }
 
@@ -1381,6 +1428,10 @@ struct DecompositionPieces
 {
 	std::vector<float> points;
 	std::vector<uint32_t> offsets{ 0 };
+	// Filled by the surface merge: the depth of open space each piece seals
+	std::vector<float> concavities;
+	float maxConcavity = 0.0f;
+	bool merged = false;
 };
 
 DecompositionPieces collectPieces( VHACD::IVHACD* vhacd )
@@ -1399,12 +1450,57 @@ DecompositionPieces collectPieces( VHACD::IVHACD* vhacd )
 	return out;
 }
 
-DecompositionPieces runDecomposition( const DecompositionMesh& mesh, const DecompositionOptions& opts )
+// Merge pieces against the mesh they were cut from (box3d's b3MergeConvexPieces). The mesh
+// and the offsets are read as box3d's own types: a packed decomposition is already laid out
+// that way, and readDecompositionMesh has checked the indices.
+static_assert( sizeof( b3Vec3 ) == 3 * sizeof( float ), "packed points are read as b3Vec3" );
+DecompositionPieces mergePieces( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts )
 {
-	VHACD::IVHACD* vhacd = VHACD::CreateVHACD();
+	b3ConvexMergeDef def = b3DefaultConvexMergeDef();
+	def.meshVertices = reinterpret_cast<const b3Vec3*>( mesh.positions.data() );
+	def.meshIndices = reinterpret_cast<const int32_t*>( mesh.indices.data() );
+	def.meshVertexCount = (int)( mesh.positions.size() / 3 );
+	def.meshTriangleCount = (int)( mesh.indices.size() / 3 );
+	def.piecePoints = reinterpret_cast<const b3Vec3*>( pieces.points.data() );
+	def.pieceOffsets = reinterpret_cast<const int32_t*>( pieces.offsets.data() );
+	def.pieceCount = (int)pieces.offsets.size() - 1;
+	def.maxConcavity = opts.maxConcavity;
+	def.maxHullCount = opts.maxHulls;
+	def.maxHullVertices = opts.maxVerticesPerHull;
+	def.sampleCount = opts.sampleCount;
+
+	DecompositionPieces out;
+	out.merged = true;
+	// Nothing to merge (a canceled or empty decomposition), or a mesh with no extent
+	b3ConvexMergeResult* result = def.pieceCount > 0 ? b3MergeConvexPieces( &def ) : nullptr;
+	if ( result == nullptr )
+	{
+		out.points = pieces.points;
+		out.offsets = pieces.offsets;
+		out.concavities.assign( pieces.offsets.size() - 1, 0.0f );
+		return out;
+	}
+	const float* points = reinterpret_cast<const float*>( result->points );
+	out.points.assign( points, points + (size_t)result->offsets[result->pieceCount] * 3 );
+	out.offsets.assign( result->offsets, result->offsets + result->pieceCount + 1 );
+	out.concavities.assign( result->concavities, result->concavities + result->pieceCount );
+	out.maxConcavity = result->maxConcavity;
+	b3DestroyConvexMergeResult( result );
+	return out;
+}
+
+DecompositionPieces decompose( VHACD::IVHACD* vhacd, const DecompositionMesh& mesh, const DecompositionOptions& opts )
+{
 	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
 		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
 	DecompositionPieces pieces = collectPieces( vhacd );
+	return opts.surfaceMerge ? mergePieces( mesh, pieces, opts.merge ) : pieces;
+}
+
+DecompositionPieces runDecomposition( const DecompositionMesh& mesh, const DecompositionOptions& opts )
+{
+	VHACD::IVHACD* vhacd = VHACD::CreateVHACD();
+	DecompositionPieces pieces = decompose( vhacd, mesh, opts );
 	vhacd->Clean();
 	vhacd->Release();
 	return pieces;
@@ -1430,6 +1526,11 @@ val toPacked( const DecompositionPieces& p )
 	val out = val::object();
 	out.set( "points", toF32( p.points ) );
 	out.set( "offsets", val::global( "Uint32Array" ).new_( typed_memory_view( p.offsets.size(), p.offsets.data() ) ) );
+	if ( p.merged )
+	{
+		out.set( "concavities", toF32( p.concavities ) );
+		out.set( "maxConcavity", p.maxConcavity );
+	}
 	return out;
 }
 
@@ -1492,36 +1593,54 @@ val attachHullShapes( b3BodyId bodyId, const b3ShapeDef& def, const Decompositio
 }
 
 #ifdef __EMSCRIPTEN_PTHREADS__
-// Background decomposition for the facade's Promise variants. V-HACD's async
-// implementation copies the mesh at start and runs it on its own thread; the
-// destructor cancels and joins that thread, so deleting a running job is safe.
+// Background decomposition for the facade's Promise variants. V-HACD and, when asked
+// for, the surface merge run back to back on one thread of the job's own, over the
+// job's copy of the mesh. The destructor cancels V-HACD and joins that thread, so
+// deleting a running job is safe. A merge already under way runs to its end first.
 class ConvexDecompositionJob
 {
 public:
-	ConvexDecompositionJob() : m_vhacd( VHACD::CreateVHACD_ASYNC() ) {}
+	ConvexDecompositionJob() : m_vhacd( VHACD::CreateVHACD() ) {}
 	~ConvexDecompositionJob()
 	{
+		// V-HACD clears its cancel flag as a run begins, so keep asking until the thread is done
+		m_cancel = true;
+		while ( m_thread.joinable() && !m_done )
+		{
+			m_vhacd->Cancel();
+			std::this_thread::yield();
+		}
+		if ( m_thread.joinable() ) m_thread.join();
 		m_vhacd->Clean();
 		m_vhacd->Release();
 	}
 
 	void start( val positions, val indices, val options )
 	{
-		DecompositionMesh mesh = readDecompositionMesh( positions, indices );
-		DecompositionOptions opts = readDecompositionOptions( options );
-		m_vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
-			(uint32_t)( mesh.indices.size() / 3 ), opts.params );
+		m_mesh = readDecompositionMesh( positions, indices );
+		m_opts = readDecompositionOptions( options );
+		m_thread = std::thread( [this]()
+		{
+			if ( !m_cancel ) m_pieces = decompose( m_vhacd, m_mesh, m_opts );
+			m_done = true;
+		} );
 	}
 
-	bool isReady() const { return m_vhacd->IsReady(); }
+	bool isReady() const { return m_done; }
 	val takeResult() const
 	{
-		if ( !m_vhacd->IsReady() ) throwJsError( e_jobNotReady );
-		return toPacked( collectPieces( m_vhacd ) );
+		if ( !m_done ) throwJsError( e_jobNotReady );
+		return toPacked( m_pieces );
 	}
 
 private:
 	VHACD::IVHACD* m_vhacd;
+	DecompositionMesh m_mesh;
+	DecompositionOptions m_opts;
+	DecompositionPieces m_pieces;
+	std::thread m_thread;
+	std::atomic<bool> m_done{ false };
+	std::atomic<bool> m_cancel{ false };
 };
 #endif
 
@@ -2528,6 +2647,21 @@ EMSCRIPTEN_BINDINGS( box3d )
 		+[]( b3BodyId bodyId, b3ShapeDef def, val packed, val maxVerticesPerHull ) -> val
 		{
 			return attachHullShapes( bodyId, def, readPacked( packed ), readMaxVertices( maxVerticesPerHull ) );
+		} );
+	// Surface merge of a packed decomposition against the mesh it was cut from. See
+	// b3MergeConvexPieces in box3d: neighboring pieces merge cheapest first, and a merge
+	// costs the depth of open space the merged hull would seal.
+	ret_function( "b3MergeConvexDecomposition(positions, indices, packed, options): b3ConvexDecomposition",
+		+[]( val positions, val indices, val packed, val options ) -> val
+		{
+			DecompositionMesh mesh = readDecompositionMesh( positions, indices );
+			DecompositionPieces pieces = readPacked( packed );
+			MergeOptions opts;
+			opts.maxConcavity = (float)clampOption( options, "maxConcavity", b3DefaultConvexMergeDef().maxConcavity, 0.0, 3.0e38 );
+			opts.maxHulls = (int)clampOption( options, "maxConvexHulls", 0.0, 0.0, 2147483647.0 );
+			opts.maxVerticesPerHull = (int)clampOption( options, "maxVerticesPerHull", 32.0, 4.0, 255.0 );
+			opts.sampleCount = readSampleCount( options );
+			return toPacked( mergePieces( mesh, pieces, opts ) );
 		} );
 	// The compound copies the hulls, so they are freed here. The compound itself is
 	// referenced (not copied) by b3CreateBakedCompoundShape: keep it alive until the shape
