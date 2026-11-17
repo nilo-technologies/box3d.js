@@ -280,6 +280,117 @@ function innerReach(line, closed) {
 	};
 }
 
+// The racing line keeps the car's centre this far inside the road edge (m)
+const lineMargin = 1.4;
+
+/**
+ * The racing line: the smoothest path inside the road, as offsets from the centreline (m, positive
+ * to the left), held inside `limit(i, side)`. It follows K1999, Rémi Coulom's racing line for
+ * TORCS: each point in turn moves across the road until the curvature there (of the circle
+ * through it and its two neighbours) is the mean of the curvature just before and just after it.
+ * Curvature then changes evenly along the line and never peaks, which opens every corner up: out
+ * wide before it, across the inside at the apex, wide again after. A sweep like that only smooths
+ * over a few points, so the line is solved coarse to fine: with points 32 m apart first, the rest
+ * laid between them, then 16 m, 8 m and so on down to every sample. An open track starts and ends
+ * on the centreline.
+ */
+function racingLineOffsets(centerline, closed, limit) {
+	const n = centerline.length;
+	const offset = new Float64Array(n);
+	const px = new Float64Array(n);
+	const pz = new Float64Array(n);
+	const lo = new Float64Array(n);
+	const hi = new Float64Array(n);
+	const pinned = closed ? 0 : 12;
+	for (let i = 0; i < n; i++) {
+		px[i] = centerline[i].x;
+		pz[i] = centerline[i].z;
+		const fixed = i < pinned || i >= n - pinned;
+		lo[i] = fixed ? 0 : -limit(i, -1);
+		hi[i] = fixed ? 0 : limit(i, 1);
+	}
+	const place = (i, value) => {
+		const p = centerline[i];
+		offset[i] = Math.min(Math.max(value, lo[i]), hi[i]);
+		// Left of the direction of travel is (tz, -tx)
+		px[i] = p.x + p.tz * offset[i];
+		pz[i] = p.z - p.tx * offset[i];
+	};
+	const gap = (i, j) =>
+		Math.max(Math.hypot(px[j] - px[i], pz[j] - pz[i]), 1e-3);
+	// Signed curvature of the circle through three points, the middle one given by position
+	const curvatureAt = (i, x, z, k) => {
+		const ux = x - px[i];
+		const uz = z - pz[i];
+		const vx = px[k] - x;
+		const vz = pz[k] - z;
+		const product =
+			Math.hypot(ux, uz) *
+			Math.hypot(vx, vz) *
+			Math.hypot(px[k] - px[i], pz[k] - pz[i]);
+		return product > 1e-9 ? (2 * (ux * vz - uz * vx)) / product : 0;
+	};
+	const curvature = (i, j, k) => curvatureAt(i, px[j], pz[j], k);
+
+	for (const stride of [32, 16, 8, 4, 2, 1]) {
+		// The points this level moves, evenly spread: all the way round a closed track, from the
+		// first sample to the last of an open one
+		const span = closed ? n : n - 1;
+		const m = Math.max(Math.round(span / stride), 4);
+		const nodes = [];
+		for (let k = 0; k < (closed ? m : m + 1); k++)
+			nodes.push(Math.round((k * span) / m));
+		const count = nodes.length;
+		const node = closed
+			? (k) => nodes[((k % count) + count) % count]
+			: (k) => nodes[Math.min(Math.max(k, 0), count - 1)];
+		for (let sweep = 0; sweep < 200; sweep++) {
+			for (let k = 0; k < count; k++) {
+				const a = node(k - 2);
+				const b = node(k - 1);
+				const i = node(k);
+				const c = node(k + 1);
+				const d = node(k + 2);
+				if (b === i || c === i) continue;
+				const before = curvature(a, b, i);
+				const after = curvature(i, c, d);
+				const bi = gap(b, i);
+				const ic = gap(i, c);
+				const target = (ic * before + bi * after) / (bi + ic);
+				// Where this sample's line across the road meets the chord between its neighbours
+				// the curvature is zero, and from there it grows evenly with the offset
+				const p = centerline[i];
+				const ex = px[c] - px[b];
+				const ez = pz[c] - pz[b];
+				const cross = p.tz * ez + p.tx * ex;
+				if (Math.abs(cross) < 1e-6) continue;
+				const chord = ((px[b] - p.x) * ez - (pz[b] - p.z) * ex) / cross;
+				const probe = 0.01;
+				const rate =
+					curvatureAt(
+						b,
+						p.x + p.tz * (chord + probe),
+						p.z - p.tx * (chord + probe),
+						c,
+					) / probe;
+				if (Math.abs(rate) < 1e-9) continue;
+				place(i, chord + target / rate);
+			}
+		}
+		// Lay the samples between two of this level's points on a straight run of offsets, for
+		// the next level to start from
+		for (let k = 0; k < (closed ? count : count - 1); k++) {
+			const from = nodes[k];
+			const to = k + 1 < count ? nodes[k + 1] : nodes[0] + n;
+			for (let i = from + 1; i < to; i++) {
+				const t = (i - from) / (to - from);
+				place(i % n, offset[from] + (offset[to % n] - offset[from]) * t);
+			}
+		}
+	}
+	return offset;
+}
+
 const smoothstep = (e0, e1, x) => {
 	const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
 	return t * t * (3 - 2 * t);
@@ -716,6 +827,53 @@ export function buildRaceTrack(name) {
 		}
 	}
 
+	// The racing line, one point for each centreline sample. Inside a hairpin the road itself
+	// stops short of its full width (reachInside), so the line does too.
+	const lineOffsets = racingLineOffsets(centerline, closed, (i, side) =>
+		Math.max(0, Math.min(half, reachInside(i, side)) - lineMargin),
+	);
+	const racingLine = centerline.map((c, i) => {
+		const x = c.x + c.tz * lineOffsets[i];
+		const z = c.z - c.tx * lineOffsets[i];
+		return {
+			x,
+			y: def.road ? c.y : groundAt(x, z),
+			z,
+			offset: lineOffsets[i],
+			curvature: 0,
+		};
+	});
+	{
+		// Signed curvature (1/m, negative turning left as for the centreline): the turn of the
+		// line's own heading over the samples 3 either side, by the distance between them
+		const lineAt = (k) =>
+			closed
+				? racingLine[((k % count) + count) % count]
+				: racingLine[Math.min(Math.max(k, 0), count - 1)];
+		const heading = racingLine.map((_, i) => {
+			const a = lineAt(i - 1);
+			const b = lineAt(i + 1);
+			return Math.atan2(b.x - a.x, b.z - a.z);
+		});
+		const headingAt = (k) =>
+			heading[
+				closed
+					? ((k % count) + count) % count
+					: Math.min(Math.max(k, 0), count - 1)
+			];
+		for (let i = 0; i < count; i++) {
+			let turn = headingAt(i - 3) - headingAt(i + 3);
+			turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+			let distance = 0;
+			for (let k = i - 3; k < i + 3; k++) {
+				const a = lineAt(k);
+				const b = lineAt(k + 1);
+				distance += Math.hypot(b.x - a.x, b.z - a.z);
+			}
+			racingLine[i].curvature = distance > 0 ? turn / distance : 0;
+		}
+	}
+
 	const pose = (c) => ({
 		position: [c.x, c.y, c.z],
 		yaw: Math.atan2(c.tx, c.tz),
@@ -732,6 +890,7 @@ export function buildRaceTrack(name) {
 		closed,
 		length,
 		centerline,
+		racingLine,
 		bumpSection: hasBumps ? { from: bumpStart, to: bumpEnd } : null,
 		field: { heights, countX, countZ, cell, origin: [x0, z0] },
 		road: roadMesh,
@@ -744,6 +903,71 @@ export function buildRaceTrack(name) {
 		roadAt,
 		groundAt,
 	};
+}
+
+/**
+ * The fastest a car may be at each racing line sample and still make every corner ahead (m/s):
+ * the speed its tires can hold round the line there, and the speed it can still brake from for
+ * the corners after it. Braking shares the tires with cornering (a friction circle), so a corner
+ * that tightens as the car brakes for it leaves less to brake with. Downhill there is less to
+ * brake with too.
+ *
+ * `car` has the front tires' `grip` (lateral peak friction) and `peakAngle` (the slip angle of
+ * that peak, radians), the `wheelbase` (m) and the steering's `maxAngle` (radians) and
+ * `speedReference` (m/s). `pace` is the share of the grip to plan with: 0.9 leaves a tenth in hand.
+ */
+export function racingLineSpeeds(track, car, pace = 0.9) {
+	const line = track.racingLine;
+	const n = line.length;
+	const g = 9.81;
+	const lateral = pace * car.grip * g;
+	const speeds = new Float32Array(n);
+	// The lock the steering has at a speed, less the lock the corner takes there: the wheelbase
+	// over the radius to follow it, plus the front tires' slip angle, which grows with the
+	// cornering force up to their peak. The steering turns less the faster the car goes, so in a
+	// fast bend it runs out of lock before the tires run out of grip.
+	const lockLeft = (v, kappa) => {
+		const x = car.speedReference > 0 ? v / car.speedReference : 0;
+		const slip = car.peakAngle * Math.min((v * v * kappa) / (car.grip * g), 1);
+		return car.maxAngle / (1 + x * x) - car.wheelbase * kappa - slip;
+	};
+	for (let i = 0; i < n; i++) {
+		const kappa = Math.max(Math.abs(line[i].curvature), 1e-6);
+		let v = Math.min(Math.sqrt(lateral / kappa), 120);
+		if (lockLeft(v, kappa) < 0) {
+			// The fastest speed that still has the lock, never under a walking pace round a
+			// hairpin tighter than full lock can turn
+			let low = 3;
+			for (let step = 0; step < 24 && lockLeft(low, kappa) >= 0; step++) {
+				const mid = (low + v) / 2;
+				if (lockLeft(mid, kappa) >= 0) low = mid;
+				else v = mid;
+			}
+			v = low;
+		}
+		speeds[i] = v;
+	}
+	// Backward from each corner: how fast the car may arrive a sample earlier and still be down
+	// to this sample's speed. Twice round a closed track, so the corners after the line's first
+	// sample count for its last ones.
+	const last = track.closed ? 2 * n - 1 : n - 2;
+	for (let k = last; k >= 0; k--) {
+		const i = k % n;
+		const j = (k + 1) % n;
+		const a = line[i];
+		const b = line[j];
+		const ds = Math.hypot(b.x - a.x, b.z - a.z);
+		const v = speeds[j];
+		// The share of the grip the corner at the next sample already takes
+		const used = Math.min((v * v * Math.abs(b.curvature)) / lateral, 1);
+		const grade = ds > 0 ? (b.y - a.y) / ds : 0;
+		const braking = Math.max(
+			0.8 * lateral * Math.sqrt(1 - used * used) + g * Math.min(grade, 0),
+			1,
+		);
+		speeds[i] = Math.min(speeds[i], Math.sqrt(v * v + 2 * braking * ds));
+	}
+	return speeds;
 }
 
 /**

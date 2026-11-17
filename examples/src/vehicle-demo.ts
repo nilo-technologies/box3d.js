@@ -40,9 +40,11 @@ import { createSteeringLimiter } from './vehicle-steering';
 import { createTouchControls, touchCodes } from './vehicle-touch';
 import {
 	addRaceTrackArt,
+	addRacingLineArt,
 	applyTopoAtmosphere,
 	heightColors,
 	overlayMaterial,
+	type RacingLineArt,
 	topo,
 	topoMaterial,
 } from './vehicle-track-art';
@@ -152,6 +154,7 @@ export async function runWheeledVehicleDemo(
 	let spawn: b3Vec3 = [0, spawnClearance, 0];
 	let spawnYaw = 0;
 	let raceTrack: RaceTrack | null = null;
+	let racingLine: RacingLineArt | null = null;
 
 	function buildTrack(): void {
 		const size = 250;
@@ -387,6 +390,7 @@ export async function runWheeledVehicleDemo(
 		if (road) hidden.add(road.index1);
 		if (rails) hidden.add(rails.index1);
 		addRaceTrackArt(app.scene, track);
+		racingLine = addRacingLineArt(app.scene, track);
 		app.camera.far = 1000;
 		app.camera.updateProjectionMatrix();
 
@@ -789,6 +793,46 @@ export async function runWheeledVehicleDemo(
 		.name('sound volume (N mutes)')
 		.onChange((value: number) => audio.setVolume(value));
 	addEngineVoicePicker(app.gui, audio);
+
+	// The racing line on the race tracks, coloured ahead of the car for the speed it is doing
+	// (racingLine is set inside buildRaceTrackTerrain, which TypeScript's narrowing cannot see)
+	const lineArt = racingLine as RacingLineArt | null;
+	const lineSettings = { visible: true };
+	const lineController = lineArt
+		? app.gui
+				.add(lineSettings, 'visible')
+				.name('racing line (L)')
+				.onChange((value: boolean) => {
+					lineArt.mesh.visible = value;
+				})
+		: null;
+	function toggleRacingLine(): void {
+		if (!lineArt) return;
+		lineSettings.visible = !lineSettings.visible;
+		lineArt.mesh.visible = lineSettings.visible;
+		lineController?.updateDisplay();
+	}
+	const lineCar = {
+		grip: 1,
+		peakAngle: 0.1,
+		wheelbase: 2.5,
+		maxAngle: 0.6,
+		speedReference: 0,
+	};
+	function updateRacingLine(): void {
+		if (!lineArt || !lineSettings.visible) return;
+		// The car as the settings panel has it now, so a change of tires or steering moves the
+		// braking points
+		const { wheels, steering } = car.live;
+		const front = wheels[0];
+		const rear = wheels[wheels.length - 1];
+		lineCar.grip = front.tire.lateralPeakFriction;
+		lineCar.peakAngle = front.tire.lateralPeakAngle;
+		lineCar.wheelbase = Math.abs(front.position[2] - rear.position[2]) || 2.5;
+		lineCar.maxAngle = steering.maxAngle;
+		lineCar.speedReference = steering.speedReference;
+		lineArt.update(lap.index, Math.abs(state.speed), lineCar);
+	}
 	function toggleMute(): void {
 		if (soundSettings.volume > 0) unmutedVolume = soundSettings.volume;
 		soundSettings.volume = soundSettings.volume > 0 ? 0 : unmutedVolume;
@@ -925,6 +969,7 @@ export async function runWheeledVehicleDemo(
 		else if (code === 'KeyR') flipOrRestart();
 		else if (code === 'KeyT') resetCar(true);
 		else if (code === 'KeyN') toggleMute();
+		else if (code === 'KeyL') toggleRacingLine();
 		else if (code === 'KeyV') audio.blowOff(1);
 		else if (code === 'KeyC') audio.flutter(1);
 		else pressHandlers.get(code)?.();
@@ -972,7 +1017,10 @@ export async function runWheeledVehicleDemo(
 
 	const controlsHelp =
 		'W/S or ↑/↓ drive and brake · A/D steer · space handbrake<br>' +
-		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · V/C blow-off/stutter · gamepad works too';
+		'Q/E shift (manual) · M auto/manual · R flip upright · T back to start · N sound on/off · V/C blow-off/stutter · gamepad works too' +
+		(lineArt
+			? '<br>L racing line: blue flat out, yellow ease off, red brake'
+			: '');
 	const touchHelp =
 		'Left pad steers, further out for more lock · ▲ gas · ▼ brake, hold to reverse · HB handbrake · ↻ flip upright';
 	const info = document.createElement('div');
@@ -1270,6 +1318,7 @@ export async function runWheeledVehicleDemo(
 			if (accumulator >= STEP) accumulator = 0;
 		});
 		if (currPos.y < -30) resetCar(true);
+		updateRacingLine();
 
 		const alpha = accumulator / STEP;
 		renderPos.lerpVectors(prevPos, currPos, alpha);

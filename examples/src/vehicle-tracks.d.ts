@@ -105,6 +105,29 @@ export interface RaceTrackBump {
 	points: number[];
 }
 
+/** A point of the racing line, on the road surface */
+export interface RaceTrackLinePoint {
+	x: number;
+	y: number;
+	z: number;
+	/** Distance from the centreline sample it belongs to (m), positive to the left */
+	offset: number;
+	/** Signed curvature of the line here (1/m), negative turning left */
+	curvature: number;
+}
+
+/** What the racing line's speed plan needs to know about a car */
+export interface RacingLineCar {
+	/** The front tires' lateral peak friction */
+	grip: number;
+	/** The slip angle of that peak (radians) */
+	peakAngle: number;
+	wheelbase: number;
+	/** The steering's `maxAngle` (radians) and `speedReference` (m/s) */
+	maxAngle: number;
+	speedReference: number;
+}
+
 export interface RaceTrack {
 	name: RaceTrackName;
 	title: string;
@@ -115,6 +138,12 @@ export interface RaceTrack {
 	length: number;
 	/** One sample per metre */
 	centerline: RaceTrackSample[];
+	/**
+	 * The racing line: the smoothest path inside the road, out wide before a corner, across the
+	 * inside at its apex and wide again after. One point for each centreline sample, at most
+	 * the road's half width less 1.4 m from it.
+	 */
+	racingLine: RaceTrackLinePoint[];
 	/** Centreline indices of the bump section, on a track with bumps */
 	bumpSection: { from: number; to: number } | null;
 	field: {
@@ -163,6 +192,17 @@ export function wheelsIgnoreRails(
 ): b3WheeledVehicleDef;
 
 export function buildRaceTrack(name: RaceTrackName): RaceTrack;
+
+/**
+ * The fastest a car may be at each racing line sample and still make every corner ahead (m/s):
+ * what its tires and its steering can hold round the line there, and what it can still brake from
+ * for the corners after it. `pace` is the share of the grip to plan with (0.9 by default).
+ */
+export function racingLineSpeeds(
+	track: RaceTrack,
+	car: RacingLineCar,
+	pace?: number,
+): Float32Array;
 
 export function createRaceTrackBodies(
 	b3: Box3DModule,

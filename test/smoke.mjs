@@ -1927,6 +1927,49 @@ async function vehicleScenarios( b3 )
 			assert.ok( run.minUp > 0.3, `${name}: the sports car does not flip (upright ${run.minUp.toFixed( 2 )})` );
 			results.laps[ name ] = run.lapTime;
 		}
+
+		// The racing line: a point for each centreline sample, inside the road with room for the
+		// car, opening every track's tightest corner up. Its speed plan is finite and never asks
+		// for more than the tires hold, and the autopilot following it laps quicker than on the
+		// centreline.
+		const { racingLineSpeeds } = await import( '../examples/src/vehicle-tracks.js' );
+		for ( const name of [ 'circuit', 'stage', 'downhill', 'uphill' ] )
+		{
+			const track = buildRaceTrack( name );
+			const centre = track.centerline, line = track.racingLine, n = centre.length;
+			assert.equal( line.length, n, `${name}: a racing line point for each centreline sample` );
+			let widest = 0, tightest = 0, centreTightest = 0;
+			for ( let i = 0; i < n; i++ )
+			{
+				const c = centre[ i ], p = line[ i ];
+				// The point is the sample moved across the road by its offset
+				assert.ok( Math.hypot( p.x - ( c.x + c.tz * p.offset ), p.z - ( c.z - c.tx * p.offset ) ) < 1e-6, `${name}: racing line point ${i} lies across the road from its sample` );
+				widest = Math.max( widest, Math.abs( p.offset ) );
+				tightest = Math.max( tightest, Math.abs( p.curvature ) );
+				const a = centre[ track.closed ? ( i - 3 + n ) % n : Math.max( i - 3, 0 ) ];
+				const b = centre[ track.closed ? ( i + 3 ) % n : Math.min( i + 3, n - 1 ) ];
+				centreTightest = Math.max( centreTightest, Math.abs( Math.atan2( a.tx * b.tz - a.tz * b.tx, a.tx * b.tx + a.tz * b.tz ) ) / 6 );
+			}
+			assert.ok( widest <= track.width / 2 - 1.4 + 1e-6, `${name}: the racing line stays 1.4 m inside the road edge (${widest.toFixed( 2 )} m out at most)` );
+			assert.ok( widest > track.width / 2 - 1.5, `${name}: the racing line uses the width of the road` );
+			assert.ok( tightest < 0.9 * centreTightest, `${name}: the racing line opens the tightest corner up (radius ${( 1 / tightest ).toFixed( 1 )} m against ${( 1 / centreTightest ).toFixed( 1 )} m)` );
+			if ( !track.closed ) assert.ok( line[ 0 ].offset === 0 && line[ n - 1 ].offset === 0, `${name}: the racing line starts and ends on the centreline` );
+
+			const car = { grip: 1.43, peakAngle: 7 * Math.PI / 180, wheelbase: 2.55, maxAngle: 34 * Math.PI / 180, speedReference: 14 };
+			const speeds = racingLineSpeeds( track, car, 0.9 );
+			assert.equal( speeds.length, n );
+			for ( let i = 0; i < n; i++ )
+			{
+				const grip = Math.sqrt( 0.9 * car.grip * 9.81 / Math.max( Math.abs( line[ i ].curvature ), 1e-6 ) );
+				assert.ok( speeds[ i ] >= 3 - 1e-3 && speeds[ i ] <= grip * 1.0001, `${name}: planned speed at ${i} is ${speeds[ i ].toFixed( 1 )} m/s (the tires hold ${grip.toFixed( 1 )})` );
+			}
+			results.lineRadius ??= {};
+			results.lineRadius[ name ] = [ 1 / centreTightest, 1 / tightest ];
+		}
+		const onLine = driveLap( 'circuit', wheeledVehiclePresets[ 'sports-50-rwd' ], { b3, racingLine: true } );
+		assert.ok( onLine.completed && onLine.minUp > 0.3, 'circuit: sports-50-rwd laps the racing line' );
+		assert.ok( onLine.lapTime < 0.95 * results.laps.circuit, `circuit: the racing line is quicker (${onLine.lapTime.toFixed( 1 )} s against ${results.laps.circuit.toFixed( 1 )} s on the centreline)` );
+		results.laps.circuitLine = onLine.lapTime;
 	}
 
 	// 50 cars driving in circles cost under 1 ms per step
@@ -2220,7 +2263,7 @@ async function check( label, importPath, decompositionOptions )
 	const matrix = runs.filter( ( [ name ] ) => name.includes( '-' ) ).map( ( [ , t ] ) => t );
 	const presets = runs.filter( ( [ name ] ) => !name.includes( '-' ) ).map( ( [ name, t ] ) => `${name} ${t.toFixed( 1 )}s` ).join( ', ' ) +
 		`, ${matrix.length} matrix presets ${Math.min( ...matrix ).toFixed( 1 )}-${Math.max( ...matrix ).toFixed( 1 )}s, ` +
-		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s, stage ${vehicle.laps.stage.toFixed( 1 )}s, ` +
+		`laps: circuit ${vehicle.laps.circuit.toFixed( 1 )}s (${vehicle.laps.circuitLine.toFixed( 1 )}s on the racing line), stage ${vehicle.laps.stage.toFixed( 1 )}s, ` +
 		`sports-50-rwd downhill ${vehicle.laps[ 'downhill' ].toFixed( 1 )}s, uphill ${vehicle.laps[ 'uphill' ].toFixed( 1 )}s`;
 	console.log( `  ${label}: vehicle rode at ${vehicle.rideHeight.toFixed( 3 )} m, 0-100 km/h in ${vehicle.zeroTo100.toFixed( 2 )} s, ` +
 		`braked in ${vehicle.braking.toFixed( 1 )} m, turned at ${vehicle.turnRadius.toFixed( 2 )} m radius, ` +
