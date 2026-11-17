@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The sports car has 370 hp (486 N·m, was 420 N·m and 320 hp), and at 50% realism its tail moves.
+  - Power: 0-100 km/h in 4.18 s at 50% RWD (was 4.83) and 5.02 s at 100% (was 5.13), top speed 267 km/h (was 251). On the mountain pass it pulls about 8% harder out of corners and runs about 2 s quicker each way with the keyboard driver.
+  - 50% realism: `rearGrip: { 50: 0.99 }` on the car. Lifting mid corner or flicking the car swings the tail to about 15° (was 8 to 12°) and it comes back, and a corner taken too fast mostly slides instead of ploughing wide. A car layer can now carry its own rear side grip for a realism level (`WheeledVehicleCar.rearGrip`), used in place of the level's shared value.
+  - All 15 sports presets pass `vehicle-metrics.mjs --perturb` (also with the showcase's twin-scroll turbo) and lap the circuit and the stage at paces 0.8, 0.85 and 0.9. On the mountain pass they finish both ways at 0.8 and 0.85 and with the keyboard driver at all three; at the autopilot's 0.9 downhill 26 of 30 finish (29 before): it holds full throttle into a slide at two corners.
+- `examples/scripts/vehicle-feel.mjs` measures how a preset feels on the mountain pass: ten keyboard runs downhill and uphill, reporting the pull out of corners, the time spent sliding, slides recovered, spins and guardrail hits. `--set engine.maxTorque=486` tries a car layer field without editing the presets. The vehicle tuning skill has what it taught (findings #51-52).
 - `vendor/box3d` points at nilo-technologies/box3d `main` (`42d771d`), and `dist/` is rebuilt from it. It brings three engine changes:
   - Tire load sensitivity (nilo-technologies/box3d#16), described below.
   - Self righting works on a level roof (nilo-technologies/box3d#15). A car lying flat on its roof stayed there: every wheel reported ground contact from a cast that started inside the ground, the righting direction flipped every step, and the stuck timer reset mid roll.

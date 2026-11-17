@@ -121,6 +121,11 @@ export interface WheeledVehicleCar {
 		/** Multiplies the rear tires' side grip in AWD (default 1) */
 		awdRearGrip?: number;
 	};
+	/**
+	 * This car's rear side grip at a realism level, in place of the level's own `rearGrip`. For a
+	 * car whose balance at one level wants a looser or tighter rear than the shared table gives.
+	 */
+	rearGrip?: Partial<Record<WheeledVehicleRealism, number>>;
 }
 
 /** The second preset layer */

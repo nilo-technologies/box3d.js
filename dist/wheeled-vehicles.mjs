@@ -289,7 +289,7 @@ function applyCar(def, car) {
 export const wheeledVehicleCars = {
 	sports: {
 		title: 'Sports car',
-		blurb: 'Front engine coupe: 1400 kg, 420 N·m, road tires, six gears.',
+		blurb: 'Front engine coupe: 1400 kg, 370 hp, road tires, six gears.',
 		color: 0xff6b6b,
 		halfExtents: [0.72, 0.28, 2.15],
 		mass: 1400,
@@ -336,8 +336,11 @@ export const wheeledVehicleCars = {
 			latSlide: 1.06,
 			rolling: 0.013,
 		},
+		// 370 hp at 6900 rpm: the torque falls in a line from its peak to 75% of it at the limiter.
+		// In second and third gear the car is power limited, so the torque is what it pulls with
+		// out of a corner; in first, traction control holds the tires well under their grip.
 		engine: {
-			maxTorque: 420,
+			maxTorque: 486,
 			peakTorqueRpm: 5000,
 			idleRpm: 850,
 			maxRpm: 7200,
@@ -367,6 +370,12 @@ export const wheeledVehicleCars = {
 		abs: true,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
 		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4, awdRearGrip: 0.985 },
+		// At 50% the tail moves: lifting mid corner or flicking the car swings it out to about 15
+		// degrees (8 to 12 without this) and it comes back, and a corner taken too fast mostly slides
+		// instead of ploughing wide. The 25% and arcade rows loosen the rear themselves, and the same
+		// cut on the tire (every level) took those two past the 25 degree limit. 0.985 moved more
+		// (18 degrees) but rolled two cars landing the circuit's big hump at the autopilot's top pace.
+		rearGrip: { 50: 0.99 },
 	},
 	rally: {
 		title: 'Rally car',
@@ -854,7 +863,10 @@ export function applyTurbo(def, type) {
 export function applyWheeledVehiclePreset(def, car, realism, drive, turbo = 'none') {
 	applyCar(def, wheeledVehicleCars[car]);
 	drivetrainLayers[drive].apply(def, wheeledVehicleCars[car]);
-	applyRealism(def, realismLevels[realism]);
+	const level = realismLevels[realism];
+	// A car can set its own rear side grip at a level (see the sports car)
+	const rearGrip = wheeledVehicleCars[car].rearGrip?.[realism];
+	applyRealism(def, rearGrip === undefined ? level : { ...level, rearGrip });
 	if (turbo !== 'none') applyTurbo(def, turbo);
 	return def;
 }
