@@ -183,20 +183,25 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
 /* SNIPPET_END: decomposition-cache */
 
 /* SNIPPET_START: decomposition-merge */
-// Merge the pieces against the mesh surface instead of by volume. maxConcavity is the
-// deepest open space a merged hull may seal, in mesh units: with the mesh in meters, an
-// opening wider than 5 cm stays open here. The hull count then follows from the shape,
-// and maxConvexHulls is a cap that is only met by force.
+// Merge the pieces against the mesh surface instead of by volume. The merge finds how much
+// open space a hull may seal by itself, with a sweep, and the hull count follows from the
+// shape. maxConvexHulls is a cap that is only met by force.
 const merged = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+    surfaceMerge: true,
     maxConvexHulls: 32,
-    maxConcavity: 0.05,
 });
 console.log(`${merged.offsets.length - 1} hulls, sealing at most ${merged.maxConcavity} m`);
+
+// Or give the limit yourself: with the mesh in meters, an opening wider than 5 cm stays
+// open here.
+const mergedToLimit = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+    maxConcavity: 0.05,
+    sweep: false,
+});
 
 // The merge also runs on its own, over a decomposition from anywhere: V-HACD output with
 // a generous hull budget, or a stored asset.
 const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices, packed, {
-    maxConcavity: 0.05,
     maxConvexHulls: 16, // optional budget: merging goes on past the limit to meet it
 });
 const remergedBody = b3.b3CreateBody(world, decompBodyDef);
@@ -204,36 +209,37 @@ b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
 /* SNIPPET_END: decomposition-merge */
 
 /* SNIPPET_START: decomposition-sweep */
-// How many hulls does this mesh need? Sweep the limit: V-HACD runs once, its pieces are
-// merged at nine loosening limits in one pass, and one step is recommended.
+// What did the merge's sweep see? b3SweepConvexDecomposition is a decomposition with the
+// surface merge on, returned with every limit tried and the step kept.
 const sweep = b3.b3SweepConvexDecomposition(concavePositions, concaveIndices);
 for (const step of sweep.steps) {
     console.log(`limit ${step.maxConcavity} m: ${step.hullCount} hulls sealing ${step.sealedDepth} m`);
 }
+const keptStep = sweep.steps[sweep.best];
+console.log(`kept ${keptStep.hullCount} hulls, merged to a limit of ${keptStep.maxConcavity} m`);
 
-// the recommended step is a decomposition like any other
-const recommended = sweep.steps[sweep.best];
+// its hulls are a decomposition like any other
 const sweptBody = b3.b3CreateBody(world, decompBodyDef);
-b3.b3CreateConvexDecompositionShapesFromPacked(sweptBody, sd, recommended.decomposition);
+b3.b3CreateConvexDecompositionShapesFromPacked(sweptBody, sd, sweep.decomposition);
 
-// or choose by a rule of your own: the fewest hulls that seal under 10 cm
-const underTen = sweep.steps.filter((step) => step.sealedDepth < 0.1).pop();
-
-// every option, with its default
-const tuned = await b3.b3SweepConvexDecompositionAsync(concavePositions, concaveIndices, {
-    // minConcavity: 0.5% of the bounding box diagonal, the tightest limit
-    // maxConcavity: 8% of the bounding box diagonal, the loosest limit
-    steps: 9,              // limits, spread geometrically between the two
-    // tolerances: [0.02, 0.05, 0.1], explicit limits in place of the three above
-    hullWeight: 1,         // above 1 recommends fewer hulls, below 1 a closer fit
-    // maxConvexHulls: no budget by default, the limits alone decide. Set, every step meets it
-    resolution: 100000,    // V-HACD's voxels
-    maxVerticesPerHull: 32,
-    minVolumePercentError: 1, // V-HACD stops splitting a piece within this volume error
-    maxRecursionDepth: 10, // V-HACD's split depth
-    shrinkWrap: true,      // project hull vertices back onto the mesh
-    useThreads: false,     // V-HACD's own worker threads, multithreaded builds only
+// The sweep's options, with their defaults. They are the same wherever the surface merge
+// runs: a decomposition, b3MergeConvexDecomposition and b3SweepConvexDecomposition.
+const tuned = await b3.b3ComputeConvexDecompositionAsync(concavePositions, concaveIndices, {
+    surfaceMerge: true,
+    sweep: true,            // false merges once, to maxConcavity
+    // minConcavity: 0.5% of the bounding box diagonal, the tightest limit tried
+    // maxConcavity: 8% of the bounding box diagonal, the loosest limit tried
+    sweepSteps: 9,          // limits, spread geometrically between the two
+    hullWeight: 1,          // above 1 keeps fewer hulls, below 1 a closer fit
     concavitySamples: 8192, // points sampled on the mesh surface
+});
+
+// To choose by a rule of your own, read the steps and merge to the limit you settle on:
+// here the loosest one whose hulls seal under 10 cm.
+const underTen = sweep.steps.filter((step) => step.sealedDepth < 0.1).pop();
+const mergedUnderTen = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+    maxConcavity: underTen ? underTen.maxConcavity : 0.05,
+    sweep: false,
 });
 /* SNIPPET_END: decomposition-sweep */
 

@@ -9,10 +9,10 @@
 // static-only), built from b3ComputeConvexDecompositionAsync. The "show" control draws
 // the hull shapes, the source mesh they approximate, or both overlaid. The "merge"
 // control picks how V-HACD's pieces are joined: by volume down to a hull budget (V-HACD's
-// own merge), or against the mesh surface with `maxConcavity`, where merging stops before
-// a hull would seal more than a few centimeters of open space and the hull count follows
-// from the shape. The hull budget still caps it: past the budget, merging goes on,
-// shallowest first.
+// own merge), or against the mesh surface, where merging stops before a hull would seal
+// more than a few centimeters of open space and the hull count follows from the shape.
+// How much a hull may seal is found by a sweep, here up to `maxConcavity`. The hull budget
+// still caps it: past the budget, merging goes on, shallowest first.
 
 import type { Box3DModule, b3BodyId, b3CompoundData } from 'box3d.js';
 import Box3D from 'box3d.js/inline';
@@ -225,12 +225,12 @@ const params = new URLSearchParams(location.search);
 const merge: { mode: MergeMode } = {
 	mode: params.get('merge') === 'surface' ? 'surface' : 'volume',
 };
-// 4 cm: under the tube radius of the torus and the wall of the bowl, so the merge keeps
-// their hollows open
+// The loosest limit the merge's sweep may try. 4 cm: under the tube radius of the torus and
+// the wall of the bowl, so the merge keeps their hollows open
 const MAX_CONCAVITY = 0.04;
 const mergeOptions = (maxConvexHulls: number) =>
 	merge.mode === 'surface'
-		? { maxConvexHulls, maxConcavity: MAX_CONCAVITY }
+		? { maxConvexHulls, surfaceMerge: true, maxConcavity: MAX_CONCAVITY }
 		: { maxConvexHulls };
 
 const status = {
@@ -252,7 +252,7 @@ app.gui
 app.gui
 	.add(merge, 'mode', {
 		'volume (V-HACD)': 'volume',
-		'surface (maxConcavity)': 'surface',
+		'surface (surfaceMerge)': 'surface',
 	})
 	.name('merge')
 	.onChange((mode: MergeMode) => {

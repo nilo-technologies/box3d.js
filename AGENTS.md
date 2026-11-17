@@ -40,7 +40,7 @@ pnpm test           # smoke tests against dist/
 pnpm docs:build     # regenerates README.md from docs/README.template.md
 pnpm docs:check     # type-checks doc snippets
 pnpm check          # biome lint + format check for examples/src
-pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (maxConcavity)
+pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (surfaceMerge)
 ```
 
 ## Vehicle presets
@@ -50,7 +50,7 @@ pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (m
 
 ## Convex decomposition
 
-- `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With a `maxConcavity` option V-HACD hands over all its pieces and the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) merges them against the mesh surface instead of by volume; `b3MergeConvexDecomposition` runs that merge on its own, and `b3SweepConvexDecomposition` merges at a series of limits in one pass (`b3SweepConvexPieces`) and recommends a hull count.
+- `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With a `surfaceMerge` option V-HACD hands over all its pieces and the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) merges them against the mesh surface instead of by volume. By default that merge finds its limit with a sweep (`b3ConvexMergeDef::enableSweep`); `sweep: false` merges once, to `maxConcavity`. `b3MergeConvexDecomposition` runs the merge on its own, and `b3SweepConvexDecomposition` is a decomposition with the merge on, returned with the steps of the sweep. The range, the step choice and the defaults live in the engine: the bindings only pass the options on.
 - `test/bench-decomposition-quality.mjs` compares the two merges on the procedural meshes in `test/decomposition-meshes.mjs`, with the metrics in `test/decomposition-metrics.mjs` (hull count, time, deepest open space sealed, volume over and missing). Run it before and after touching either merge. `--sweep` prints each mesh's sweep and the step recommended. `--dump <dir>` writes each result as JSON, and `node examples/scripts/decomposition-screenshots.mjs <dir> <out>` draws them side by side.
 
 ## Conventions

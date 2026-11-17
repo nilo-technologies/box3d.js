@@ -495,9 +495,10 @@ function getBodyPlaneResultAt( out, buf, i )
 //   const id = b3.createShapeId();
 //   for ( let i = 0; i < b3.getNumShapeIds( res ); i++ ) b3.getShapeIdAt( id, res, i );
 //
-// With a `maxConcavity` option V-HACD hands over all its pieces and box3d's surface merge
+// With a `surfaceMerge` option V-HACD hands over all its pieces and box3d's surface merge
 // (b3MergeConvexPieces) joins them instead: neighbors merge cheapest first, and a merge
-// costs the depth of open space the merged hull would seal, so a doorway stays open.
+// costs the depth of open space the merged hull would seal, so a doorway stays open. How
+// much a hull may seal is found by a sweep unless `sweep: false` leaves it to `maxConcavity`.
 //
 // The blocking bindings live in src/bindings.cpp. The Promise variants below keep
 // the calling thread free while V-HACD runs:
@@ -522,7 +523,7 @@ function canUseDecompositionWorker()
 		&& typeof URL.createObjectURL === 'function';
 }
 
-// A job is a decomposition, or with `sweep` set a whole b3SweepConvexDecomposition.
+// A job is a decomposition, or with `sweep` set a b3SweepConvexDecomposition.
 function computeDecompositionNow( job )
 {
 	try
@@ -564,10 +565,10 @@ self.onmessage = async ({ data }) => {
 			: b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options);
 	}
 	catch (err) { self.postMessage({ type: 'error', id: data.id, message: String(err?.message ?? err) }); return; }
-	// hand the hull buffers over instead of copying them: every step's, for a sweep
-	const buffers = (d) => [d.points.buffer, d.offsets.buffer, ...(d.concavities ? [d.concavities.buffer] : [])];
-	const transfer = data.sweep ? packed.steps.flatMap((step) => buffers(step.decomposition)) : buffers(packed);
-	self.postMessage({ type: 'result', id: data.id, packed }, [...new Set(transfer)]);
+	// hand the hull buffers over instead of copying them
+	const d = data.sweep ? packed.decomposition : packed;
+	self.postMessage({ type: 'result', id: data.id, packed },
+		[d.points.buffer, d.offsets.buffer, ...(d.concavities ? [d.concavities.buffer] : [])]);
 };`;
 	const url = URL.createObjectURL( new Blob( [ src ], { type: 'text/javascript' } ) );
 	const w = { worker: null, pending: new Map(), nextId: 1, failed: false };
@@ -601,7 +602,7 @@ self.onmessage = async ({ data }) => {
 	return w;
 }
 
-// Promise of the packed decomposition (or, with `sweep`, of a whole sweep), computed off the
+// Promise of the packed decomposition (or, with `sweep`, of b3SweepConvexDecomposition's result), computed off the
 // calling thread in ST browsers.
 function decomposeOffThread( positions, indices, options, sweep = false )
 {
@@ -778,13 +779,30 @@ function b3ConvexDecompositionCacheKey( positions, indices, options )
 		num( o.minVolumePercentError, 1 ),
 		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
 		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
-		// the surface merge: off unless maxConcavity is given. As in the binding, NaN falls to
-		// the lower bound (0, and 64 samples) and the limit is held to 3e38 as a float.
-		...( o.maxConcavity === undefined || o.maxConcavity === null
-			? [ '-' ]
-			: [ Math.fround( Math.min( 3e38, Math.max( 0, num( o.maxConcavity, 0 ) ) || 0 ) ),
-				Math.trunc( Math.min( 1048576, Math.max( 64, num( o.concavitySamples ?? undefined, 8192 ) ) || 64 ) ) ] ),
+		...decompositionMergeKey( o ),
 	].join( '|' );
+}
+
+// The surface merge's part of the key. It is off unless `surfaceMerge` or, failing that,
+// `maxConcavity` asks for it. As in the binding, a NaN falls to the lower bound and a length is
+// held to 3e38 as a float. The sweep is on unless turned off, the engine reads a weight of 0 as
+// 1, and without the sweep its range, step count and weight change nothing.
+function decompositionMergeKey( o )
+{
+	const given = ( v ) => v !== undefined && v !== null;
+	if ( !( given( o.surfaceMerge ) ? o.surfaceMerge : given( o.maxConcavity ) ) ) return [ '-' ];
+	const clamp = ( v, fallback, lo, hi ) => Math.min( hi, Math.max( lo, given( v ) ? Number( v ) : fallback ) ) || lo;
+	const key = [
+		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
+		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
+	];
+	if ( given( o.sweep ) && !o.sweep ) return [ ...key, 'fixed' ];
+	return [
+		...key,
+		Math.fround( clamp( o.minConcavity, 0, 0, 3e38 ) ),
+		Math.trunc( clamp( o.sweepSteps, 9, 1, 64 ) ),
+		Math.fround( clamp( o.hullWeight, 1, 0, 3e38 ) ) || 1,
+	];
 }
 
 function cachedDecomposition( positions, indices, options )
@@ -852,101 +870,24 @@ function b3CreateConvexDecompositionShapesAsync( bodyId, shapeDef, positions, in
 }
 
 // --- convex decomposition sweep ------------------------------------------------
-// How many hulls a mesh needs depends on how much open space a hull may seal, and the right
-// limit is rarely known up front. A sweep runs V-HACD once, merges its pieces at a series of
-// loosening limits in one pass (b3SweepConvexPieces: each limit carries on from the one
-// before), and recommends one step: the best trade between few hulls and little sealed.
+// The surface merge finds its limit with a sweep: it merges V-HACD's pieces at a series of
+// loosening limits in one pass and keeps the step with the best trade between few hulls and
+// little sealed (b3MergeConvexPieces in the engine). A decomposition with `surfaceMerge` gets
+// that step. b3SweepConvexDecomposition is the same decomposition returned with what the sweep
+// saw, to see why a hull count was chosen or to tune the range:
 //
 //   const sweep = b3.b3SweepConvexDecomposition( positions, indices );
-//   const { hullCount, sealedDepth, decomposition } = sweep.steps[ sweep.best ];
-//   b3.b3CreateConvexDecompositionShapesFromPacked( body, shapeDef, decomposition );
+//   for ( const { maxConcavity, hullCount, sealedDepth } of sweep.steps ) { ... }
+//   b3.b3CreateConvexDecompositionShapesFromPacked( body, shapeDef, sweep.decomposition );
 
-// The limits of a sweep, in mesh units: options.tolerances as given, or `steps` limits spread
-// geometrically from minConcavity to maxConcavity, which default to 0.5% and 8% of the
-// diagonal of the mesh's bounding box.
-function sweepTolerances( positions, options )
-{
-	const o = options ?? {};
-	if ( o.tolerances !== undefined && o.tolerances !== null ) return Array.from( o.tolerances, Number );
-	let diagonal = 0;
-	for ( let axis = 0; axis < 3; axis++ )
-	{
-		let lo = Infinity, hi = -Infinity;
-		for ( let i = axis; i < positions.length; i += 3 )
-		{
-			const v = positions[ i ];
-			if ( v < lo ) lo = v;
-			if ( v > hi ) hi = v;
-		}
-		if ( hi > lo ) diagonal += ( hi - lo ) ** 2;
-	}
-	diagonal = Math.sqrt( diagonal );
-	const positive = ( v, fallback ) => ( Number.isFinite( v ) && v > 0 ? v : fallback );
-	const lo = positive( Number( o.minConcavity ), 0.005 * diagonal );
-	const hi = Math.max( lo, positive( Number( o.maxConcavity ), 0.08 * diagonal ) );
-	// a count given is clamped to [1, 64], zero and below included; 9 only when none is given
-	const given = o.steps === undefined || o.steps === null ? NaN : Number( o.steps );
-	const steps = Number.isFinite( given ) ? Math.trunc( Math.min( 64, Math.max( 1, given ) ) ) : 9;
-	if ( steps === 1 || hi === lo ) return [ hi ];
-	return Array.from( { length: steps }, ( _, i ) => lo * ( hi / lo ) ** ( i / ( steps - 1 ) ) );
-}
-
-// What the binding reads: V-HACD's options and the limits. The rest of the sweep's options
-// are the facade's own.
-function sweepBindingOptions( options, tolerances )
-{
-	const { minConcavity, maxConcavity, steps, hullWeight, cache, cacheKey, ...rest } = options ?? {};
-	return { ...rest, tolerances };
-}
-
-// The step to recommend. Each step is a point: hull count against the depth its hulls seal.
-// Both are scaled by their largest value in the sweep, and the step nearest to no hulls and
-// nothing sealed wins. hullWeight above 1 leans toward fewer hulls, below 1 toward a closer fit.
-// Among steps with the same hull count only the first, the tightest, is a candidate.
-function pickSweepStep( steps, hullWeight )
-{
-	const weight = Number.isFinite( hullWeight ) && hullWeight > 0 ? hullWeight : 1;
-	let maxHulls = 0, maxSealed = 0;
-	for ( const step of steps )
-	{
-		maxHulls = Math.max( maxHulls, step.hullCount );
-		maxSealed = Math.max( maxSealed, step.sealedDepth );
-	}
-	let best = 0, bestScore = Infinity, lastCount = -1;
-	steps.forEach( ( step, i ) =>
-	{
-		if ( step.hullCount === lastCount ) return;
-		lastCount = step.hullCount;
-		const hulls = maxHulls > 0 ? ( weight * step.hullCount ) / maxHulls : 0;
-		const sealed = maxSealed > 0 ? step.sealedDepth / maxSealed : 0;
-		const score = hulls * hulls + sealed * sealed;
-		if ( score < bestScore ) { bestScore = score; best = i; }
-	} );
-	return best;
-}
-
-function finishSweep( raw, tolerances, options )
-{
-	const steps = raw.steps.map( ( decomposition, i ) => ( {
-		maxConcavity: tolerances[ i ],
-		hullCount: decomposition.offsets.length - 1,
-		sealedDepth: decomposition.maxConcavity ?? 0,
-		decomposition,
-	} ) );
-	return { pieceCount: raw.pieceCount, steps, best: pickSweepStep( steps, Number( options?.hullWeight ) ) };
-}
-
-// The sweep kept off the calling thread where it can be: on a pthread in the multithreaded
+// The same kept off the calling thread where it can be: on a pthread in the multithreaded
 // builds, in the decomposition worker in single-threaded browser builds. In single-threaded
-// Node it runs on the calling thread before the Promise resolves. Sweeps are not cached.
+// Node it runs on the calling thread before the Promise resolves. It is not cached: a
+// decomposition with `surfaceMerge` through b3ComputeConvexDecompositionAsync is.
 function b3SweepConvexDecompositionAsync( positions, indices, options )
 {
 	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options, true );
-	let tolerances;
-	try { tolerances = sweepTolerances( positions, options ); }
-	catch ( err ) { return Promise.reject( err ); }
-	return runDecompositionJob( positions, indices, sweepBindingOptions( options, tolerances ),
-		( job ) => finishSweep( job.takeResult(), tolerances, options ), true );
+	return runDecompositionJob( positions, indices, options, ( job ) => job.takeResult(), true );
 }
 
 function b3PackConvexDecomposition( parts )
@@ -1438,12 +1379,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
 	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
 	Module.b3MergeConvexDecomposition = ( positions, indices, packed, options ) => rawMerge( positions, indices, packed, options );
-	Module.b3SweepConvexDecomposition = ( positions, indices, options ) =>
-	{
-		const tolerances = sweepTolerances( positions, options );
-		const raw = rawSweep( positions, indices, sweepBindingOptions( sweepOptions( options ), tolerances ) );
-		return finishSweep( raw, tolerances, options );
-	};
+	Module.b3SweepConvexDecomposition = ( positions, indices, options ) => rawSweep( positions, indices, sweepOptions( options ) );
 
 	// Threaded builds start a pool of threads as they load: `pthreadPoolSize` in the
 	// factory's options, 4 by default. A world, a recording player and a blocking V-HACD
