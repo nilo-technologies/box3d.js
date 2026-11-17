@@ -673,14 +673,15 @@ async function surfaceMerge( b3, extraOptions = {} )
 	return { volumeHulls: volume.offsets.length - 1, mergedHulls: count };
 }
 
-// The sweep: by default the surface merge finds its limit. V-HACD's pieces are merged at a
-// series of loosening limits in one pass and one step is kept. On the wall with a doorway the
-// hull count falls step by step and the step kept leaves the doorway open.
+// The sweep: by default the surface merge finds its limit. Its pieces are merged at a series
+// of loosening limits in one pass and one step is kept. Most of this runs on V-HACD's pieces
+// (seedTriangles: false), where a wall with a doorway has hulls to lose step by step. The end
+// covers the default, where the merge starts from the wall's own triangles.
 // b3SweepConvexDecomposition returns the decomposition with what the sweep saw.
 async function decompositionSweep( b3, extraOptions = {} )
 {
 	const { positions, indices } = MESHES.doorway.mesh();
-	const base = { resolution: 50000, ...extraOptions };
+	const base = { resolution: 50000, seedTriangles: false, ...extraOptions };
 	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
 		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
 	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ];
@@ -774,34 +775,47 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the swept decomposition is cached' );
 	b3.b3ClearConvexDecompositionCache();
 
-	// experimental: pieces fitted to the mesh and cut where they seal, samples spaced by the
-	// limit, and the merge started from the triangles of the mesh instead of V-HACD's pieces
-	const fitted = sweepOf( { splitPieces: true, sampleSpacing: 1 } );
+	// experimental: V-HACD's pieces fitted to the mesh and cut where they seal too much
+	const fitted = sweepOf( { splitPieces: true } );
 	assert.ok( fitted.decomposition.maxConcavity < kept.maxConcavity, 'splitPieces: fitted and cut pieces seal less' );
 	assert.ok( covers( fitted.decomposition, wall ) && !covers( fitted.decomposition, doorway ), 'splitPieces: the wall is covered, the doorway open' );
-	const seeded = sweepOf( { seedTriangles: true } );
-	assert.equal( seeded.pieceCount, indices.length / 3, 'seedTriangles: the merge starts from the triangles' );
-	assert.equal( seeded.decomposition.offsets.length - 1, 3, 'seedTriangles: the wall is its two sides and its lintel' );
-	assert.ok( seeded.decomposition.maxConcavity < 1e-3, 'seedTriangles: nothing is sealed' );
-	assert.ok( covers( seeded.decomposition, wall ) && !covers( seeded.decomposition, doorway ), 'seedTriangles: the wall is covered, the doorway open' );
-	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...base, surfaceMerge: true, seedTriangles: true } ).points ),
-		Array.from( seeded.decomposition.points ), 'seedTriangles: the same from a decomposition' );
+
+	// the default: the merge starts from the triangles of the mesh, and V-HACD does not run
+	const fromTriangles = { ...extraOptions };
+	const seeded = b3.b3SweepConvexDecomposition( positions, indices, fromTriangles );
+	assert.equal( seeded.pieceCount, indices.length / 3, 'by default the merge starts from the triangles' );
+	assert.equal( seeded.steps.length, 9, 'and sweeps its limit' );
+	assert.equal( seeded.decomposition.offsets.length - 1, 3, 'the wall is its two sides and its lintel' );
+	assert.ok( seeded.decomposition.maxConcavity < 1e-3, 'nothing is sealed' );
+	assert.ok( covers( seeded.decomposition, wall ) && !covers( seeded.decomposition, doorway ), 'the wall is covered, the doorway open' );
+	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, seedTriangles: true, resolution: 1000, shrinkWrap: false, splitPieces: true } ).decomposition,
+		seeded.decomposition, 'V-HACD\'s options and splitPieces change nothing then' );
+	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true } ).points ),
+		Array.from( seeded.decomposition.points ), 'the same from a decomposition' );
+	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...fromTriangles, surfaceMerge: true, cache: false } );
+	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'and from the Promise variant' );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: 2 } ).offsets.length - 1, 2, 'a hull budget is met' );
+	// b3MergeConvexDecomposition merges what it is handed, whatever seedTriangles says
 	assert.deepEqual( Array.from( b3.b3MergeConvexDecomposition( positions, indices, kept, { seedTriangles: true } ).points ),
-		Array.from( seeded.decomposition.points ), 'seedTriangles: and from the merge on its own, whatever it is handed' );
-	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...base, surfaceMerge: true, seedTriangles: true, cache: false } );
-	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'seedTriangles: and from the Promise variant' );
+		Array.from( b3.b3MergeConvexDecomposition( positions, indices, kept ).points ), 'the merge on its own always merges its pieces' );
 	// a mesh with no extent gives the merge nothing to make hulls of: no hulls, the triangles still counted
-	const point = b3.b3SweepConvexDecomposition( new Float32Array( 12 ).fill( 1 ), new Uint32Array( [ 0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2 ] ), { seedTriangles: true } );
-	assert.equal( point.pieceCount, 4, 'seedTriangles: pieceCount is the triangle count even when nothing comes of them' );
-	assert.equal( point.decomposition.offsets.length - 1, 0, 'seedTriangles: a mesh with no extent has no hulls' );
-	assert.ok( point.steps.length === 1 && point.best === 0 && point.steps[ 0 ].hullCount === 0, 'seedTriangles: and one step that says so' );
+	const point = b3.b3SweepConvexDecomposition( new Float32Array( 12 ).fill( 1 ), new Uint32Array( [ 0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2 ] ) );
+	assert.equal( point.pieceCount, 4, 'pieceCount is the triangle count even when nothing comes of them' );
+	assert.equal( point.decomposition.offsets.length - 1, 0, 'a mesh with no extent has no hulls' );
+	assert.ok( point.steps.length === 1 && point.best === 0 && point.steps[ 0 ].hullCount === 0, 'and one step that says so' );
+	// the cache key: triangles by default, and V-HACD's own options only count for its pieces
 	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, { surfaceMerge: true, ...o } );
-	assert.notEqual( key( { splitPieces: true } ), key( {} ), 'splitPieces is part of the cache key' );
-	assert.notEqual( key( { sampleSpacing: 1 } ), key( {} ), 'so is sampleSpacing' );
-	assert.notEqual( key( { seedTriangles: true } ), key( {} ), 'and seedTriangles' );
-	assert.equal( key( { splitPieces: false, sampleSpacing: 0, seedTriangles: null } ), key( {} ), 'their defaults are normalized' );
-	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { splitPieces: true, seedTriangles: true } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
-		'and they mean nothing without the surface merge' );
+	assert.equal( key( { seedTriangles: true } ), key( {} ), 'seedTriangles is on by default' );
+	assert.equal( key( { seedTriangles: null } ), key( {} ), 'and null is the default' );
+	assert.notEqual( key( { seedTriangles: false } ), key( {} ), 'V-HACD\'s pieces are another decomposition' );
+	assert.equal( key( { resolution: 5000, minVolumePercentError: 3, maxRecursionDepth: 4, shrinkWrap: false, splitPieces: true } ), key( {} ),
+		'from the triangles, V-HACD\'s options and splitPieces mean nothing' );
+	assert.notEqual( key( { maxConvexHulls: 8 } ), key( {} ), 'the hull budget still counts' );
+	assert.notEqual( key( { maxVerticesPerHull: 16 } ), key( {} ), 'and the vertex limit' );
+	assert.notEqual( key( { seedTriangles: false, resolution: 5000 } ), key( { seedTriangles: false } ), 'for V-HACD\'s pieces its resolution counts' );
+	assert.notEqual( key( { seedTriangles: false, splitPieces: true } ), key( { seedTriangles: false } ), 'and so does splitPieces' );
+	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { splitPieces: true, seedTriangles: false } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
+		'none of it means anything without the surface merge' );
 
 	return { first: sweep.steps[ 0 ].hullCount, best: best.hullCount, last: sweep.steps[ 8 ].hullCount };
 }

@@ -183,7 +183,7 @@ const repacked = b3.b3PackConvexDecomposition(pieces);
 /* SNIPPET_END: decomposition-cache */
 
 /* SNIPPET_START: decomposition-merge */
-// Merge the pieces against the mesh surface instead of by volume. The merge finds how much
+// Decompose with the surface merge. It starts from the triangles of the mesh, finds how much
 // open space a hull may seal by itself, with a sweep, and the hull count follows from the
 // shape. maxConvexHulls is a cap that is only met by force.
 const merged = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
@@ -198,6 +198,17 @@ const mergedToLimit = b3.b3ComputeConvexDecomposition(concavePositions, concaveI
     maxConcavity: 0.05,
     sweep: false,
 });
+/* SNIPPET_END: decomposition-merge */
+
+/* SNIPPET_START: decomposition-pieces */
+// Start from V-HACD's pieces instead of the triangles: they cover the whole volume of the
+// solid, and V-HACD's time does not grow with the triangle count.
+const fromPieces = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+    surfaceMerge: true,
+    seedTriangles: false,
+    resolution: 100000,    // V-HACD's voxels: its pieces reach past the surface by about one
+    // splitPieces: true,  // experimental: fit the pieces to the mesh and cut those that seal too much
+});
 
 // The merge also runs on its own, over a decomposition from anywhere: V-HACD output with
 // a generous hull budget, or a stored asset.
@@ -206,7 +217,7 @@ const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices,
 });
 const remergedBody = b3.b3CreateBody(world, decompBodyDef);
 b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
-/* SNIPPET_END: decomposition-merge */
+/* SNIPPET_END: decomposition-pieces */
 
 /* SNIPPET_START: decomposition-sweep */
 // What did the merge's sweep see? b3SweepConvexDecomposition is a decomposition with the
@@ -232,6 +243,7 @@ const tuned = await b3.b3ComputeConvexDecompositionAsync(concavePositions, conca
     sweepSteps: 9,          // limits, spread geometrically between the two
     hullWeight: 1,          // above 1 keeps fewer hulls, below 1 a closer fit
     concavitySamples: 8192, // points sampled on the mesh surface
+    seedTriangles: true,    // false starts from V-HACD's pieces
 });
 
 // To choose by a rule of your own, read the steps and merge to the limit you settle on:

@@ -7,6 +7,9 @@
 //     --hulls 16,32        hull budgets to compare at (default 16,32)
 //     --concavity 0.05     limit of the surface merge, in meters (default 0.05)
 //     --resolution 100000  V-HACD voxel resolution (default 100000)
+//     --pieces             surface merge of V-HACD's pieces (seedTriangles: false) in place of
+//                          its default, which starts from the triangles of the mesh
+//     --split              with --pieces: fit and split the pieces first (splitPieces)
 //     --markdown           print GitHub tables instead of aligned text
 //     --dump <dir>         write each decomposition as JSON, for the screenshots
 //                          (examples/scripts/decomposition-screenshots.mjs)
@@ -16,9 +19,8 @@
 //     --min-concavity m    sweep: tightest limit, in meters (default 0.5% of the diagonal)
 //     --max-concavity m    sweep: loosest limit, in meters (default 8% of the diagonal)
 //     --hull-weight 1      sweep: above 1 leans toward fewer hulls, below 1 toward a closer fit
-//     --versions           instead of the comparison, set the surface merge as it is against
-//                          its two experimental versions (see below)
-//     --spacing 1          versions: sample spacing of version A, in tightest limits
+//     --versions           instead of the comparison, set the ways the surface merge can start
+//                          against each other (see below)
 //
 // The comparison merges to one limit (sweep: false), so the two merges meet at the same
 // budget. Three runs per mesh and budget N:
@@ -41,13 +43,13 @@
 // marks the step it kept. A table of the steps kept follows, with the columns above
 // measured here on their hulls. The sweep runs with no hull budget, so the steps show what
 // the limits alone leave. --concavity and --hulls do not apply.
-
+//
 // --versions runs three surface merges on each mesh, with no hull budget:
-//   current        V-HACD's pieces, merged as they come
-//   A fit+split    the same pieces fitted to the mesh and cut where they seal too much
-//                  (splitPieces), with the samples spaced by the limit (sampleSpacing)
-//   B triangles    no V-HACD: the merge starts from the triangles of the mesh (seedTriangles),
-//                  as HACD and the Roblox article do
+//   triangles      the default: the merge starts from the triangles of the mesh, as HACD and
+//                  the Roblox article do. V-HACD does not run.
+//   pieces         V-HACD's pieces, merged as they come (seedTriangles: false)
+//   pieces + split the same pieces fitted to the mesh and cut where they seal too much
+//                  (splitPieces, experimental)
 // each twice: with the sweep, where the merge finds its limit, and merged once to --concavity.
 // The columns are those above, measured here on the hulls.
 
@@ -68,6 +70,8 @@ const meshNames = option( 'meshes', Object.keys( MESHES ).join( ',' ) ).split( '
 const budgets = option( 'hulls', '16,32' ).split( ',' ).map( Number );
 const concavity = Number( option( 'concavity', '0.05' ) );
 const resolution = Number( option( 'resolution', '100000' ) );
+// how the surface merge starts: from the triangles of the mesh unless --pieces asks for V-HACD's
+const start = args.includes( '--pieces' ) ? { seedTriangles: false, splitPieces: args.includes( '--split' ) } : {};
 
 const { default: Box3D } = await import( option( 'dist', '../dist/box3d.mjs' ) );
 const b3 = await Box3D();
@@ -119,14 +123,13 @@ function print( title, rows )
 // A cap no decomposition reaches. Finite, so the dumped options survive JSON.
 const NO_BUDGET = 1e9;
 
-// --versions: the surface merge as it is against its two experimental versions
+// --versions: the ways the surface merge can start, against each other
 if ( args.includes( '--versions' ) )
 {
-	const spacing = Number( option( 'spacing', '1' ) );
 	const VERSIONS = [
-		[ 'current', { surfaceMerge: true } ],
-		[ 'A fit+split', { surfaceMerge: true, splitPieces: true, sampleSpacing: spacing } ],
-		[ 'B triangles', { surfaceMerge: true, seedTriangles: true } ],
+		[ 'triangles', { surfaceMerge: true } ],
+		[ 'pieces', { surfaceMerge: true, seedTriangles: false } ],
+		[ 'pieces + split', { surfaceMerge: true, seedTriangles: false, splitPieces: true } ],
 	];
 	const MODES = [ [ 'sweep', {} ], [ `${( concavity * 100 ).toFixed( 0 )} cm`, { sweep: false, maxConcavity: concavity } ] ];
 	const totals = new Map();
@@ -163,7 +166,7 @@ if ( args.includes( '--sweep' ) )
 	const number = ( name ) => ( option( name, null ) === null ? undefined : Number( option( name, null ) ) );
 	// no hull budget, so the steps show what the limits alone leave
 	const sweepOptions = {
-		resolution, maxConvexHulls: NO_BUDGET, sweepSteps: number( 'steps' ), minConcavity: number( 'min-concavity' ),
+		resolution, ...start, maxConvexHulls: NO_BUDGET, sweepSteps: number( 'steps' ), minConcavity: number( 'min-concavity' ),
 		maxConcavity: number( 'max-concavity' ), hullWeight: number( 'hull-weight' ),
 	};
 	const table = ( title, head, rows ) =>
@@ -189,7 +192,7 @@ if ( args.includes( '--sweep' ) )
 		const t0 = performance.now();
 		const sweep = b3.b3SweepConvexDecomposition( mesh.positions, mesh.indices, sweepOptions );
 		const ms = performance.now() - t0;
-		table( `${name}: ${MESHES[ name ].note} (${info.triangles} triangles, ${sweep.pieceCount} V-HACD pieces, ${ms.toFixed( 0 )} ms)`,
+		table( `${name}: ${MESHES[ name ].note} (${info.triangles} triangles, ${sweep.pieceCount} pieces to start from, ${ms.toFixed( 0 )} ms)`,
 			[ '', 'limit cm', 'hulls', 'sealed cm' ],
 			sweep.steps.map( ( step, i ) => [ i === sweep.best ? '>' : '', ( step.maxConcavity * 100 ).toFixed( 1 ), String( step.hullCount ), ( step.sealedDepth * 100 ).toFixed( 1 ) ] ) );
 		const pieces = b3.b3UnpackConvexDecomposition( sweep.decomposition );
@@ -219,9 +222,9 @@ for ( const name of meshNames )
 	for ( const n of budgets )
 	{
 		rows.push( run( name, mesh, `V-HACD ${n}`, { maxConvexHulls: n } ) );
-		rows.push( run( name, mesh, `surface ${n}`, { maxConvexHulls: n, maxConcavity: concavity, sweep: false } ) );
+		rows.push( run( name, mesh, `surface ${n}`, { ...start, maxConvexHulls: n, maxConcavity: concavity, sweep: false } ) );
 	}
-	rows.push( run( name, mesh, 'surface', { maxConvexHulls: NO_BUDGET, maxConcavity: concavity, sweep: false } ) );
+	rows.push( run( name, mesh, 'surface', { ...start, maxConvexHulls: NO_BUDGET, maxConcavity: concavity, sweep: false } ) );
 	print( `${name}: ${MESHES[ name ].note} (${info.triangles} triangles)`, rows );
 	summary.push( { name, rows } );
 }

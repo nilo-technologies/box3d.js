@@ -495,10 +495,12 @@ function getBodyPlaneResultAt( out, buf, i )
 //   const id = b3.createShapeId();
 //   for ( let i = 0; i < b3.getNumShapeIds( res ); i++ ) b3.getShapeIdAt( id, res, i );
 //
-// With a `surfaceMerge` option V-HACD hands over all its pieces and box3d's surface merge
-// (b3MergeConvexPieces) joins them instead: neighbors merge cheapest first, and a merge
-// costs the depth of open space the merged hull would seal, so a doorway stays open. How
-// much a hull may seal is found by a sweep unless `sweep: false` leaves it to `maxConcavity`.
+// With a `surfaceMerge` option box3d's surface merge (b3MergeConvexPieces) decomposes the mesh
+// instead: neighboring pieces merge cheapest first, and a merge costs the depth of open space
+// the merged hull would seal, so a doorway stays open. By default it starts from the triangles
+// of the mesh and V-HACD does not run; with `seedTriangles: false` V-HACD hands over all its
+// pieces and the merge joins those. How much a hull may seal is found by a sweep unless
+// `sweep: false` leaves it to `maxConcavity`.
 //
 // The blocking bindings live in src/bindings.cpp. The Promise variants below keep
 // the calling thread free while V-HACD runs:
@@ -770,35 +772,38 @@ function b3ConvexDecompositionCacheKey( positions, indices, options )
 	const mesh = o.cacheKey !== undefined && o.cacheKey !== null
 		? `id:${o.cacheKey}`
 		: `mesh:${decompositionMeshHash( positions, indices )}`;
+	const merge = decompositionMergeKey( o );
+	// Started from the mesh's triangles the surface merge does not run V-HACD, so the options
+	// that are V-HACD's alone change nothing
+	const vhacd = merge[ 0 ] === 'triangles'
+		? [ '-' ]
+		: [ Math.trunc( Math.max( 1000, num( o.resolution, 100000 ) ) ), num( o.minVolumePercentError, 1 ),
+			Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ), o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0 ];
 	return [
 		DECOMPOSITION_KEY_VERSION,
 		mesh,
 		Math.trunc( Math.max( 1, num( o.maxConvexHulls, 32 ) ) ),
-		Math.trunc( Math.max( 1000, num( o.resolution, 100000 ) ) ),
 		Math.trunc( Math.min( 255, Math.max( 4, num( o.maxVerticesPerHull, 32 ) ) ) ),
-		num( o.minVolumePercentError, 1 ),
-		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
-		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
-		...decompositionMergeKey( o ),
+		...vhacd,
+		...merge,
 	].join( '|' );
 }
 
 // The surface merge's part of the key. It is off unless `surfaceMerge` or, failing that,
-// `maxConcavity` asks for it. As in the binding, a NaN falls to the lower bound and a length is
-// held to 3e38 as a float. The sweep is on unless turned off, the engine reads a weight of 0 as
-// 1, and without the sweep its range, step count and weight change nothing.
+// `maxConcavity` asks for it. It starts from the mesh's triangles unless `seedTriangles` is
+// turned off, and only V-HACD's pieces can be split. As in the binding, a NaN falls to the lower
+// bound and a length is held to 3e38 as a float. The sweep is on unless turned off, the engine
+// reads a weight of 0 as 1, and without the sweep its range, step count and weight change nothing.
 function decompositionMergeKey( o )
 {
 	const given = ( v ) => v !== undefined && v !== null;
 	if ( !( given( o.surfaceMerge ) ? o.surfaceMerge : given( o.maxConcavity ) ) ) return [ '-' ];
 	const clamp = ( v, fallback, lo, hi ) => Math.min( hi, Math.max( lo, given( v ) ? Number( v ) : fallback ) ) || lo;
+	const seeded = given( o.seedTriangles ) ? !!o.seedTriangles : true;
 	const key = [
+		seeded ? 'triangles' : ( given( o.splitPieces ) && o.splitPieces ? 'split' : 'pieces' ),
 		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
 		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
-		// experimental: sample spacing, fitted and split pieces, triangle seeding
-		Math.fround( clamp( o.sampleSpacing, 0, 0, 1e6 ) ),
-		given( o.splitPieces ) && o.splitPieces ? 1 : 0,
-		given( o.seedTriangles ) && o.seedTriangles ? 1 : 0,
 	];
 	if ( given( o.sweep ) && !o.sweep ) return [ ...key, 'fixed' ];
 	return [

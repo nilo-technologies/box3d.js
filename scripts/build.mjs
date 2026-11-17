@@ -435,15 +435,16 @@ export interface b3ConvexDecompositionOptions {
   shrinkWrap?: boolean;
   /** Use V-HACD's worker threads (multithreaded builds only; ignored otherwise). Default false. */
   useThreads?: boolean;
-  /** Merge the pieces against the mesh surface instead of by volume. V-HACD merges its pieces
-   * down to maxConvexHulls by volume, and an opening is cheap in volume, so it can close a
-   * doorway or a window. With this on, V-HACD hands over all its pieces and box3d's
-   * b3MergeConvexPieces joins neighbors cheapest first, where a merge costs the depth of open
-   * space the merged hull would seal (measured with rays cast outward from points on the mesh,
-   * after Roblox's "A Search for Better Convex Decomposition"). The hull count then follows
-   * from the shape; maxConvexHulls stays a hard cap: when the merge leaves more hulls, it goes
-   * on past its limit, shallowest first. The mesh should be closed. Default false, or true
-   * when maxConcavity is given. */
+  /** Decompose with box3d's surface merge (b3MergeConvexPieces) instead of V-HACD's merge by
+   * volume. V-HACD merges its pieces down to maxConvexHulls by volume, and an opening is cheap
+   * in volume, so it can close a doorway or a window. The surface merge joins neighboring
+   * pieces cheapest first, where a merge costs the depth of open space the merged hull would
+   * seal (measured with rays cast outward from points on the mesh, after Roblox's "A Search
+   * for Better Convex Decomposition"). The hull count then follows from the shape;
+   * maxConvexHulls stays a hard cap: when the merge leaves more hulls, it goes on past its
+   * limit, shallowest first. By default the merge starts from the triangles of the mesh and
+   * V-HACD does not run at all: see seedTriangles. The mesh should be closed. Default false,
+   * or true when maxConcavity is given. */
   surfaceMerge?: boolean;
   /** Surface merge: find the limit on what a hull may seal instead of taking it. The pieces
    * are merged at sweepSteps limits loosening from minConcavity to maxConcavity, each carrying
@@ -468,20 +469,20 @@ export interface b3ConvexDecompositionOptions {
   /** Surface merge: points sampled on the mesh surface, clamped to [64, 1048576]. More
    * samples see thinner openings and take longer. Default 8192. */
   concavitySamples?: number;
-  /** Experimental. Surface merge: distance between the sample points, as a multiple of the
-   * tightest limit merged to. The sample count then follows from the surface area instead of
-   * concavitySamples. Default 0: sample by concavitySamples. */
-  sampleSpacing?: number;
-  /** Experimental. Surface merge: fit each V-HACD piece to the mesh before merging, so it stops
-   * reaching past the surface, and cut the pieces that seal more than the tightest limit.
-   * Default false. */
-  splitPieces?: boolean;
-  /** Experimental. Surface merge: start from the triangles of the mesh instead of V-HACD's
-   * pieces, as HACD does. V-HACD does not run, so resolution, minVolumePercentError,
-   * maxRecursionDepth, shrinkWrap and useThreads do nothing. maxConvexHulls and
-   * maxVerticesPerHull still hold: they are the merge's hull budget and vertex limit. The
-   * hulls follow the surface, so the inside of a thick solid can stay uncovered. Default false. */
+  /** Surface merge: start from the triangles of the mesh, as HACD does, instead of from
+   * V-HACD's pieces. Nothing is voxelized, so the pieces start on the surface and a mesh made
+   * of flat faces comes apart exactly. V-HACD does not run, so resolution,
+   * minVolumePercentError, maxRecursionDepth, shrinkWrap and useThreads do nothing, while
+   * maxConvexHulls and maxVerticesPerHull still hold: they are the merge's hull budget and
+   * vertex limit. Two things to weigh: the hulls follow the surface, so the inside of a thick
+   * solid can stay uncovered, and the time grows with the triangle count where V-HACD's does
+   * not. With false V-HACD cuts the mesh into voxel pieces, which cover the whole volume, and
+   * the merge joins those. Default true. */
   seedTriangles?: boolean;
+  /** Experimental. Surface merge of V-HACD's pieces (seedTriangles: false): fit each piece to
+   * the mesh before merging, so it stops reaching past the surface by a voxel, and cut the
+   * pieces that seal more than the tightest limit. Default false. */
+  splitPieces?: boolean;
   /** Async variants only: reuse an earlier result for the same mesh + options instead of
    * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
    * in place afterwards (their hash is memoized per array object). */
@@ -490,8 +491,8 @@ export interface b3ConvexDecompositionOptions {
    * hashing its contents. Change it whenever the mesh changes. */
   cacheKey?: string;
 }
-/** Options of b3MergeConvexDecomposition. See the options of the same names in
- * b3ConvexDecompositionOptions. */
+/** Options of b3MergeConvexDecomposition, which merges the pieces it is handed. See the
+ * options of the same names in b3ConvexDecompositionOptions. */
 export interface b3ConvexMergeOptions {
   /** Find the limit with a sweep. Default true. */
   sweep?: boolean;
@@ -512,12 +513,7 @@ export interface b3ConvexMergeOptions {
   /** Points sampled on the mesh surface, clamped to [64, 1048576]. Default 8192. */
   concavitySamples?: number;
   /** Experimental: see b3ConvexDecompositionOptions. */
-  sampleSpacing?: number;
-  /** Experimental: see b3ConvexDecompositionOptions. */
   splitPieces?: boolean;
-  /** Experimental: see b3ConvexDecompositionOptions. With it the packed decomposition passed
-   * in is not used. */
-  seedTriangles?: boolean;
 }
 /** Options of b3SweepConvexDecomposition: those of a decomposition, where the surface merge
  * is always on and nothing is cached. */
@@ -534,7 +530,8 @@ export interface b3ConvexDecompositionSweepStep {
 }
 /** A decomposition with the surface merge on, and what the merge's sweep saw. */
 export interface b3ConvexDecompositionSweep {
-  /** Pieces V-HACD cut the mesh into, before any merge. */
+  /** Pieces the merge started from: the triangles of the mesh, or with seedTriangles: false
+   * the pieces V-HACD cut it into. */
   pieceCount: number;
   /** One step per limit, tightest first. The hull count never rises along them. Without the
    * sweep (sweep: false) there is one. */
