@@ -1146,7 +1146,7 @@ const mergedUnderTen = b3.b3ComputeConvexDecomposition(concavePositions, concave
 const fromPieces = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
     surfaceMerge: true,
     seedTriangles: false,
-    resolution: 100000, // V-HACD's voxels: its pieces reach past the surface by about one
+    resolution: 100000, // V-HACD's voxel count: its pieces reach past the surface by about a voxel
 });
 
 // The merge also runs on its own, over a decomposition from anywhere: V-HACD output with
