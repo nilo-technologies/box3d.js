@@ -266,6 +266,21 @@ V-HACD cuts the mesh into many small pieces and then merges them down to `maxCon
 
 `pnpm bench:decomposition:quality` compares the two merges on a set of test meshes: hull count, time, the deepest open space sealed, and the volume the hulls cover outside the mesh or miss inside it.
 
+#### How many hulls: sweeping the limit
+
+How many hulls a mesh needs depends on the limit, and the right limit is rarely known up front. `b3SweepConvexDecomposition` runs V-HACD once, merges its pieces at a series of loosening limits, and returns a decomposition for each together with the one it recommends. Each limit carries on from the hulls the one before left (`b3SweepConvexPieces` in the engine), so the whole sweep takes about as long as a single decomposition, and the hull count never rises along it.
+
+<Snippet source="./shapes.ts" select="decomposition-sweep" />
+
+- By default the sweep runs 9 limits from 0.5% to 8% of the diagonal of the mesh's bounding box, each 1.41 times the one before. On a wall 4 m wide and 3 m tall that is 2.5 cm to 40 cm.
+- `steps[i]` has the limit (`maxConcavity`), the `hullCount`, the `sealedDepth` its hulls really seal, and the `decomposition`.
+- `best` is the recommended step. Hull count and sealed depth are each scaled by their largest value in the sweep, and the step nearest to no hulls and nothing sealed wins. `hullWeight` leans it: above 1 toward fewer hulls, below 1 toward a closer fit.
+- On blocky meshes the first steps often share one `sealedDepth`: V-HACD's own pieces already seal that much, and no limit below it changes what the hulls seal, only how many there are. The recommendation usually lands at the end of that run, the fewest hulls that seal no more than the pieces did.
+- The recommendation is a heuristic over this sweep, and it moves with the range swept. It is not a proof of the fewest hulls possible: the merge is greedy and can only join the pieces V-HACD cut.
+- `b3SweepConvexDecompositionAsync` runs it off the calling thread. Sweeps are not cached.
+
+`pnpm bench:decomposition:quality --sweep` prints the sweep of each test mesh and the step recommended.
+
 <ExamplesTable ids="example-convex-decomposition" />
 
 ### Resizing and Disabling Shapes

@@ -522,9 +522,15 @@ function canUseDecompositionWorker()
 		&& typeof URL.createObjectURL === 'function';
 }
 
+// A job is a decomposition, or with `sweep` set a whole b3SweepConvexDecomposition.
 function computeDecompositionNow( job )
 {
-	try { job.resolve( Module.b3ComputeConvexDecomposition( job.positions, job.indices, job.options ) ); }
+	try
+	{
+		job.resolve( job.sweep
+			? Module.b3SweepConvexDecomposition( job.positions, job.indices, job.options )
+			: Module.b3ComputeConvexDecomposition( job.positions, job.indices, job.options ) );
+	}
 	catch ( err ) { job.reject( err ); }
 }
 
@@ -552,9 +558,13 @@ ready.then(() => self.postMessage({ type: 'ready' }),
 self.onmessage = async ({ data }) => {
 	const b3 = await ready;
 	let packed;
-	try { packed = b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options); }
+	try {
+		packed = data.sweep
+			? b3.b3SweepConvexDecomposition(data.positions, data.indices, data.options)
+			: b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options);
+	}
 	catch (err) { self.postMessage({ type: 'error', id: data.id, message: String(err?.message ?? err) }); return; }
-	self.postMessage({ type: 'result', id: data.id, packed }, [packed.points.buffer, packed.offsets.buffer]);
+	self.postMessage({ type: 'result', id: data.id, packed }, data.sweep ? [] : [packed.points.buffer, packed.offsets.buffer]);
 };`;
 	const url = URL.createObjectURL( new Blob( [ src ], { type: 'text/javascript' } ) );
 	const w = { worker: null, pending: new Map(), nextId: 1, failed: false };
@@ -588,12 +598,13 @@ self.onmessage = async ({ data }) => {
 	return w;
 }
 
-// Promise of the packed decomposition, computed off the calling thread in ST browsers.
-function decomposeOffThread( positions, indices, options )
+// Promise of the packed decomposition (or, with `sweep`, of a whole sweep), computed off the
+// calling thread in ST browsers.
+function decomposeOffThread( positions, indices, options, sweep = false )
 {
 	return new Promise( ( resolve, reject ) =>
 	{
-		const job = { resolve, reject, positions, indices, options };
+		const job = { resolve, reject, positions, indices, options, sweep };
 		if ( !canUseDecompositionWorker() ) { computeDecompositionNow( job ); return; }
 		decompositionWorker ??= startDecompositionWorker();
 		const w = decompositionWorker;
@@ -602,7 +613,7 @@ function decomposeOffThread( positions, indices, options )
 		w.pending.set( id, job );
 		try
 		{
-			w.worker.postMessage( { id, positions, indices, options } );
+			w.worker.postMessage( { id, positions, indices, options, sweep } );
 		}
 		catch ( err )
 		{
@@ -612,14 +623,15 @@ function decomposeOffThread( positions, indices, options )
 	} );
 }
 
-function runDecompositionJob( positions, indices, options, finish )
+function runDecompositionJob( positions, indices, options, finish, sweep = false )
 {
 	return new Promise( ( resolve, reject ) =>
 	{
 		const job = new Module.ConvexDecompositionJobImpl();
 		try
 		{
-			job.start( positions, indices, options );
+			if ( sweep ) job.startSweep( positions, indices, options );
+			else job.start( positions, indices, options );
 		}
 		catch ( err )
 		{
@@ -834,6 +846,102 @@ function b3CreateConvexDecompositionShapesAsync( bodyId, shapeDef, positions, in
 		assertBodyStillValid( bodyId );
 		return Module.b3CreateConvexDecompositionShapesFromPacked( bodyId, shapeDef, packed, options?.maxVerticesPerHull );
 	} );
+}
+
+// --- convex decomposition sweep ------------------------------------------------
+// How many hulls a mesh needs depends on how much open space a hull may seal, and the right
+// limit is rarely known up front. A sweep runs V-HACD once, merges its pieces at a series of
+// loosening limits in one pass (b3SweepConvexPieces: each limit carries on from the one
+// before), and recommends one step: the best trade between few hulls and little sealed.
+//
+//   const sweep = b3.b3SweepConvexDecomposition( positions, indices );
+//   const { hullCount, sealedDepth, decomposition } = sweep.steps[ sweep.best ];
+//   b3.b3CreateConvexDecompositionShapesFromPacked( body, shapeDef, decomposition );
+
+// The limits of a sweep, in mesh units: options.tolerances as given, or `steps` limits spread
+// geometrically from minConcavity to maxConcavity, which default to 0.5% and 8% of the
+// diagonal of the mesh's bounding box.
+function sweepTolerances( positions, options )
+{
+	const o = options ?? {};
+	if ( o.tolerances !== undefined && o.tolerances !== null ) return Array.from( o.tolerances, Number );
+	let diagonal = 0;
+	for ( let axis = 0; axis < 3; axis++ )
+	{
+		let lo = Infinity, hi = -Infinity;
+		for ( let i = axis; i < positions.length; i += 3 )
+		{
+			const v = positions[ i ];
+			if ( v < lo ) lo = v;
+			if ( v > hi ) hi = v;
+		}
+		if ( hi > lo ) diagonal += ( hi - lo ) ** 2;
+	}
+	diagonal = Math.sqrt( diagonal );
+	const positive = ( v, fallback ) => ( Number.isFinite( v ) && v > 0 ? v : fallback );
+	const lo = positive( Number( o.minConcavity ), 0.005 * diagonal );
+	const hi = Math.max( lo, positive( Number( o.maxConcavity ), 0.08 * diagonal ) );
+	const steps = Math.trunc( Math.min( 64, Math.max( 1, positive( Number( o.steps ), 9 ) ) ) );
+	if ( steps === 1 || hi === lo ) return [ hi ];
+	return Array.from( { length: steps }, ( _, i ) => lo * ( hi / lo ) ** ( i / ( steps - 1 ) ) );
+}
+
+// What the binding reads: V-HACD's options and the limits. The rest of the sweep's options
+// are the facade's own.
+function sweepBindingOptions( options, tolerances )
+{
+	const { minConcavity, maxConcavity, steps, hullWeight, cache, cacheKey, ...rest } = options ?? {};
+	return { ...rest, tolerances };
+}
+
+// The step to recommend. Each step is a point: hull count against the depth its hulls seal.
+// Both are scaled by their largest value in the sweep, and the step nearest to no hulls and
+// nothing sealed wins. hullWeight above 1 leans toward fewer hulls, below 1 toward a closer fit.
+// Among steps with the same hull count only the first, the tightest, is a candidate.
+function pickSweepStep( steps, hullWeight )
+{
+	const weight = Number.isFinite( hullWeight ) && hullWeight > 0 ? hullWeight : 1;
+	let maxHulls = 0, maxSealed = 0;
+	for ( const step of steps )
+	{
+		maxHulls = Math.max( maxHulls, step.hullCount );
+		maxSealed = Math.max( maxSealed, step.sealedDepth );
+	}
+	let best = 0, bestScore = Infinity, lastCount = -1;
+	steps.forEach( ( step, i ) =>
+	{
+		if ( step.hullCount === lastCount ) return;
+		lastCount = step.hullCount;
+		const hulls = maxHulls > 0 ? ( weight * step.hullCount ) / maxHulls : 0;
+		const sealed = maxSealed > 0 ? step.sealedDepth / maxSealed : 0;
+		const score = hulls * hulls + sealed * sealed;
+		if ( score < bestScore ) { bestScore = score; best = i; }
+	} );
+	return best;
+}
+
+function finishSweep( raw, tolerances, options )
+{
+	const steps = raw.steps.map( ( decomposition, i ) => ( {
+		maxConcavity: tolerances[ i ],
+		hullCount: decomposition.offsets.length - 1,
+		sealedDepth: decomposition.maxConcavity ?? 0,
+		decomposition,
+	} ) );
+	return { pieceCount: raw.pieceCount, steps, best: pickSweepStep( steps, Number( options?.hullWeight ) ) };
+}
+
+// The sweep without blocking the calling thread: on a pthread in the multithreaded builds, in
+// the decomposition worker in single-threaded browser builds, synchronously in Node. Sweeps
+// are not cached.
+function b3SweepConvexDecompositionAsync( positions, indices, options )
+{
+	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options, true );
+	let tolerances;
+	try { tolerances = sweepTolerances( positions, options ); }
+	catch ( err ) { return Promise.reject( err ); }
+	return runDecompositionJob( positions, indices, sweepBindingOptions( options, tolerances ),
+		( job ) => finishSweep( job.takeResult(), tolerances, options ), true );
 }
 
 function b3PackConvexDecomposition( parts )
@@ -1316,6 +1424,8 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	const rawShapesFromPacked = Module.b3CreateConvexDecompositionShapesFromPacked;
 	const rawCompound = Module.b3CreateDecompositionCompound;
 	const rawMerge = Module.b3MergeConvexDecomposition;
+	const rawSweep = Module.b3SweepConvexDecomposition;
+	let sweepOptions = ( options ) => options;
 	Module.b3ComputeConvexDecomposition = ( positions, indices, options ) => rawCompute( positions, indices, options );
 	Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
 		rawShapes( bodyId, shapeDef, positions, indices, options );
@@ -1323,6 +1433,12 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
 	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
 	Module.b3MergeConvexDecomposition = ( positions, indices, packed, options ) => rawMerge( positions, indices, packed, options );
+	Module.b3SweepConvexDecomposition = ( positions, indices, options ) =>
+	{
+		const tolerances = sweepTolerances( positions, options );
+		const raw = rawSweep( positions, indices, sweepBindingOptions( sweepOptions( options ), tolerances ) );
+		return finishSweep( raw, tolerances, options );
+	};
 
 	// Threaded builds start a pool of threads as they load: `pthreadPoolSize` in the
 	// factory's options, 4 by default. A world, a recording player and a blocking V-HACD
@@ -1352,6 +1468,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 			rawCompute( positions, indices, blockingOptions( options ) );
 		Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
 			rawShapes( bodyId, shapeDef, positions, indices, blockingOptions( options ) );
+		sweepOptions = blockingOptions;
 	}
 
 	// Every wheel's chassis-space pose and raw spin in one call. The raw writer packs the records
@@ -1402,7 +1519,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createWheeledVehicleStateBuffer, getWheeledVehicleStateData, destroyWheeledVehicleStateBuffer, getNumWheeledVehicleWheels,
 		createWheeledVehicleStateRecord, getWheeledVehicleStateAt, createWheeledVehicleWheelRecord, getWheeledVehicleWheelAt,
 		B3_MAX_VEHICLE_WHEELS: MAX_WHEELED_VEHICLE_WHEELS, B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE: WHEELED_VEHICLE_WHEEL_LOCAL,
-		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
+		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync, b3SweepConvexDecompositionAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,
 	} );

@@ -203,6 +203,36 @@ const remergedBody = b3.b3CreateBody(world, decompBodyDef);
 b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
 /* SNIPPET_END: decomposition-merge */
 
+/* SNIPPET_START: decomposition-sweep */
+// How many hulls does this mesh need? Sweep the limit: V-HACD runs once, its pieces are
+// merged at nine loosening limits in one pass, and one step is recommended.
+const sweep = b3.b3SweepConvexDecomposition(concavePositions, concaveIndices);
+for (const step of sweep.steps) {
+    console.log(`limit ${step.maxConcavity} m: ${step.hullCount} hulls sealing ${step.sealedDepth} m`);
+}
+
+// the recommended step is a decomposition like any other
+const recommended = sweep.steps[sweep.best];
+const sweptBody = b3.b3CreateBody(world, decompBodyDef);
+b3.b3CreateConvexDecompositionShapesFromPacked(sweptBody, sd, recommended.decomposition);
+
+// or choose by a rule of your own: the fewest hulls that seal under 10 cm
+const underTen = sweep.steps.filter((step) => step.sealedDepth < 0.1).pop();
+
+// every option, with its default
+const tuned = await b3.b3SweepConvexDecompositionAsync(concavePositions, concaveIndices, {
+    // minConcavity: 0.5% of the bounding box diagonal, the tightest limit
+    // maxConcavity: 8% of the bounding box diagonal, the loosest limit
+    steps: 9,              // limits, spread geometrically between the two
+    // tolerances: [0.02, 0.05, 0.1], explicit limits in place of the three above
+    hullWeight: 1,         // above 1 recommends fewer hulls, below 1 a closer fit
+    // maxConvexHulls: unset, a hull budget met at every step
+    resolution: 100000,    // V-HACD's voxels
+    maxVerticesPerHull: 32,
+    concavitySamples: 8192,
+});
+/* SNIPPET_END: decomposition-sweep */
+
 /* SNIPPET_START: resize-disable */
 // Resize or reshape a hull shape in place: the hull is baked with a transform and a
 // (non-uniform) scale, then copied into the shape. Pass updateBodyMass = false to

@@ -645,6 +645,76 @@ async function surfaceMerge( b3, extraOptions = {} )
 	return { volumeHulls: volume.offsets.length - 1, mergedHulls: count };
 }
 
+// The sweep (b3SweepConvexDecomposition): one V-HACD run merged at a series of loosening
+// limits. On the wall with a doorway the hull count falls step by step, the doorway closes
+// only at the loosest limits, and the recommended step keeps it open.
+async function decompositionSweep( b3, extraOptions = {} )
+{
+	const { positions, indices } = MESHES.doorway.mesh();
+	const base = { resolution: 50000, ...extraOptions };
+	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
+		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
+	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ];
+
+	// defaults: 9 limits from 0.5% to 8% of the bounding box diagonal (5.01 m), 1.41 apart
+	const sweep = b3.b3SweepConvexDecomposition( positions, indices, base );
+	assert.equal( sweep.steps.length, 9, 'nine steps by default' );
+	const diagonal = Math.hypot( 4, 3, 0.3 );
+	assert.ok( Math.abs( sweep.steps[ 0 ].maxConcavity - 0.005 * diagonal ) < 1e-6, 'the sweep starts at 0.5% of the diagonal' );
+	assert.ok( Math.abs( sweep.steps[ 8 ].maxConcavity - 0.08 * diagonal ) < 1e-6, 'and ends at 8%' );
+	assert.ok( sweep.pieceCount >= sweep.steps[ 0 ].hullCount, 'pieceCount is what V-HACD handed over' );
+	sweep.steps.forEach( ( step, i ) =>
+	{
+		assert.equal( step.hullCount, step.decomposition.offsets.length - 1, `step ${i}: hullCount counts the decomposition` );
+		assert.equal( step.sealedDepth, step.decomposition.maxConcavity, `step ${i}: sealedDepth is what the hulls seal` );
+		assert.ok( step.decomposition.concavities instanceof Float32Array, `step ${i}: carries concavities` );
+		assert.ok( covers( step.decomposition, wall ), `step ${i}: the wall is covered` );
+		if ( i > 0 )
+		{
+			assert.ok( step.maxConcavity > sweep.steps[ i - 1 ].maxConcavity, `step ${i}: the limit loosens` );
+			assert.ok( step.hullCount <= sweep.steps[ i - 1 ].hullCount, `step ${i}: the hull count never rises` );
+			assert.ok( step.sealedDepth >= sweep.steps[ i - 1 ].sealedDepth - 1e-6, `step ${i}: the sealed depth never falls` );
+		}
+	} );
+	assert.ok( sweep.steps[ 0 ].hullCount > sweep.steps[ 8 ].hullCount, 'loosening the limit saves hulls' );
+	const best = sweep.steps[ sweep.best ];
+	assert.ok( best.hullCount >= 3 && best.hullCount < sweep.steps[ 0 ].hullCount, `the recommended step sits inside the sweep (${best.hullCount} hulls)` );
+	assert.ok( !covers( best.decomposition, doorway ), 'the recommended step keeps the doorway open' );
+
+	// the recommended decomposition is ready to use
+	const world = groundedWorld( b3 );
+	const shapes = b3.b3CreateConvexDecompositionShapesFromPacked( dynamicBody( b3, world, 5 ), b3.b3DefaultShapeDef(), best.decomposition );
+	assert.equal( shapes.count, best.hullCount, 'one hull shape per hull of the recommended step' );
+	b3.b3DestroyWorld( world );
+
+	// explicit limits, a hull budget, and the weight of hulls in the recommendation
+	const explicit = b3.b3SweepConvexDecomposition( positions, indices, { ...base, tolerances: [ 0, 0.05, 2 ] } );
+	assert.deepEqual( explicit.steps.map( ( s ) => s.maxConcavity ), [ 0, 0.05, 2 ], 'tolerances are used as given' );
+	assert.equal( explicit.steps[ 2 ].hullCount, 1, 'a limit wider than the doorway leaves one hull' );
+	assert.ok( covers( explicit.steps[ 2 ].decomposition, doorway ), 'which seals the doorway' );
+	const capped = b3.b3SweepConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 2 } );
+	assert.ok( capped.steps.every( ( s ) => s.hullCount <= 2 ), 'a hull budget holds at every step' );
+	const fewer = b3.b3SweepConvexDecomposition( positions, indices, { ...base, hullWeight: 4 } );
+	const closer = b3.b3SweepConvexDecomposition( positions, indices, { ...base, hullWeight: 0.25 } );
+	assert.ok( fewer.steps[ fewer.best ].hullCount <= best.hullCount && best.hullCount <= closer.steps[ closer.best ].hullCount,
+		'hullWeight leans the recommendation toward fewer hulls or a closer fit' );
+	const one = b3.b3SweepConvexDecomposition( positions, indices, { ...base, steps: 1 } );
+	assert.equal( one.steps.length, 1, 'one step' );
+	assert.equal( one.best, 0, 'which is the recommended one' );
+	assert.throws( () => b3.b3SweepConvexDecomposition( positions, indices, { ...base, tolerances: [ 0.2, 0.1 ] } ), /sweep tolerances/, 'limits must not tighten' );
+	assert.throws( () => b3.b3SweepConvexDecomposition( positions, indices, { ...base, tolerances: [] } ), /sweep tolerances/, 'limits must not be empty' );
+	assert.throws( () => b3.b3SweepConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'the sweep checks the mesh' );
+
+	// the Promise variant gives the same sweep
+	const asyncSweep = await b3.b3SweepConvexDecompositionAsync( positions, indices, base );
+	assert.deepEqual( asyncSweep.steps.map( ( s ) => s.hullCount ), sweep.steps.map( ( s ) => s.hullCount ), 'async sweep: the same hull counts' );
+	assert.equal( asyncSweep.best, sweep.best, 'async sweep: the same recommendation' );
+	assert.deepEqual( Array.from( asyncSweep.steps[ asyncSweep.best ].decomposition.points ), Array.from( best.decomposition.points ), 'async sweep: the same hulls' );
+	await assert.rejects( b3.b3SweepConvexDecompositionAsync( positions, indices, { ...base, tolerances: [ 0.2, 0.1 ] } ), /sweep tolerances/, 'async sweep rejects bad limits' );
+
+	return { first: sweep.steps[ 0 ].hullCount, best: best.hullCount, last: sweep.steps[ 8 ].hullCount };
+}
+
 // The async variants' cache: hits, in-flight sharing, key normalization, asset ids,
 // hash sensitivity, copy-on-return, and that failures are not cached.
 async function decompositionCache( b3, world, options )
@@ -2394,6 +2464,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
 	const doorway = await surfaceMerge( b3, decompositionOptions );
+	const swept = await decompositionSweep( b3, decompositionOptions );
 
 	debugDraw( b3 );
 	debugRendererCulling( b3 );
@@ -2419,6 +2490,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
 		`a wall with a doorway took ${doorway.mergedHulls} hulls with the surface merge, ${doorway.volumeHulls} without; ` +
+		`a sweep of it went from ${swept.first} hulls to ${swept.last} and recommended ${swept.best}; ` +
 		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
 		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }

@@ -10,6 +10,15 @@
 //     --markdown           print GitHub tables instead of aligned text
 //     --dump <dir>         write each decomposition as JSON, for the screenshots
 //                          (examples/scripts/decomposition-screenshots.mjs)
+//     --sweep              instead of the comparison, sweep the limit on each mesh with
+//                          b3SweepConvexDecomposition and show the step it recommends
+//     --steps 9            sweep: number of limits
+//     --min-concavity m    sweep: tightest limit, in meters (default 0.5% of the diagonal)
+//     --max-concavity m    sweep: loosest limit, in meters (default 8% of the diagonal)
+//     --hull-weight 1      sweep: above 1 leans toward fewer hulls, below 1 toward a closer fit
+//
+// The sweep prints one row per limit: the limit, the hulls left at it, and the same columns as
+// below, measured here. `>` marks the recommended step. --concavity and --hulls do not apply.
 //
 // Three runs per mesh and budget N:
 //   V-HACD N       maxConvexHulls: N. V-HACD merges its pieces down to N by volume.
@@ -91,6 +100,75 @@ function print( title, rows )
 
 // A cap no decomposition reaches. Finite, so the dumped options survive JSON.
 const NO_BUDGET = 1e9;
+
+// --sweep: one V-HACD run per mesh, merged at a series of limits, and the step recommended
+if ( args.includes( '--sweep' ) )
+{
+	const number = ( name ) => ( option( name, null ) === null ? undefined : Number( option( name, null ) ) );
+	const sweepOptions = {
+		resolution, steps: number( 'steps' ), minConcavity: number( 'min-concavity' ), maxConcavity: number( 'max-concavity' ),
+		hullWeight: number( 'hull-weight' ),
+	};
+	const SWEEP_HEAD = [ '', 'limit cm', 'hulls', 'sealed cm', 'mean cm', 'over %', 'missing %' ];
+	const picks = [];
+	for ( const name of meshNames )
+	{
+		if ( !MESHES[ name ] ) throw new Error( `unknown mesh "${name}" (have: ${Object.keys( MESHES ).join( ', ' )})` );
+		const mesh = MESHES[ name ].mesh(), info = meshInfo( mesh );
+		const t0 = performance.now();
+		const sweep = b3.b3SweepConvexDecomposition( mesh.positions, mesh.indices, sweepOptions );
+		const ms = performance.now() - t0;
+		const table = sweep.steps.map( ( step, i ) =>
+		{
+			const m = measure( mesh, b3.b3UnpackConvexDecomposition( step.decomposition ) );
+			return [ i === sweep.best ? '>' : '', ( step.maxConcavity * 100 ).toFixed( 1 ), String( step.hullCount ), ( m.sealedMax * 100 ).toFixed( 1 ),
+				( m.sealedMean * 100 ).toFixed( 2 ), ( m.overshoot * 100 ).toFixed( 1 ), ( m.missing * 100 ).toFixed( 1 ) ];
+		} );
+		const title = `${name}: ${MESHES[ name ].note} (${info.triangles} triangles, ${sweep.pieceCount} V-HACD pieces, ${ms.toFixed( 0 )} ms)`;
+		if ( markdown )
+		{
+			console.log( `\n**${title}**\n` );
+			console.log( `| ${SWEEP_HEAD.join( ' | ' )} |` );
+			console.log( `|${SWEEP_HEAD.map( ( _, i ) => ( i === 0 ? '---' : '---:' ) ).join( '|' )}|` );
+			for ( const row of table ) console.log( `| ${row.join( ' | ' )} |` );
+		}
+		else
+		{
+			const all = [ SWEEP_HEAD, ...table ];
+			const widths = SWEEP_HEAD.map( ( _, i ) => Math.max( ...all.map( ( row ) => row[ i ].length ) ) );
+			console.log( `\n${title}` );
+			for ( const row of all ) console.log( `  ${row.map( ( c, i ) => c.padStart( widths[ i ] ) ).join( '  ' )}` );
+		}
+		const best = sweep.steps[ sweep.best ];
+		picks.push( { name, pieces: sweep.pieceCount, ms, hulls: best.hullCount, limit: best.maxConcavity, row: table[ sweep.best ] } );
+		if ( dumpDir )
+		{
+			writeFileSync( join( resolve( dumpDir ), `${name}-recommended.json` ), JSON.stringify( {
+				mesh: name, label: 'recommended', options: sweepOptions,
+				row: { label: 'recommended', ms, ...measure( mesh, b3.b3UnpackConvexDecomposition( best.decomposition ) ) },
+				positions: Array.from( mesh.positions ), indices: Array.from( mesh.indices ),
+				pieces: b3.b3UnpackConvexDecomposition( best.decomposition ).map( ( p ) => Array.from( p, ( v ) => Math.round( v * 1e5 ) / 1e5 ) ),
+			} ) );
+		}
+	}
+	const PICK_HEAD = [ 'mesh', 'pieces', 'hulls', 'limit cm', 'sealed cm', 'over %', 'missing %', 'ms' ];
+	const pickRows = picks.map( ( p ) => [ p.name, String( p.pieces ), String( p.hulls ), ( p.limit * 100 ).toFixed( 1 ), p.row[ 3 ], p.row[ 5 ], p.row[ 6 ], p.ms.toFixed( 0 ) ] );
+	if ( markdown )
+	{
+		console.log( '\n**Recommended step per mesh**\n' );
+		console.log( `| ${PICK_HEAD.join( ' | ' )} |` );
+		console.log( `|${PICK_HEAD.map( ( _, i ) => ( i === 0 ? '---' : '---:' ) ).join( '|' )}|` );
+		for ( const row of pickRows ) console.log( `| ${row.join( ' | ' )} |` );
+	}
+	else
+	{
+		const all = [ PICK_HEAD, ...pickRows ];
+		const widths = PICK_HEAD.map( ( _, i ) => Math.max( ...all.map( ( row ) => row[ i ].length ) ) );
+		console.log( '\nRecommended step per mesh' );
+		for ( const row of all ) console.log( `  ${row.map( ( c, i ) => ( i === 0 ? c.padEnd( widths[ i ] ) : c.padStart( widths[ i ] ) ) ).join( '  ' )}` );
+	}
+	process.exit( 0 );
+}
 
 const summary = [];
 for ( const name of meshNames )

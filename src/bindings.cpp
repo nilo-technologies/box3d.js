@@ -81,6 +81,7 @@ enum DecompositionError
 	e_offsetsLength,
 	e_bodyInvalid,
 	e_jobNotReady,
+	e_sweepTolerances,
 };
 EM_JS( void, b3ThrowDecompositionError, ( int code ), {
 	const messages = [
@@ -94,6 +95,7 @@ EM_JS( void, b3ThrowDecompositionError, ( int code ), {
 		"packed offsets do not match points length",
 		"body is not valid",
 		"convex decomposition job has not finished",
+		"sweep tolerances must be a non-empty list of numbers, none negative and none below the one before",
 	];
 	throw new Error( "box3d.js: " + messages[ code ] );
 } );
@@ -1332,6 +1334,8 @@ struct DecompositionOptions
 	// takes its place, with maxConvexHulls as the budget.
 	bool surfaceMerge = false;
 	MergeOptions merge;
+	// Set by b3SweepConvexDecomposition: the pieces are merged at each of these limits in turn
+	std::vector<float> sweep;
 };
 
 bool hasOption( val options, const char* key )
@@ -1450,11 +1454,11 @@ DecompositionPieces collectPieces( VHACD::IVHACD* vhacd )
 	return out;
 }
 
-// Merge pieces against the mesh they were cut from (box3d's b3MergeConvexPieces). The mesh
-// and the offsets are read as box3d's own types: a packed decomposition is already laid out
-// that way, and readDecompositionMesh has checked the indices.
+// The surface merge is box3d's (b3MergeConvexPieces, b3SweepConvexPieces). The mesh and the
+// offsets are read as box3d's own types: a packed decomposition is already laid out that way,
+// and readDecompositionMesh has checked the indices.
 static_assert( sizeof( b3Vec3 ) == 3 * sizeof( float ), "packed points are read as b3Vec3" );
-DecompositionPieces mergePieces( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts )
+b3ConvexMergeDef makeMergeDef( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts )
 {
 	b3ConvexMergeDef def = b3DefaultConvexMergeDef();
 	def.meshVertices = reinterpret_cast<const b3Vec3*>( mesh.positions.data() );
@@ -1468,18 +1472,26 @@ DecompositionPieces mergePieces( const DecompositionMesh& mesh, const Decomposit
 	def.maxHullCount = opts.maxHulls;
 	def.maxHullVertices = opts.maxVerticesPerHull;
 	def.sampleCount = opts.sampleCount;
+	return def;
+}
 
+// The pieces as they came, marked as having been through the merge: what a merge of nothing
+// (a canceled or empty decomposition) or of a mesh with no extent gives back.
+DecompositionPieces unmergedPieces( const DecompositionPieces& pieces )
+{
 	DecompositionPieces out;
 	out.merged = true;
-	// Nothing to merge (a canceled or empty decomposition), or a mesh with no extent
-	b3ConvexMergeResult* result = def.pieceCount > 0 ? b3MergeConvexPieces( &def ) : nullptr;
-	if ( result == nullptr )
-	{
-		out.points = pieces.points;
-		out.offsets = pieces.offsets;
-		out.concavities.assign( pieces.offsets.size() - 1, 0.0f );
-		return out;
-	}
+	out.points = pieces.points;
+	out.offsets = pieces.offsets;
+	out.concavities.assign( pieces.offsets.size() - 1, 0.0f );
+	return out;
+}
+
+// Takes the result apart and frees it.
+DecompositionPieces takeMergeResult( b3ConvexMergeResult* result )
+{
+	DecompositionPieces out;
+	out.merged = true;
 	const float* points = reinterpret_cast<const float*>( result->points );
 	out.points.assign( points, points + (size_t)result->offsets[result->pieceCount] * 3 );
 	out.offsets.assign( result->offsets, result->offsets + result->pieceCount + 1 );
@@ -1489,12 +1501,51 @@ DecompositionPieces mergePieces( const DecompositionMesh& mesh, const Decomposit
 	return out;
 }
 
+DecompositionPieces mergePieces( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts )
+{
+	b3ConvexMergeDef def = makeMergeDef( mesh, pieces, opts );
+	b3ConvexMergeResult* result = def.pieceCount > 0 ? b3MergeConvexPieces( &def ) : nullptr;
+	return result != nullptr ? takeMergeResult( result ) : unmergedPieces( pieces );
+}
+
+// One decomposition per limit, each carrying on from the one before (b3SweepConvexPieces).
+struct DecompositionSweep
+{
+	size_t pieceCount = 0; // pieces V-HACD handed over
+	std::vector<DecompositionPieces> steps;
+};
+
+DecompositionSweep sweepPieces( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts,
+	const std::vector<float>& limits )
+{
+	DecompositionSweep out;
+	out.pieceCount = pieces.offsets.size() - 1;
+	b3ConvexMergeDef def = makeMergeDef( mesh, pieces, opts );
+	std::vector<b3ConvexMergeResult*> results( limits.size(), nullptr );
+	if ( def.pieceCount > 0 && b3SweepConvexPieces( &def, limits.data(), (int)limits.size(), results.data() ) )
+	{
+		for ( b3ConvexMergeResult* result : results ) out.steps.push_back( takeMergeResult( result ) );
+	}
+	else
+	{
+		out.steps.assign( limits.size(), unmergedPieces( pieces ) );
+	}
+	return out;
+}
+
 DecompositionPieces decompose( VHACD::IVHACD* vhacd, const DecompositionMesh& mesh, const DecompositionOptions& opts )
 {
 	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
 		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
 	DecompositionPieces pieces = collectPieces( vhacd );
 	return opts.surfaceMerge ? mergePieces( mesh, pieces, opts.merge ) : pieces;
+}
+
+DecompositionSweep sweepDecomposition( VHACD::IVHACD* vhacd, const DecompositionMesh& mesh, const DecompositionOptions& opts )
+{
+	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
+		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
+	return sweepPieces( mesh, collectPieces( vhacd ), opts.merge, opts.sweep );
 }
 
 DecompositionPieces runDecomposition( const DecompositionMesh& mesh, const DecompositionOptions& opts )
@@ -1532,6 +1583,39 @@ val toPacked( const DecompositionPieces& p )
 		out.set( "maxConcavity", p.maxConcavity );
 	}
 	return out;
+}
+
+val toSweep( const DecompositionSweep& sweep )
+{
+	val steps = val::array();
+	for ( const DecompositionPieces& step : sweep.steps ) steps.call<void>( "push", toPacked( step ) );
+	val out = val::object();
+	out.set( "pieceCount", (double)sweep.pieceCount );
+	out.set( "steps", steps );
+	return out;
+}
+
+// Options of a sweep: V-HACD's own, with its merge off, and `tolerances`, the limits to merge
+// at. maxConvexHulls is a budget only when given: by default the limits alone decide.
+DecompositionOptions readSweepOptions( val options )
+{
+	DecompositionOptions o = readDecompositionOptions( options );
+	o.surfaceMerge = false;
+	o.params.m_maxConvexHulls = UINT32_MAX;
+	o.merge.maxHulls = hasOption( options, "maxConvexHulls" ) ? (int)clampOption( options, "maxConvexHulls", 0.0, 0.0, 2147483647.0 ) : 0;
+	o.merge.maxVerticesPerHull = o.maxVerticesPerHull;
+	o.merge.sampleCount = readSampleCount( options );
+	if ( !hasOption( options, "tolerances" ) ) throwJsError( e_sweepTolerances );
+	o.sweep = convertJSArrayToNumberVector<float>( options["tolerances"] );
+	if ( o.sweep.empty() ) throwJsError( e_sweepTolerances );
+	float previous = 0.0f;
+	for ( float limit : o.sweep )
+	{
+		// the negated test also turns away a NaN
+		if ( !( limit >= previous ) || limit > 3.0e38f ) throwJsError( e_sweepTolerances );
+		previous = limit;
+	}
+	return o;
 }
 
 int readMaxVertices( val maxVerticesPerHull )
@@ -1619,25 +1703,43 @@ public:
 	{
 		m_mesh = readDecompositionMesh( positions, indices );
 		m_opts = readDecompositionOptions( options );
-		m_thread = std::thread( [this]()
-		{
-			if ( !m_cancel ) m_pieces = decompose( m_vhacd, m_mesh, m_opts );
-			m_done = true;
-		} );
+		run();
+	}
+
+	// The same for a sweep: V-HACD, then the merge at each of options.tolerances.
+	void startSweep( val positions, val indices, val options )
+	{
+		m_mesh = readDecompositionMesh( positions, indices );
+		m_opts = readSweepOptions( options );
+		run();
 	}
 
 	bool isReady() const { return m_done; }
 	val takeResult() const
 	{
 		if ( !m_done ) throwJsError( e_jobNotReady );
-		return toPacked( m_pieces );
+		return m_opts.sweep.empty() ? toPacked( m_pieces ) : toSweep( m_sweep );
 	}
 
 private:
+	void run()
+	{
+		m_thread = std::thread( [this]()
+		{
+			if ( !m_cancel )
+			{
+				if ( m_opts.sweep.empty() ) m_pieces = decompose( m_vhacd, m_mesh, m_opts );
+				else m_sweep = sweepDecomposition( m_vhacd, m_mesh, m_opts );
+			}
+			m_done = true;
+		} );
+	}
+
 	VHACD::IVHACD* m_vhacd;
 	DecompositionMesh m_mesh;
 	DecompositionOptions m_opts;
 	DecompositionPieces m_pieces;
+	DecompositionSweep m_sweep;
 	std::thread m_thread;
 	std::atomic<bool> m_done{ false };
 	std::atomic<bool> m_cancel{ false };
@@ -2663,6 +2765,20 @@ EMSCRIPTEN_BINDINGS( box3d )
 			opts.sampleCount = readSampleCount( options );
 			return toPacked( mergePieces( mesh, pieces, opts ) );
 		} );
+	// V-HACD once, then the surface merge at each of options.tolerances in one pass
+	// (b3SweepConvexPieces). Returns { pieceCount, steps: packed decomposition per tolerance }.
+	// The facade wraps this: it fills in the tolerances and picks the step to recommend.
+	ret_function( "b3SweepConvexDecomposition(positions, indices, options): b3ConvexDecompositionSweep",
+		+[]( val positions, val indices, val options ) -> val
+		{
+			DecompositionMesh mesh = readDecompositionMesh( positions, indices );
+			DecompositionOptions opts = readSweepOptions( options );
+			VHACD::IVHACD* vhacd = VHACD::CreateVHACD();
+			DecompositionSweep sweep = sweepDecomposition( vhacd, mesh, opts );
+			vhacd->Clean();
+			vhacd->Release();
+			return toSweep( sweep );
+		} );
 	// The compound copies the hulls, so they are freed here. The compound itself is
 	// referenced (not copied) by b3CreateBakedCompoundShape: keep it alive until the shape
 	// is destroyed, then b3DestroyCompound it. Compounds require a static body.
@@ -2715,6 +2831,7 @@ EMSCRIPTEN_BINDINGS( box3d )
 	class_<ConvexDecompositionJob>( "ConvexDecompositionJobImpl" )
 		.constructor<>()
 		.function( "start", &ConvexDecompositionJob::start )
+		.function( "startSweep", &ConvexDecompositionJob::startSweep )
 		.function( "isReady", &ConvexDecompositionJob::isReady )
 		.function( "takeResult", &ConvexDecompositionJob::takeResult );
 #endif

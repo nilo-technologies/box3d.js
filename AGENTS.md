@@ -50,8 +50,8 @@ pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (m
 
 ## Convex decomposition
 
-- `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With a `maxConcavity` option V-HACD hands over all its pieces and the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) merges them against the mesh surface instead of by volume; `b3MergeConvexDecomposition` runs that merge on its own.
-- `test/bench-decomposition-quality.mjs` compares the two merges on the procedural meshes in `test/decomposition-meshes.mjs`, with the metrics in `test/decomposition-metrics.mjs` (hull count, time, deepest open space sealed, volume over and missing). Run it before and after touching either merge. `--dump <dir>` writes each result as JSON, and `node examples/scripts/decomposition-screenshots.mjs <dir> <out>` draws them side by side.
+- `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With a `maxConcavity` option V-HACD hands over all its pieces and the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) merges them against the mesh surface instead of by volume; `b3MergeConvexDecomposition` runs that merge on its own, and `b3SweepConvexDecomposition` merges at a series of limits in one pass (`b3SweepConvexPieces`) and recommends a hull count.
+- `test/bench-decomposition-quality.mjs` compares the two merges on the procedural meshes in `test/decomposition-meshes.mjs`, with the metrics in `test/decomposition-metrics.mjs` (hull count, time, deepest open space sealed, volume over and missing). Run it before and after touching either merge. `--sweep` prints each mesh's sweep and the step recommended. `--dump <dir>` writes each result as JSON, and `node examples/scripts/decomposition-screenshots.mjs <dir> <out>` draws them side by side.
 
 ## Conventions
 
