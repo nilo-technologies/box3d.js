@@ -1332,10 +1332,8 @@ struct MergeOptions
 	int sampleCount = 8192;
 	int sweepSteps = 9;
 	bool sweep = true;
-	// Start from the triangles of the mesh, the default, or from V-HACD's pieces. Those can be
-	// fitted to the mesh and split first, which is experimental.
+	// Start from the triangles of the mesh, the default, or from V-HACD's pieces
 	bool seedTriangles = true;
-	bool split = false;
 };
 
 struct DecompositionOptions
@@ -1380,7 +1378,6 @@ MergeOptions readMergeOptions( val options )
 	m.sweep = hasOption( options, "sweep" ) ? options["sweep"].as<bool>() : true;
 	m.sampleCount = readSampleCount( options );
 	m.seedTriangles = hasOption( options, "seedTriangles" ) ? options["seedTriangles"].as<bool>() : true;
-	m.split = hasOption( options, "splitPieces" ) ? options["splitPieces"].as<bool>() : false;
 	return m;
 }
 
@@ -1509,7 +1506,6 @@ b3ConvexMergeDef makeMergeDef( const DecompositionMesh& mesh, const Decompositio
 	def.sampleCount = opts.sampleCount;
 	def.sweepSteps = opts.sweepSteps;
 	def.enableSweep = opts.sweep;
-	def.enableSplit = opts.split;
 	def.seedTriangles = opts.seedTriangles;
 	return def;
 }

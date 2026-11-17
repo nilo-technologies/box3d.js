@@ -293,10 +293,9 @@ How many hulls a mesh needs depends on the limit, and the right limit is rarely 
 - V-HACD's pieces fill the inside of the solid, so less of a thick one is left uncovered: a mug with a wall 8 cm thick misses 0.7% of its volume, against 4.1% from its triangles. V-HACD's time hardly grows with the triangle count.
 - The merge can only be as tight as those pieces, which reach past the surface by about a voxel. A wall with a doorway comes out as 4 hulls that seal 10 cm, where the merge from its triangles gives 3 that seal nothing. Raise `resolution` for a closer fit.
 - Where it merges further than V-HACD it can cover more volume outside the mesh, a few centimeters deep over a wide area.
-- `splitPieces: true` is experimental. It fits each piece to the mesh before merging, so it stops reaching past the surface, and cuts the pieces that seal more than the tightest limit. Over the test meshes it brings the depth sealed from 7.7 cm to 4.1 cm on average, in about the same time.
 - `b3MergeConvexDecomposition` runs the merge on its own over any packed decomposition: V-HACD output with a generous hull budget, or a stored asset.
 
-`pnpm bench:decomposition:quality --versions` sets the three ways to start against each other: the triangles, V-HACD's pieces, and those pieces fitted and split.
+`pnpm bench:decomposition:quality --versions` sets the two ways to start against each other: the triangles and V-HACD's pieces.
 
 <ExamplesTable ids="example-convex-decomposition" />
 

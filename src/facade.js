@@ -791,8 +791,8 @@ function b3ConvexDecompositionCacheKey( positions, indices, options )
 
 // The surface merge's part of the key. It is off unless `surfaceMerge` or, failing that,
 // `maxConcavity` asks for it. It starts from the mesh's triangles unless `seedTriangles` is
-// turned off, and only V-HACD's pieces can be split. As in the binding, a NaN falls to the lower
-// bound and a length is held to 3e38 as a float. The sweep is on unless turned off, the engine
+// turned off. As in the binding, a NaN falls to the lower bound and a length is held to 3e38 as
+// a float. The sweep is on unless turned off, the engine
 // reads a weight of 0 as 1, and without the sweep its range, step count and weight change nothing.
 function decompositionMergeKey( o )
 {
@@ -801,7 +801,7 @@ function decompositionMergeKey( o )
 	const clamp = ( v, fallback, lo, hi ) => Math.min( hi, Math.max( lo, given( v ) ? Number( v ) : fallback ) ) || lo;
 	const seeded = given( o.seedTriangles ) ? !!o.seedTriangles : true;
 	const key = [
-		seeded ? 'triangles' : ( given( o.splitPieces ) && o.splitPieces ? 'split' : 'pieces' ),
+		seeded ? 'triangles' : 'pieces',
 		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
 		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
 	];

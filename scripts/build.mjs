@@ -479,10 +479,6 @@ export interface b3ConvexDecompositionOptions {
    * not. With false V-HACD cuts the mesh into voxel pieces, which fill the inside of the
    * solid, and the merge joins those. Default true. */
   seedTriangles?: boolean;
-  /** Experimental. Surface merge of V-HACD's pieces (seedTriangles: false): fit each piece to
-   * the mesh before merging, so it stops reaching past the surface by a voxel, and cut the
-   * pieces that seal more than the tightest limit. Default false. */
-  splitPieces?: boolean;
   /** Async variants only: reuse an earlier result for the same mesh + options instead of
    * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
    * in place afterwards (their hash is memoized per array object). */
@@ -512,8 +508,6 @@ export interface b3ConvexMergeOptions {
   maxVerticesPerHull?: number;
   /** Points sampled on the mesh surface, clamped to [64, 1048576]. Default 8192. */
   concavitySamples?: number;
-  /** Experimental: see b3ConvexDecompositionOptions. */
-  splitPieces?: boolean;
 }
 /** Options of b3SweepConvexDecomposition: those of a decomposition, where the surface merge
  * is always on and nothing is cached. */

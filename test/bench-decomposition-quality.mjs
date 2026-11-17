@@ -9,7 +9,6 @@
 //     --resolution 100000  V-HACD voxel resolution (default 100000)
 //     --pieces             surface merge of V-HACD's pieces (seedTriangles: false) in place of
 //                          its default, which starts from the triangles of the mesh
-//     --split              with --pieces: fit and split the pieces first (splitPieces)
 //     --markdown           print GitHub tables instead of aligned text
 //     --dump <dir>         write each decomposition as JSON, for the screenshots
 //                          (examples/scripts/decomposition-screenshots.mjs)
@@ -44,12 +43,10 @@
 // measured here on their hulls. The sweep runs with no hull budget, so the steps show what
 // the limits alone leave. --concavity and --hulls do not apply.
 //
-// --versions runs three surface merges on each mesh, with no hull budget:
+// --versions runs two surface merges on each mesh, with no hull budget:
 //   triangles      the default: the merge starts from the triangles of the mesh, as HACD and
 //                  the Roblox article do. V-HACD does not run.
 //   pieces         V-HACD's pieces, merged as they come (seedTriangles: false)
-//   pieces + split the same pieces fitted to the mesh and cut where they seal too much
-//                  (splitPieces, experimental)
 // each twice: with the sweep, where the merge finds its limit, and merged once to --concavity.
 // The columns are those above, measured here on the hulls.
 
@@ -71,7 +68,7 @@ const budgets = option( 'hulls', '16,32' ).split( ',' ).map( Number );
 const concavity = Number( option( 'concavity', '0.05' ) );
 const resolution = Number( option( 'resolution', '100000' ) );
 // how the surface merge starts: from the triangles of the mesh unless --pieces asks for V-HACD's
-const start = args.includes( '--pieces' ) ? { seedTriangles: false, splitPieces: args.includes( '--split' ) } : {};
+const start = args.includes( '--pieces' ) ? { seedTriangles: false } : {};
 
 const { default: Box3D } = await import( option( 'dist', '../dist/box3d.mjs' ) );
 const b3 = await Box3D();
@@ -129,7 +126,6 @@ if ( args.includes( '--versions' ) )
 	const VERSIONS = [
 		[ 'triangles', { surfaceMerge: true } ],
 		[ 'pieces', { surfaceMerge: true, seedTriangles: false } ],
-		[ 'pieces + split', { surfaceMerge: true, seedTriangles: false, splitPieces: true } ],
 	];
 	const MODES = [ [ 'sweep', {} ], [ `${( concavity * 100 ).toFixed( 0 )} cm`, { sweep: false, maxConcavity: concavity } ] ];
 	const totals = new Map();
