@@ -277,7 +277,7 @@ How many hulls a mesh needs depends on the limit, and the right limit is rarely 
 - `best` is the recommended step. Hull count and sealed depth are each scaled by their largest value in the sweep, and the step nearest to no hulls and nothing sealed wins. `hullWeight` leans it: above 1 toward fewer hulls, below 1 toward a closer fit.
 - On blocky meshes the first steps often share one `sealedDepth`: V-HACD's own pieces already seal that much, and no limit below it changes what the hulls seal, only how many there are. The recommendation usually lands at the end of that run, the fewest hulls that seal no more than the pieces did.
 - The recommendation is a heuristic over this sweep, and it moves with the range swept. It is not a proof of the fewest hulls possible: the merge is greedy and can only join the pieces V-HACD cut.
-- `b3SweepConvexDecompositionAsync` runs it off the calling thread. Sweeps are not cached.
+- `b3SweepConvexDecompositionAsync` keeps it off the calling thread where it can: on a thread of its own in the multithreaded builds, in a Web Worker in the single-threaded builds in a browser. In single-threaded Node it runs on the calling thread, and the Promise resolves once it is done. Sweeps are not cached.
 
 `pnpm bench:decomposition:quality --sweep` prints the sweep of each test mesh and the step recommended.
 

@@ -564,7 +564,10 @@ self.onmessage = async ({ data }) => {
 			: b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options);
 	}
 	catch (err) { self.postMessage({ type: 'error', id: data.id, message: String(err?.message ?? err) }); return; }
-	self.postMessage({ type: 'result', id: data.id, packed }, data.sweep ? [] : [packed.points.buffer, packed.offsets.buffer]);
+	// hand the hull buffers over instead of copying them: every step's, for a sweep
+	const buffers = (d) => [d.points.buffer, d.offsets.buffer, ...(d.concavities ? [d.concavities.buffer] : [])];
+	const transfer = data.sweep ? packed.steps.flatMap((step) => buffers(step.decomposition)) : buffers(packed);
+	self.postMessage({ type: 'result', id: data.id, packed }, [...new Set(transfer)]);
 };`;
 	const url = URL.createObjectURL( new Blob( [ src ], { type: 'text/javascript' } ) );
 	const w = { worker: null, pending: new Map(), nextId: 1, failed: false };
@@ -881,7 +884,9 @@ function sweepTolerances( positions, options )
 	const positive = ( v, fallback ) => ( Number.isFinite( v ) && v > 0 ? v : fallback );
 	const lo = positive( Number( o.minConcavity ), 0.005 * diagonal );
 	const hi = Math.max( lo, positive( Number( o.maxConcavity ), 0.08 * diagonal ) );
-	const steps = Math.trunc( Math.min( 64, Math.max( 1, positive( Number( o.steps ), 9 ) ) ) );
+	// a count given is clamped to [1, 64], zero and below included; 9 only when none is given
+	const given = o.steps === undefined || o.steps === null ? NaN : Number( o.steps );
+	const steps = Number.isFinite( given ) ? Math.trunc( Math.min( 64, Math.max( 1, given ) ) ) : 9;
 	if ( steps === 1 || hi === lo ) return [ hi ];
 	return Array.from( { length: steps }, ( _, i ) => lo * ( hi / lo ) ** ( i / ( steps - 1 ) ) );
 }
@@ -931,9 +936,9 @@ function finishSweep( raw, tolerances, options )
 	return { pieceCount: raw.pieceCount, steps, best: pickSweepStep( steps, Number( options?.hullWeight ) ) };
 }
 
-// The sweep without blocking the calling thread: on a pthread in the multithreaded builds, in
-// the decomposition worker in single-threaded browser builds, synchronously in Node. Sweeps
-// are not cached.
+// The sweep kept off the calling thread where it can be: on a pthread in the multithreaded
+// builds, in the decomposition worker in single-threaded browser builds. In single-threaded
+// Node it runs on the calling thread before the Promise resolves. Sweeps are not cached.
 function b3SweepConvexDecompositionAsync( positions, indices, options )
 {
 	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options, true );

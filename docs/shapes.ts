@@ -226,10 +226,14 @@ const tuned = await b3.b3SweepConvexDecompositionAsync(concavePositions, concave
     steps: 9,              // limits, spread geometrically between the two
     // tolerances: [0.02, 0.05, 0.1], explicit limits in place of the three above
     hullWeight: 1,         // above 1 recommends fewer hulls, below 1 a closer fit
-    // maxConvexHulls: unset, a hull budget met at every step
+    // maxConvexHulls: no budget by default, the limits alone decide. Set, every step meets it
     resolution: 100000,    // V-HACD's voxels
     maxVerticesPerHull: 32,
-    concavitySamples: 8192,
+    minVolumePercentError: 1, // V-HACD stops splitting a piece within this volume error
+    maxRecursionDepth: 10, // V-HACD's split depth
+    shrinkWrap: true,      // project hull vertices back onto the mesh
+    useThreads: false,     // V-HACD's own worker threads, multithreaded builds only
+    concavitySamples: 8192, // points sampled on the mesh surface
 });
 /* SNIPPET_END: decomposition-sweep */
 

@@ -1832,9 +1832,10 @@ export interface Box3DFacade {
   /** Packed decomposition computed without blocking the calling thread (same threading as
    * b3CreateConvexDecompositionShapesAsync). Use it for static compounds and caching. */
   b3ComputeConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3ConvexDecomposition>;
-  /** b3SweepConvexDecomposition without blocking the calling thread: on a pthread in the
-   * multithreaded builds, in a Web Worker in single-threaded browser builds, synchronously
-   * in Node. Sweeps are not cached. */
+  /** b3SweepConvexDecomposition kept off the calling thread where it can be: on a pthread in
+   * the multithreaded builds, in a Web Worker in single-threaded browser builds. In
+   * single-threaded Node it runs on the calling thread before the Promise resolves. Sweeps
+   * are not cached. */
   b3SweepConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionSweepOptions): Promise<b3ConvexDecompositionSweep>;
   /** Cache key the async variants use: options.cacheKey or a 64-bit hash of the mesh
    * (memoized per array pair), plus every option that changes the result. */

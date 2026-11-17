@@ -701,6 +701,15 @@ async function decompositionSweep( b3, extraOptions = {} )
 	const one = b3.b3SweepConvexDecomposition( positions, indices, { ...base, steps: 1 } );
 	assert.equal( one.steps.length, 1, 'one step' );
 	assert.equal( one.best, 0, 'which is the recommended one' );
+	for ( const steps of [ 0, -3, 0.5 ] )
+	{
+		assert.equal( b3.b3SweepConvexDecomposition( positions, indices, { ...base, steps } ).steps.length, 1, `steps: ${steps} is clamped to one step` );
+	}
+	assert.equal( b3.b3SweepConvexDecomposition( positions, indices, { ...base, steps: 3.9 } ).steps.length, 3, 'a fractional count is truncated' );
+	for ( const steps of [ null, NaN, 'many' ] )
+	{
+		assert.equal( b3.b3SweepConvexDecomposition( positions, indices, { ...base, steps } ).steps.length, 9, `steps: ${steps} falls back to nine` );
+	}
 	assert.throws( () => b3.b3SweepConvexDecomposition( positions, indices, { ...base, tolerances: [ 0.2, 0.1 ] } ), /sweep tolerances/, 'limits must not tighten' );
 	assert.throws( () => b3.b3SweepConvexDecomposition( positions, indices, { ...base, tolerances: [] } ), /sweep tolerances/, 'limits must not be empty' );
 	assert.throws( () => b3.b3SweepConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'the sweep checks the mesh' );
