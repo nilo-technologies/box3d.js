@@ -790,6 +790,11 @@ async function decompositionSweep( b3, extraOptions = {} )
 		Array.from( seeded.decomposition.points ), 'seedTriangles: and from the merge on its own, whatever it is handed' );
 	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...base, surfaceMerge: true, seedTriangles: true, cache: false } );
 	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'seedTriangles: and from the Promise variant' );
+	// a mesh with no extent gives the merge nothing to make hulls of: no hulls, the triangles still counted
+	const point = b3.b3SweepConvexDecomposition( new Float32Array( 12 ).fill( 1 ), new Uint32Array( [ 0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2 ] ), { seedTriangles: true } );
+	assert.equal( point.pieceCount, 4, 'seedTriangles: pieceCount is the triangle count even when nothing comes of them' );
+	assert.equal( point.decomposition.offsets.length - 1, 0, 'seedTriangles: a mesh with no extent has no hulls' );
+	assert.ok( point.steps.length === 1 && point.best === 0 && point.steps[ 0 ].hullCount === 0, 'seedTriangles: and one step that says so' );
 	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, { surfaceMerge: true, ...o } );
 	assert.notEqual( key( { splitPieces: true } ), key( {} ), 'splitPieces is part of the cache key' );
 	assert.notEqual( key( { sampleSpacing: 1 } ), key( {} ), 'so is sampleSpacing' );

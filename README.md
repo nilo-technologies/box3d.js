@@ -1148,7 +1148,7 @@ Three options of the surface merge are experimental. They are off by default and
 
 - `splitPieces: true` fits each V-HACD piece to the mesh before merging, so it stops reaching past the surface by a voxel, and cuts the pieces that seal more than the tightest limit. The merge is then no longer held to what V-HACD's pieces sealed as they came.
 - `sampleSpacing` spaces the sample points by a multiple of the tightest limit, so their number follows from the area of the mesh instead of `concavitySamples`.
-- `seedTriangles: true` starts the merge from the triangles of the mesh instead of V-HACD's pieces, as [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) and the Roblox article do. V-HACD does not run, so nothing snaps to a voxel grid and a mesh of a few thousand triangles takes a fraction of a second. The hulls follow the surface, though, so the inside of a thick solid can stay uncovered, and the time grows with the triangle count where V-HACD's does not.
+- `seedTriangles: true` starts the merge from the triangles of the mesh instead of V-HACD's pieces, as [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) and the Roblox article do. V-HACD does not run, so nothing snaps to a voxel grid and a mesh of a few thousand triangles takes a fraction of a second. Its own options (`resolution`, `minVolumePercentError`, `maxRecursionDepth`, `shrinkWrap`, `useThreads`) then do nothing, while `maxConvexHulls` and `maxVerticesPerHull` still hold. The hulls follow the surface, though, so the inside of a thick solid can stay uncovered, and the time grows with the triangle count where V-HACD's does not.
 
 `pnpm bench:decomposition:quality --versions` sets them against the merge as it is.
 

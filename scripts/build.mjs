@@ -477,8 +477,10 @@ export interface b3ConvexDecompositionOptions {
    * Default false. */
   splitPieces?: boolean;
   /** Experimental. Surface merge: start from the triangles of the mesh instead of V-HACD's
-   * pieces, as HACD does. V-HACD does not run and its options are not used. The hulls follow
-   * the surface, so the inside of a thick solid can stay uncovered. Default false. */
+   * pieces, as HACD does. V-HACD does not run, so resolution, minVolumePercentError,
+   * maxRecursionDepth, shrinkWrap and useThreads do nothing. maxConvexHulls and
+   * maxVerticesPerHull still hold: they are the merge's hull budget and vertex limit. The
+   * hulls follow the surface, so the inside of a thick solid can stay uncovered. Default false. */
   seedTriangles?: boolean;
   /** Async variants only: reuse an earlier result for the same mesh + options instead of
    * running V-HACD again. Default true. Arrays passed with the cache on must not be edited

@@ -1549,9 +1549,9 @@ DecompositionPieces mergePieces( const DecompositionMesh& mesh, const Decomposit
 {
 	b3ConvexMergeDef def = makeMergeDef( mesh, pieces, opts );
 	b3ConvexMergeResult* result = def.pieceCount > 0 || def.seedTriangles ? b3MergeConvexPieces( &def ) : nullptr;
-	if ( result == nullptr ) return unmergedPieces( pieces );
-	DecompositionPieces out = takeMergeResult( result );
-	// What the merge started from: the pieces, or with seedTriangles the triangles of the mesh
+	DecompositionPieces out = result != nullptr ? takeMergeResult( result ) : unmergedPieces( pieces );
+	// What the merge started from: the pieces, or with seedTriangles the triangles of the mesh,
+	// also when the merge made nothing of them
 	out.sourceCount = def.seedTriangles ? (size_t)def.meshTriangleCount : pieces.offsets.size() - 1;
 	return out;
 }
