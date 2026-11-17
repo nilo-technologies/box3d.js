@@ -774,6 +774,30 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the swept decomposition is cached' );
 	b3.b3ClearConvexDecompositionCache();
 
+	// experimental: pieces fitted to the mesh and cut where they seal, samples spaced by the
+	// limit, and the merge started from the triangles of the mesh instead of V-HACD's pieces
+	const fitted = sweepOf( { splitPieces: true, sampleSpacing: 1 } );
+	assert.ok( fitted.decomposition.maxConcavity < kept.maxConcavity, 'splitPieces: fitted and cut pieces seal less' );
+	assert.ok( covers( fitted.decomposition, wall ) && !covers( fitted.decomposition, doorway ), 'splitPieces: the wall is covered, the doorway open' );
+	const seeded = sweepOf( { seedTriangles: true } );
+	assert.equal( seeded.pieceCount, indices.length / 3, 'seedTriangles: the merge starts from the triangles' );
+	assert.equal( seeded.decomposition.offsets.length - 1, 3, 'seedTriangles: the wall is its two sides and its lintel' );
+	assert.ok( seeded.decomposition.maxConcavity < 1e-3, 'seedTriangles: nothing is sealed' );
+	assert.ok( covers( seeded.decomposition, wall ) && !covers( seeded.decomposition, doorway ), 'seedTriangles: the wall is covered, the doorway open' );
+	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...base, surfaceMerge: true, seedTriangles: true } ).points ),
+		Array.from( seeded.decomposition.points ), 'seedTriangles: the same from a decomposition' );
+	assert.deepEqual( Array.from( b3.b3MergeConvexDecomposition( positions, indices, kept, { seedTriangles: true } ).points ),
+		Array.from( seeded.decomposition.points ), 'seedTriangles: and from the merge on its own, whatever it is handed' );
+	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...base, surfaceMerge: true, seedTriangles: true, cache: false } );
+	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'seedTriangles: and from the Promise variant' );
+	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, { surfaceMerge: true, ...o } );
+	assert.notEqual( key( { splitPieces: true } ), key( {} ), 'splitPieces is part of the cache key' );
+	assert.notEqual( key( { sampleSpacing: 1 } ), key( {} ), 'so is sampleSpacing' );
+	assert.notEqual( key( { seedTriangles: true } ), key( {} ), 'and seedTriangles' );
+	assert.equal( key( { splitPieces: false, sampleSpacing: 0, seedTriangles: null } ), key( {} ), 'their defaults are normalized' );
+	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { splitPieces: true, seedTriangles: true } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
+		'and they mean nothing without the surface merge' );
+
 	return { first: sweep.steps[ 0 ].hullCount, best: best.hullCount, last: sweep.steps[ 8 ].hullCount };
 }
 

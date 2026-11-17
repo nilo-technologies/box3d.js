@@ -795,6 +795,10 @@ function decompositionMergeKey( o )
 	const key = [
 		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
 		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
+		// experimental: sample spacing, fitted and split pieces, triangle seeding
+		Math.fround( clamp( o.sampleSpacing, 0, 0, 1e6 ) ),
+		given( o.splitPieces ) && o.splitPieces ? 1 : 0,
+		given( o.seedTriangles ) && o.seedTriangles ? 1 : 0,
 	];
 	if ( given( o.sweep ) && !o.sweep ) return [ ...key, 'fixed' ];
 	return [

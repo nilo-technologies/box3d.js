@@ -1086,7 +1086,7 @@ b3.b3CreateConvexDecompositionShapesFromPacked(remergedBody, sd, remerged);
 - The result carries `concavities` (one per piece) and `maxConcavity`, the depth each hull seals.
 - The merge can only be as tight as V-HACD's pieces, which overshoot the surface by about a voxel. Raise `resolution` for a closer fit.
 - The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works.
-- The whole call takes about as long as before. Merged to one limit of 5 cm it took 9% less over the test meshes in total, from 23% less to 33% more on a single mesh, and the sweep adds little to that. V-HACD skips its own merge, which compares every pair of pieces, and the surface merge only looks at neighbors.
+- The whole call takes about as long as before. Merged to one limit of 5 cm it took 9% less over the test meshes in total, from 21% less to 15% more on a single mesh, and the sweep adds little to that. V-HACD skips its own merge, which compares every pair of pieces, and the surface merge only looks at neighbors.
 - It trades volume for depth. Where it merges further than V-HACD it can cover more volume outside the mesh, a few centimeters deep over a wide area: at a limit of 5 cm a table top and its legs become 5 hulls that cover 14% more than the table, where V-HACD's 16 cover 3%. A tighter limit fits closer.
 
 ![A wall with a doorway: V-HACD with 16 hulls, the surface merge to 5 cm under the same budget, and the surface merge to 5 cm alone](./docs/images/decomposition/doorway.png)
@@ -1141,6 +1141,16 @@ const mergedUnderTen = b3.b3ComputeConvexDecomposition(concavePositions, concave
 - A decomposition with `surfaceMerge` goes through the Promise variants and their cache like any other. `b3SweepConvexDecompositionAsync` is not cached. It keeps the work off the calling thread where it can: on a thread of its own in the multithreaded builds, in a Web Worker in the single-threaded builds in a browser. In single-threaded Node it runs on the calling thread, and the Promise resolves once it is done.
 
 `pnpm bench:decomposition:quality --sweep` prints the sweep of each test mesh and the step kept.
+
+#### Experimental: tighter pieces, or none
+
+Three options of the surface merge are experimental. They are off by default and may change or go: they are being measured against each other.
+
+- `splitPieces: true` fits each V-HACD piece to the mesh before merging, so it stops reaching past the surface by a voxel, and cuts the pieces that seal more than the tightest limit. The merge is then no longer held to what V-HACD's pieces sealed as they came.
+- `sampleSpacing` spaces the sample points by a multiple of the tightest limit, so their number follows from the area of the mesh instead of `concavitySamples`.
+- `seedTriangles: true` starts the merge from the triangles of the mesh instead of V-HACD's pieces, as [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) and the Roblox article do. V-HACD does not run, so nothing snaps to a voxel grid and a mesh of a few thousand triangles takes a fraction of a second. The hulls follow the surface, though, so the inside of a thick solid can stay uncovered, and the time grows with the triangle count where V-HACD's does not.
+
+`pnpm bench:decomposition:quality --versions` sets them against the merge as it is.
 
 <table>
   <tr>

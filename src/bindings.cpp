@@ -1332,6 +1332,10 @@ struct MergeOptions
 	int sampleCount = 8192;
 	int sweepSteps = 9;
 	bool sweep = true;
+	// Experimental: sample by spacing, fit and split the pieces, start from the triangles
+	float sampleSpacing = 0.0f;
+	bool split = false;
+	bool seedTriangles = false;
 };
 
 struct DecompositionOptions
@@ -1374,6 +1378,9 @@ MergeOptions readMergeOptions( val options )
 	m.sweepSteps = (int)clampOption( options, "sweepSteps", 9.0, 1.0, 64.0 );
 	m.sweep = hasOption( options, "sweep" ) ? options["sweep"].as<bool>() : true;
 	m.sampleCount = readSampleCount( options );
+	m.sampleSpacing = (float)clampOption( options, "sampleSpacing", 0.0, 0.0, 1.0e6 );
+	m.split = hasOption( options, "splitPieces" ) ? options["splitPieces"].as<bool>() : false;
+	m.seedTriangles = hasOption( options, "seedTriangles" ) ? options["seedTriangles"].as<bool>() : false;
 	return m;
 }
 
@@ -1502,6 +1509,9 @@ b3ConvexMergeDef makeMergeDef( const DecompositionMesh& mesh, const Decompositio
 	def.sampleCount = opts.sampleCount;
 	def.sweepSteps = opts.sweepSteps;
 	def.enableSweep = opts.sweep;
+	def.sampleSpacing = opts.sampleSpacing;
+	def.enableSplit = opts.split;
+	def.seedTriangles = opts.seedTriangles;
 	return def;
 }
 
@@ -1538,15 +1548,18 @@ DecompositionPieces takeMergeResult( b3ConvexMergeResult* result )
 DecompositionPieces mergePieces( const DecompositionMesh& mesh, const DecompositionPieces& pieces, const MergeOptions& opts )
 {
 	b3ConvexMergeDef def = makeMergeDef( mesh, pieces, opts );
-	b3ConvexMergeResult* result = def.pieceCount > 0 ? b3MergeConvexPieces( &def ) : nullptr;
+	b3ConvexMergeResult* result = def.pieceCount > 0 || def.seedTriangles ? b3MergeConvexPieces( &def ) : nullptr;
 	if ( result == nullptr ) return unmergedPieces( pieces );
 	DecompositionPieces out = takeMergeResult( result );
-	out.sourceCount = pieces.offsets.size() - 1;
+	// What the merge started from: the pieces, or with seedTriangles the triangles of the mesh
+	out.sourceCount = def.seedTriangles ? (size_t)def.meshTriangleCount : pieces.offsets.size() - 1;
 	return out;
 }
 
 DecompositionPieces decompose( VHACD::IVHACD* vhacd, const DecompositionMesh& mesh, const DecompositionOptions& opts )
 {
+	// Seeded with the triangles of the mesh, the merge needs no pieces and V-HACD does not run
+	if ( opts.surfaceMerge && opts.merge.seedTriangles ) return mergePieces( mesh, DecompositionPieces(), opts.merge );
 	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
 		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
 	DecompositionPieces pieces = collectPieces( vhacd );

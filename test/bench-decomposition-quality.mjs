@@ -16,6 +16,9 @@
 //     --min-concavity m    sweep: tightest limit, in meters (default 0.5% of the diagonal)
 //     --max-concavity m    sweep: loosest limit, in meters (default 8% of the diagonal)
 //     --hull-weight 1      sweep: above 1 leans toward fewer hulls, below 1 toward a closer fit
+//     --versions           instead of the comparison, set the surface merge as it is against
+//                          its two experimental versions (see below)
+//     --spacing 1          versions: sample spacing of version A, in tightest limits
 //
 // The comparison merges to one limit (sweep: false), so the two merges meet at the same
 // budget. Three runs per mesh and budget N:
@@ -38,6 +41,15 @@
 // marks the step it kept. A table of the steps kept follows, with the columns above
 // measured here on their hulls. The sweep runs with no hull budget, so the steps show what
 // the limits alone leave. --concavity and --hulls do not apply.
+
+// --versions runs three surface merges on each mesh, with no hull budget:
+//   current        V-HACD's pieces, merged as they come
+//   A fit+split    the same pieces fitted to the mesh and cut where they seal too much
+//                  (splitPieces), with the samples spaced by the limit (sampleSpacing)
+//   B triangles    no V-HACD: the merge starts from the triangles of the mesh (seedTriangles),
+//                  as HACD and the Roblox article do
+// each twice: with the sweep, where the merge finds its limit, and merged once to --concavity.
+// The columns are those above, measured here on the hulls.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -103,8 +115,47 @@ function print( title, rows )
 	for ( const row of table ) console.log( `  ${row.map( ( c, i ) => ( i === 0 ? c.padEnd( widths[ i ] ) : c.padStart( widths[ i ] ) ) ).join( '  ' )}` );
 }
 
+
 // A cap no decomposition reaches. Finite, so the dumped options survive JSON.
 const NO_BUDGET = 1e9;
+
+// --versions: the surface merge as it is against its two experimental versions
+if ( args.includes( '--versions' ) )
+{
+	const spacing = Number( option( 'spacing', '1' ) );
+	const VERSIONS = [
+		[ 'current', { surfaceMerge: true } ],
+		[ 'A fit+split', { surfaceMerge: true, splitPieces: true, sampleSpacing: spacing } ],
+		[ 'B triangles', { surfaceMerge: true, seedTriangles: true } ],
+	];
+	const MODES = [ [ 'sweep', {} ], [ `${( concavity * 100 ).toFixed( 0 )} cm`, { sweep: false, maxConcavity: concavity } ] ];
+	const totals = new Map();
+	for ( const name of meshNames )
+	{
+		if ( !MESHES[ name ] ) throw new Error( `unknown mesh "${name}" (have: ${Object.keys( MESHES ).join( ', ' )})` );
+		const mesh = MESHES[ name ].mesh(), info = meshInfo( mesh );
+		const rows = [];
+		for ( const [ mode, modeOptions ] of MODES )
+		{
+			for ( const [ version, versionOptions ] of VERSIONS )
+			{
+				const label = `${version} (${mode})`;
+				const row = run( name, mesh, label, { maxConvexHulls: NO_BUDGET, ...versionOptions, ...modeOptions } );
+				rows.push( row );
+				const total = totals.get( label ) ?? { label, hulls: 0, ms: 0, sealedMax: 0, sealedMean: 0, overshoot: 0, missing: 0, count: 0 };
+				for ( const key of [ 'hulls', 'ms', 'sealedMax', 'sealedMean', 'overshoot', 'missing' ] ) total[ key ] += row[ key ];
+				total.count += 1;
+				totals.set( label, total );
+			}
+		}
+		print( `${name}: ${MESHES[ name ].note} (${info.triangles} triangles)`, rows );
+	}
+	// hulls and time summed over the meshes, the measures averaged
+	print( `All ${meshNames.length} meshes: hulls and ms in total, the rest on average`, [ ...totals.values() ].map( ( t ) => ( {
+		...t, sealedMax: t.sealedMax / t.count, sealedMean: t.sealedMean / t.count, overshoot: t.overshoot / t.count, missing: t.missing / t.count,
+	} ) ) );
+	process.exit( 0 );
+}
 
 // --sweep: the surface merge with its default, a sweep, and what the sweep saw
 if ( args.includes( '--sweep' ) )
