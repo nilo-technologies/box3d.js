@@ -1718,8 +1718,8 @@ export interface b3ConvexDecompositionOptions {
    * maxConvexHulls and maxVerticesPerHull still hold: they are the merge's hull budget and
    * vertex limit. Two things to weigh: the hulls follow the surface, so the inside of a thick
    * solid can stay uncovered, and the time grows with the triangle count where V-HACD's does
-   * not. With false V-HACD cuts the mesh into voxel pieces, which cover the whole volume, and
-   * the merge joins those. Default true. */
+   * not. With false V-HACD cuts the mesh into voxel pieces, which fill the inside of the
+   * solid, and the merge joins those. Default true. */
   seedTriangles?: boolean;
   /** Experimental. Surface merge of V-HACD's pieces (seedTriangles: false): fit each piece to
    * the mesh before merging, so it stops reaching past the surface by a voxel, and cut the

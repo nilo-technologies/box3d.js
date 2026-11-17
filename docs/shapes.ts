@@ -201,8 +201,8 @@ const mergedToLimit = b3.b3ComputeConvexDecomposition(concavePositions, concaveI
 /* SNIPPET_END: decomposition-merge */
 
 /* SNIPPET_START: decomposition-pieces */
-// Start from V-HACD's pieces instead of the triangles: they cover the whole volume of the
-// solid, and V-HACD's time does not grow with the triangle count.
+// Start from V-HACD's pieces instead of the triangles: they fill the inside of the solid,
+// and V-HACD's time hardly grows with the triangle count.
 const fromPieces = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
     surfaceMerge: true,
     seedTriangles: false,

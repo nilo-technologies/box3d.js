@@ -1,10 +1,10 @@
-// Convex Decomposition — V-HACD splits concave meshes into convex pieces that box3d
-// can collide. Each dynamic object is ONE body with one hull shape per piece, created
-// with b3CreateConvexDecompositionShapesAsync: with this single-threaded build, V-HACD
-// runs in a Web Worker, so the page keeps rendering while it works, and the hull shapes
-// are attached to the body in one call when it finishes. Results are cached per mesh +
-// options, so only the first torus and the first L-shape run V-HACD; every later drop
-// reuses the result and only builds its hull shapes. Bodies are created disabled and
+// Convex Decomposition — concave meshes are split into convex pieces that box3d can
+// collide. Each dynamic object is ONE body with one hull shape per piece, created with
+// b3CreateConvexDecompositionShapesAsync: with this single-threaded build, the
+// decomposition runs in a Web Worker, so the page keeps rendering while it works, and the
+// hull shapes are attached to the body in one call when it finishes. Results are cached per
+// mesh + options, so only the first torus and the first L-shape of each "merge" setting are
+// decomposed; every later drop reuses the result and only builds its hull shapes. Bodies are created disabled and
 // enabled once their shapes exist. The static bowl is one compound shape (compounds are
 // static-only), built from b3ComputeConvexDecompositionAsync. The "show" control draws
 // the hull shapes, the source mesh they approximate, or both overlaid. The "merge"

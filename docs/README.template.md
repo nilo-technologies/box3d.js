@@ -258,7 +258,7 @@ By default the pieces it starts from are the triangles of the mesh itself, as in
 
 - The limit is a length in mesh units. A doorway reads as its width, so a limit of 5 cm aims to keep every opening wider than 5 cm, while a sliver of hull lying against a wall reads as its thickness. Two things can seal more: merges forced by `maxConvexHulls`, and an opening thin enough to fall between the sample points (`concavitySamples`).
 - To give the limit yourself, pass `maxConcavity` with `sweep: false`. A `maxConcavity` alone also turns the merge on, and then caps the sweep: no step merges to a looser limit.
-- The hull count follows from the shape: a wall with a doorway needs 3 hulls where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed.
+- The hull count follows from the shape and the limit: a wall with a doorway needs 3 hulls, at every limit the sweep tries, where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed.
 - The result carries `concavities` (one per piece) and `maxConcavity`, the depth each hull seals.
 - The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works.
 - It is quick on small meshes, since V-HACD does not run: the test meshes take from 25 ms to 0.8 s. The time grows with the triangle count, where V-HACD's follows its voxel resolution. On a torus it is 0.6 s at 1,500 triangles, 2.6 s at 25,000 and 4.7 s at 74,000, where V-HACD takes about 5 s at any of those.
@@ -290,7 +290,7 @@ How many hulls a mesh needs depends on the limit, and the right limit is rarely 
 
 <Snippet source="./shapes.ts" select="decomposition-pieces" />
 
-- V-HACD's pieces cover the whole volume, and its time does not grow with the triangle count.
+- V-HACD's pieces fill the inside of the solid, so less of a thick one is left uncovered: a mug with a wall 8 cm thick misses 0.7% of its volume, against 4.1% from its triangles. V-HACD's time hardly grows with the triangle count.
 - The merge can only be as tight as those pieces, which reach past the surface by about a voxel. A wall with a doorway comes out as 4 hulls that seal 10 cm, where the merge from its triangles gives 3 that seal nothing. Raise `resolution` for a closer fit.
 - Where it merges further than V-HACD it can cover more volume outside the mesh, a few centimeters deep over a wide area.
 - `splitPieces: true` is experimental. It fits each piece to the mesh before merging, so it stops reaching past the surface, and cuts the pieces that seal more than the tightest limit. Over the test meshes it brings the depth sealed from 7.7 cm to 4.1 cm on average, in about the same time.
