@@ -471,7 +471,11 @@ Shape triangles are built once, the first time that shape is drawn, and freed wh
 
 `box3d.js/three` turns the buffer into Three.js objects. It does not import `three`. Pass the same `THREE` namespace the rest of the page uses, so `three` and `three/webgpu` both work. `null` in `colors` keeps box3d's own colour. Mass has no box3d colour, so `colors.mass: null` is white.
 
+`shapeStyle` draws shapes as `'wireframe'` (the default), `'solid'`, or `'both'`. Solid faces are shaded by the way each one turns, from a fixed light above, in front and to the right, so the faces of a box read apart. The shading only darkens, so the hue stays. A face turned straight away from the light keeps `1 - solidShading` of its colour (0.5 by default), and 0 gives flat colour.
+
 Set `settings.camera` to cull to that camera. Each `update` draws inside the AABB of the camera's frustum, cut down to `drawingBounds` when that is set too. box3d's broadphase skips every shape outside that box, along with those bodies' joints, contacts and mass markers. The box is coarser than the frustum, so some shapes and overlays just outside the view are still drawn, and it grows with the far plane, so set `cullDistance` to cap it. Three's own frustum culling then skips shape meshes and edge lines that are out of view. The shared lines and points (joints, contacts, bounds, mass) are drawn for everything inside the box. Shapes that leave the view stay cached, hidden, for `shapeCacheFrames` updates (300 by default), so panning back does not rebuild them.
+
+Set `settings.distanceFade` to shade the overlay by depth from the camera that renders it. Colours scale by `distanceFadeMax` (1.25 by default, a quarter brighter) at the camera and fall linearly to `distanceFadeMin` (0.2 by default) at `cullDistance`, or at `camera.far` when that is nearer or `cullDistance` is not set. Shapes, lines and points fade per pixel, so a long ground mesh darkens along its length. Both scale the colour as displayed, so 0.2 takes 0xff0000 to about 0x300000. Brightening clips each channel at full, so a channel already at 0xff does not brighten. The fade is part of every debug material's shader, so turning it on or off compiles nothing.
 
 <Snippet source="./debug-draw.ts" select="debug-draw" />
 

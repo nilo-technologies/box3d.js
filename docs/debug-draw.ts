@@ -25,6 +25,10 @@ debug.settings.contactNormals = true;
 // out to 60 units. That box is coarser than the frustum itself.
 debug.settings.camera = camera;
 debug.settings.cullDistance = 60;
+// Shade by depth: 125% of the colour at the camera, 20% at cullDistance.
+debug.settings.distanceFade = true;
+debug.settings.distanceFadeMax = 1.25;
+debug.settings.distanceFadeMin = 0.2;
 debug.update();
 
 // The buffer API is there when you draw it yourself. One buffer, refilled in place.
