@@ -673,27 +673,30 @@ async function surfaceMerge( b3, extraOptions = {} )
 	return { volumeHulls: volume.offsets.length - 1, mergedHulls: count };
 }
 
-// The sweep: by default the surface merge finds its limit. Its pieces are merged at a series
-// of loosening limits in one pass and one step is kept. Most of this runs on V-HACD's pieces
-// (seedTriangles: false), where a wall with a doorway has hulls to lose step by step. The end
-// covers the default, where the merge starts from the wall's own triangles.
-// b3SweepConvexDecomposition returns the decomposition with what the sweep saw.
+// The sweep: by default the surface merge finds its limit. The mesh's triangles are merged at a
+// series of loosening limits in one pass and one step is kept. Most of this runs on a torus,
+// which has hulls to lose step by step. The end covers a wall with a doorway, which comes apart
+// exactly. b3SweepConvexDecomposition returns the decomposition with what the sweep saw.
 async function decompositionSweep( b3, extraOptions = {} )
 {
 	const { positions, indices } = MESHES.doorway.mesh();
-	const base = { resolution: 50000, seedTriangles: false, ...extraOptions };
+	const torus = MESHES.torus.mesh();
+	const base = { ...extraOptions };
 	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
 		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
 	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ];
-	const sweepOf = ( options ) => b3.b3SweepConvexDecomposition( positions, indices, { ...base, ...options } );
+	const hole = [ 0, 0, 0 ], tube = [ 1, 0, 0 ];
+	const sweepOf = ( options ) => b3.b3SweepConvexDecomposition( torus.positions, torus.indices, { ...base, ...options } );
 
-	// defaults: 9 limits from 0.5% to 8% of the bounding box diagonal (5.01 m), 1.41 apart
+	// defaults: 9 limits from 0.5% to 8% of the bounding box diagonal, 1.41 apart
 	const sweep = sweepOf( {} );
 	assert.equal( sweep.steps.length, 9, 'nine steps by default' );
-	const diagonal = Math.hypot( 4, 3, 0.3 );
-	assert.ok( Math.abs( sweep.steps[ 0 ].maxConcavity - 0.005 * diagonal ) < 1e-6, 'the sweep starts at 0.5% of the diagonal' );
-	assert.ok( Math.abs( sweep.steps[ 8 ].maxConcavity - 0.08 * diagonal ) < 1e-6, 'and ends at 8%' );
-	assert.ok( sweep.pieceCount >= sweep.steps[ 0 ].hullCount, 'pieceCount is what V-HACD handed over' );
+	const lo = [ 0, 1, 2 ].map( ( k ) => Math.min( ...torus.positions.filter( ( _, i ) => i % 3 === k ) ) );
+	const hi = [ 0, 1, 2 ].map( ( k ) => Math.max( ...torus.positions.filter( ( _, i ) => i % 3 === k ) ) );
+	const diagonal = Math.hypot( hi[ 0 ] - lo[ 0 ], hi[ 1 ] - lo[ 1 ], hi[ 2 ] - lo[ 2 ] );
+	assert.ok( Math.abs( sweep.steps[ 0 ].maxConcavity - 0.005 * diagonal ) < 1e-5, 'the sweep starts at 0.5% of the diagonal' );
+	assert.ok( Math.abs( sweep.steps[ 8 ].maxConcavity - 0.08 * diagonal ) < 1e-5, 'and ends at 8%' );
+	assert.equal( sweep.pieceCount, torus.indices.length / 3, 'the merge starts from the triangles' );
 	sweep.steps.forEach( ( step, i ) =>
 	{
 		assert.deepEqual( Object.keys( step ).sort(), [ 'hullCount', 'maxConcavity', 'sealedDepth' ], `step ${i}: a limit, a hull count and a depth` );
@@ -708,21 +711,21 @@ async function decompositionSweep( b3, extraOptions = {} )
 
 	// the step kept, and its hulls
 	const best = sweep.steps[ sweep.best ], kept = sweep.decomposition;
-	assert.ok( best.hullCount >= 3 && best.hullCount < sweep.steps[ 0 ].hullCount, `the step kept sits inside the sweep (${best.hullCount} hulls)` );
+	assert.ok( best.hullCount >= 4 && best.hullCount < sweep.steps[ 0 ].hullCount, `the step kept sits inside the sweep (${best.hullCount} hulls)` );
 	assert.ok( sweep.best === 0 || best.hullCount < sweep.steps[ sweep.best - 1 ].hullCount, 'it is the first step at its hull count' );
 	assert.equal( kept.offsets.length - 1, best.hullCount, 'the decomposition is that step\'s' );
 	assert.equal( kept.maxConcavity, best.sealedDepth, 'sealedDepth is what its hulls seal' );
 	assert.ok( kept.concavities instanceof Float32Array && kept.concavities.length === best.hullCount, 'it carries concavities' );
-	assert.ok( covers( kept, wall ), 'the wall is covered' );
-	assert.ok( !covers( kept, doorway ), 'the doorway stays open' );
+	assert.ok( covers( kept, tube ), 'the tube is covered' );
+	assert.ok( !covers( kept, hole ), 'the hole stays open' );
 
 	// a decomposition with surfaceMerge is that step, and ready to use
-	const auto = b3.b3ComputeConvexDecomposition( positions, indices, { ...base, surfaceMerge: true } );
+	const auto = b3.b3ComputeConvexDecomposition( torus.positions, torus.indices, { ...base, surfaceMerge: true } );
 	assert.deepEqual( Array.from( auto.points ), Array.from( kept.points ), 'surfaceMerge sweeps by default and gives the step kept' );
 	assert.deepEqual( Array.from( auto.offsets ), Array.from( kept.offsets ), 'hull for hull' );
 	assert.equal( auto.steps, undefined, 'a packed decomposition does not carry the steps' );
 	const world = groundedWorld( b3 );
-	const shapes = b3.b3CreateConvexDecompositionShapes( dynamicBody( b3, world, 5 ), b3.b3DefaultShapeDef(), positions, indices, { ...base, surfaceMerge: true } );
+	const shapes = b3.b3CreateConvexDecompositionShapes( dynamicBody( b3, world, 5 ), b3.b3DefaultShapeDef(), torus.positions, torus.indices, { ...base, surfaceMerge: true } );
 	assert.equal( shapes.count, best.hullCount, 'one hull shape per hull of the step kept' );
 	b3.b3DestroyWorld( world );
 
@@ -731,10 +734,10 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.equal( ranged.steps.length, 3, 'sweepSteps limits' );
 	assert.ok( ranged.steps[ 0 ].maxConcavity === 0.5 && Math.abs( ranged.steps[ 1 ].maxConcavity - 1 ) < 1e-6 && ranged.steps[ 2 ].maxConcavity === 2,
 		'spread geometrically from minConcavity to maxConcavity' );
-	assert.equal( ranged.steps[ 2 ].hullCount, 1, 'a limit wider than the doorway leaves one hull' );
-	assert.ok( ranged.best === 2 && covers( ranged.decomposition, doorway ), 'a heavy hull weight keeps it, doorway sealed' );
-	const light = sweepOf( { minConcavity: 0.5, maxConcavity: 2, sweepSteps: 3, hullWeight: 0.01 } );
-	assert.ok( light.best === 0 && !covers( light.decomposition, doorway ), 'a light one keeps the first step, doorway open' );
+	assert.equal( ranged.steps[ 2 ].hullCount, 1, 'a limit wider than the hole leaves one hull' );
+	assert.ok( ranged.best === 2 && covers( ranged.decomposition, hole ), 'a heavy hull weight keeps it, hole sealed' );
+	const light = sweepOf( { minConcavity: 0.02, maxConcavity: 2, sweepSteps: 3, hullWeight: 0.01 } );
+	assert.ok( light.best === 0 && !covers( light.decomposition, hole ), 'a light one keeps the first step, hole open' );
 	const fewer = sweepOf( { hullWeight: 4 } ), closer = sweepOf( { hullWeight: 0.25 } );
 	assert.ok( fewer.steps[ fewer.best ].hullCount <= best.hullCount && best.hullCount <= closer.steps[ closer.best ].hullCount,
 		'hullWeight leans the step kept toward fewer hulls or a closer fit' );
@@ -757,21 +760,21 @@ async function decompositionSweep( b3, extraOptions = {} )
 	const fixed = sweepOf( { sweep: false, maxConcavity: 0.05 } );
 	assert.ok( fixed.steps.length === 1 && fixed.best === 0 && Math.abs( fixed.steps[ 0 ].maxConcavity - 0.05 ) < 1e-7, 'without the sweep the limit given is the one step' );
 	assert.deepEqual( Array.from( fixed.decomposition.points ),
-		Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConcavity: 0.05, sweep: false } ).points ),
+		Array.from( b3.b3ComputeConvexDecomposition( torus.positions, torus.indices, { ...base, maxConcavity: 0.05, sweep: false } ).points ),
 		'and the decomposition is the merge to it' );
 	assert.throws( () => b3.b3SweepConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'the mesh is checked' );
 
 	// the Promise variant gives the same, and a swept decomposition is cached like any other
-	const asyncSweep = await b3.b3SweepConvexDecompositionAsync( positions, indices, base );
+	const asyncSweep = await b3.b3SweepConvexDecompositionAsync( torus.positions, torus.indices, base );
 	assert.deepEqual( asyncSweep.steps, sweep.steps, 'async sweep: the same steps' );
 	assert.equal( asyncSweep.best, sweep.best, 'async sweep: the same step kept' );
 	assert.deepEqual( Array.from( asyncSweep.decomposition.points ), Array.from( kept.points ), 'async sweep: the same hulls' );
 	await assert.rejects( b3.b3SweepConvexDecompositionAsync( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'async sweep checks the mesh' );
 	b3.b3ClearConvexDecompositionCache();
 	const options = { ...base, surfaceMerge: true };
-	const asyncAuto = await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	const asyncAuto = await b3.b3ComputeConvexDecompositionAsync( torus.positions, torus.indices, options );
 	assert.deepEqual( Array.from( asyncAuto.points ), Array.from( kept.points ), 'async compute sweeps the same' );
-	await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	await b3.b3ComputeConvexDecompositionAsync( torus.positions, torus.indices, options );
 	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the swept decomposition is cached' );
 	b3.b3ClearConvexDecompositionCache();
 
@@ -783,16 +786,20 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.equal( seeded.decomposition.offsets.length - 1, 3, 'the wall is its two sides and its lintel' );
 	assert.ok( seeded.decomposition.maxConcavity < 1e-3, 'nothing is sealed' );
 	assert.ok( covers( seeded.decomposition, wall ) && !covers( seeded.decomposition, doorway ), 'the wall is covered, the doorway open' );
-	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, seedTriangles: true, resolution: 1000, shrinkWrap: false } ).decomposition,
-		seeded.decomposition, 'V-HACD\'s options change nothing then' );
+	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, resolution: 1000, shrinkWrap: false } ).decomposition,
+		seeded.decomposition, 'V-HACD\'s options change nothing' );
+	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, seedTriangles: false } ).decomposition,
+		seeded.decomposition, 'and the removed seedTriangles is ignored' );
 	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true } ).points ),
 		Array.from( seeded.decomposition.points ), 'the same from a decomposition' );
 	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...fromTriangles, surfaceMerge: true, cache: false } );
 	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'and from the Promise variant' );
 	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: 2 } ).offsets.length - 1, 2, 'a hull budget is met' );
-	// b3MergeConvexDecomposition merges what it is handed, whatever seedTriangles says
-	assert.deepEqual( Array.from( b3.b3MergeConvexDecomposition( positions, indices, kept, { seedTriangles: true } ).points ),
-		Array.from( b3.b3MergeConvexDecomposition( positions, indices, kept ).points ), 'the merge on its own always merges its pieces' );
+	// b3MergeConvexDecomposition merges what it is handed: V-HACD's pieces, merged against the surface
+	const vhacd = b3.b3ComputeConvexDecomposition( positions, indices, { resolution: 50000, maxConvexHulls: 1000 } );
+	const mergedPieces = b3.b3MergeConvexDecomposition( positions, indices, vhacd );
+	assert.ok( mergedPieces.offsets.length - 1 < vhacd.offsets.length - 1, 'the merge on its own joins the pieces it is handed' );
+	assert.ok( covers( mergedPieces, wall ) && !covers( mergedPieces, doorway ), 'and keeps the doorway open' );
 	// a mesh with no extent gives the merge nothing to make hulls of: no hulls, the triangles still counted
 	const point = b3.b3SweepConvexDecomposition( new Float32Array( 12 ).fill( 1 ), new Uint32Array( [ 0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2 ] ) );
 	assert.equal( point.pieceCount, 4, 'pieceCount is the triangle count even when nothing comes of them' );
@@ -846,15 +853,12 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.notEqual( key( { maxConvexHulls: 0 } ), key( { maxConvexHulls: 1 } ), 'for the merge 0 is no budget, not 1' );
 	assert.equal( key( { maxConvexHulls: null, maxVerticesPerHull: null } ), key( {} ), 'null is the default' );
 	assert.equal( key( { maxVerticesPerHull: 200 } ), key( { maxVerticesPerHull: 44 } ), 'from the triangles the merge holds hulls to 44 vertices' );
-	assert.equal( key( { seedTriangles: true } ), key( {} ), 'seedTriangles is on by default' );
-	assert.equal( key( { seedTriangles: null } ), key( {} ), 'and null is the default' );
-	assert.notEqual( key( { seedTriangles: false } ), key( {} ), 'V-HACD\'s pieces are another decomposition' );
+	assert.equal( key( { seedTriangles: false } ), key( {} ), 'the removed seedTriangles means nothing' );
 	assert.equal( key( { resolution: 5000, minVolumePercentError: 3, maxRecursionDepth: 4, shrinkWrap: false } ), key( {} ),
 		'from the triangles, V-HACD\'s options mean nothing' );
 	assert.notEqual( key( { maxConvexHulls: 8 } ), key( {} ), 'the hull budget still counts' );
 	assert.notEqual( key( { maxVerticesPerHull: 16 } ), key( {} ), 'and the vertex limit' );
-	assert.notEqual( key( { seedTriangles: false, resolution: 5000 } ), key( { seedTriangles: false } ), 'for V-HACD\'s pieces its resolution counts' );
-	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { seedTriangles: false } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
+	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { maxConcavity: undefined } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
 		'none of it means anything without the surface merge' );
 
 	return { first: sweep.steps[ 0 ].hullCount, best: best.hullCount, last: sweep.steps[ 8 ].hullCount };

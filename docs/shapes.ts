@@ -201,17 +201,10 @@ const mergedToLimit = b3.b3ComputeConvexDecomposition(concavePositions, concaveI
 /* SNIPPET_END: decomposition-merge */
 
 /* SNIPPET_START: decomposition-pieces */
-// Start from V-HACD's pieces instead of the triangles: they fill the inside of the solid,
-// and V-HACD's time hardly grows with the triangle count.
-const fromPieces = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
-    surfaceMerge: true,
-    seedTriangles: false,
-    resolution: 100000, // V-HACD's voxel count: its pieces reach past the surface by about a voxel
-});
-
-// The merge also runs on its own, over a decomposition from anywhere: V-HACD output with
-// a generous hull budget, or a stored asset.
-const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices, packed, {
+// The merge runs on its own over a decomposition from anywhere: here V-HACD output with a
+// generous hull budget, whose pieces fill the inside of the solid.
+const vhacdPieces = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, { maxConvexHulls: 1000 });
+const remerged = b3.b3MergeConvexDecomposition(concavePositions, concaveIndices, vhacdPieces, {
     maxConvexHulls: 16, // optional budget: merging goes on past the limit to meet it
 });
 const remergedBody = b3.b3CreateBody(world, decompBodyDef);
@@ -243,16 +236,17 @@ const tuned = await b3.b3ComputeConvexDecompositionAsync(concavePositions, conca
     hullWeight: 1,          // above 1 keeps fewer hulls, below 1 a closer fit
     sweepStep: -1,          // the step to keep, or -1 to let the sweep choose
     concavitySamples: 8192, // points sampled on the mesh surface
-    seedTriangles: true,    // false starts from V-HACD's pieces
 });
 
 // To choose by a rule of your own, read the steps and decompose again with sweepStep set to
-// the one you settle on: here the loosest whose hulls seal under 10 cm.
-const underTen = sweep.steps.reduce((found, step, i) => (step.sealedDepth < 0.1 ? i : found), 0);
-const mergedUnderTen = b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
-    surfaceMerge: true,
-    sweepStep: underTen,
-});
+// the one you settle on: here the loosest whose hulls seal under 10 cm, if any does.
+const underTen = sweep.steps.reduce((found, step, i) => (step.sealedDepth < 0.1 ? i : found), -1);
+const mergedUnderTen = underTen < 0
+    ? null
+    : b3.b3ComputeConvexDecomposition(concavePositions, concaveIndices, {
+          surfaceMerge: true,
+          sweepStep: underTen,
+      });
 /* SNIPPET_END: decomposition-sweep */
 
 /* SNIPPET_START: resize-disable */

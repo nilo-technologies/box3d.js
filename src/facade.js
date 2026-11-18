@@ -497,10 +497,9 @@ function getBodyPlaneResultAt( out, buf, i )
 //
 // With a `surfaceMerge` option box3d's surface merge (b3MergeConvexPieces) decomposes the mesh
 // instead: neighboring pieces merge cheapest first, and a merge costs the depth of open space
-// the merged hull would seal, so a doorway stays open. By default it starts from the triangles
-// of the mesh and V-HACD does not run; with `seedTriangles: false` V-HACD hands over all its
-// pieces and the merge joins those. How much a hull may seal is found by a sweep unless
-// `sweep: false` leaves it to `maxConcavity`.
+// the merged hull would seal, so a doorway stays open. It starts from the triangles of the mesh
+// and V-HACD does not run. How much a hull may seal is found by a sweep unless `sweep: false`
+// leaves it to `maxConcavity`.
 //
 // The blocking bindings live in src/bindings.cpp. The Promise variants below keep
 // the calling thread free while V-HACD runs:
@@ -862,8 +861,7 @@ function sweepStepKey( value )
 }
 
 // The surface merge's part of the key. It is off unless `surfaceMerge` or, failing that,
-// `maxConcavity` asks for it. It starts from the mesh's triangles unless `seedTriangles` is
-// turned off. As in the binding, a NaN falls to the lower bound and a length is held to 3e38 as
+// `maxConcavity` asks for it, and then starts from the mesh's triangles. As in the binding, a NaN falls to the lower bound and a length is held to 3e38 as
 // a float. The sweep is on unless turned off, the engine
 // reads a weight of 0 as 1, and without the sweep its range, step count and weight change nothing.
 function decompositionMergeKey( o )
@@ -871,9 +869,8 @@ function decompositionMergeKey( o )
 	const given = ( v ) => v !== undefined && v !== null;
 	if ( !( given( o.surfaceMerge ) ? o.surfaceMerge : given( o.maxConcavity ) ) ) return [ '-' ];
 	const clamp = ( v, fallback, lo, hi ) => Math.min( hi, Math.max( lo, given( v ) ? Number( v ) : fallback ) ) || lo;
-	const seeded = given( o.seedTriangles ) ? !!o.seedTriangles : true;
 	const key = [
-		seeded ? 'triangles' : 'pieces',
+		'triangles',
 		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
 		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
 	];

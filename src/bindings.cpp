@@ -1334,7 +1334,8 @@ struct MergeOptions
 	// The step of the sweep to return, -1 to let the sweep choose
 	int sweepStep = -1;
 	bool sweep = true;
-	// Start from the triangles of the mesh, the default, or from V-HACD's pieces
+	// Start from the triangles of the mesh (a decomposition) or from the pieces handed in
+	// (b3MergeConvexDecomposition). Not an option.
 	bool seedTriangles = true;
 };
 
@@ -1342,9 +1343,8 @@ struct DecompositionOptions
 {
 	VHACD::IVHACD::Parameters params;
 	int maxVerticesPerHull = 32;
-	// Set by a `surfaceMerge` or `maxConcavity` option: the surface merge takes the place of
-	// V-HACD's own, with maxConvexHulls as the budget. It starts from the triangles of the mesh,
-	// or with seedTriangles off from every piece V-HACD cuts.
+	// Set by a `surfaceMerge` or `maxConcavity` option: the surface merge decomposes the mesh
+	// from its triangles in place of V-HACD, with maxConvexHulls as the budget.
 	bool surfaceMerge = false;
 	MergeOptions merge;
 };
@@ -1377,7 +1377,6 @@ MergeOptions readMergeOptions( val options )
 	m.sweepStep = (int)clampOption( options, "sweepStep", d.sweepStep, -1.0, 63.0 );
 	m.sweep = hasOption( options, "sweep" ) ? options["sweep"].as<bool>() : d.enableSweep;
 	m.sampleCount = (int)clampOption( options, "concavitySamples", d.sampleCount, 64.0, 1048576.0 );
-	m.seedTriangles = hasOption( options, "seedTriangles" ) ? options["seedTriangles"].as<bool>() : d.seedTriangles;
 	return m;
 }
 
@@ -1422,8 +1421,6 @@ DecompositionOptions readDecompositionOptions( val options, bool forceMerge = fa
 		// The merge's budget, where 0 is none, as in b3MergeConvexDecomposition
 		o.merge.maxHulls = (int)clampOption( options, "maxConvexHulls", 32.0, 0.0, 2147483647.0 );
 		o.merge.maxVerticesPerHull = o.maxVerticesPerHull;
-		// V-HACD merges only while it holds more hulls than this
-		p.m_maxConvexHulls = UINT32_MAX;
 	}
 	return o;
 }
@@ -1553,13 +1550,12 @@ DecompositionPieces mergePieces( const DecompositionMesh& mesh, const Decomposit
 
 DecompositionPieces decompose( VHACD::IVHACD* vhacd, const DecompositionMesh& mesh, const DecompositionOptions& opts )
 {
-	// Started from the triangles of the mesh, the default, the merge needs no pieces and V-HACD
+	// The surface merge starts from the triangles of the mesh: it needs no pieces and V-HACD
 	// does not run
-	if ( opts.surfaceMerge && opts.merge.seedTriangles ) return mergePieces( mesh, DecompositionPieces(), opts.merge );
+	if ( opts.surfaceMerge ) return mergePieces( mesh, DecompositionPieces(), opts.merge );
 	vhacd->Compute( mesh.positions.data(), (uint32_t)( mesh.positions.size() / 3 ), mesh.indices.data(),
 		(uint32_t)( mesh.indices.size() / 3 ), opts.params );
-	DecompositionPieces pieces = collectPieces( vhacd );
-	return opts.surfaceMerge ? mergePieces( mesh, pieces, opts.merge ) : pieces;
+	return collectPieces( vhacd );
 }
 
 DecompositionPieces runDecomposition( const DecompositionMesh& mesh, const DecompositionOptions& opts )
