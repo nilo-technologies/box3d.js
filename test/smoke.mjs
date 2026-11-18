@@ -798,8 +798,54 @@ async function decompositionSweep( b3, extraOptions = {} )
 	assert.equal( point.pieceCount, 4, 'pieceCount is the triangle count even when nothing comes of them' );
 	assert.equal( point.decomposition.offsets.length - 1, 0, 'a mesh with no extent has no hulls' );
 	assert.ok( point.steps.length === 1 && point.best === 0 && point.steps[ 0 ].hullCount === 0, 'and one step that says so' );
+	// sweepStep keeps the step asked for, with the same steps
+	for ( let k = 0; k < seeded.steps.length; k++ )
+	{
+		const chosen = b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, sweepStep: k } );
+		assert.equal( chosen.best, k, 'sweepStep is the step kept' );
+		assert.equal( chosen.decomposition.offsets.length - 1, seeded.steps[ k ].hullCount, 'and its hulls are that step\'s' );
+		assert.deepEqual( chosen.steps, seeded.steps, 'the steps are the same' );
+	}
+	// a vertex limit past what a box3d hull always fits is held to 44
+	const wide = b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxVerticesPerHull: 200 } );
+	assert.equal( wide.offsets.length - 1, 3, 'a high vertex limit costs no merge' );
+	// the merge's hull budget: 0 is none, null is the default
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: 0 } ).offsets.length - 1, 3,
+		'a budget of 0 is no budget' );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: null, maxVerticesPerHull: null } ).offsets.length - 1, 3,
+		'null is the default budget and vertex limit' );
+	// input is checked before it reaches wasm, and a failed call leaves the module as it was
+	const quad = [ new Float32Array( [ 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0 ] ), new Uint32Array( [ 0, 1, 2, 0, 2, 3 ] ) ];
+	const nan = Float32Array.from( positions ); nan[ 4 ] = NaN;
+	for ( let i = 0; i < 400; i++ )
+	{
+		assert.throws( () => b3.b3SweepConvexDecomposition( ...quad ), /at least 4 vertices/ );
+		assert.throws( () => b3.b3ComputeConvexDecomposition( nan, indices, { surfaceMerge: true } ), /positions must be finite/ );
+		assert.throws( () => b3.b3MergeConvexDecomposition( positions, indices, { points: new Float32Array( 3 ), offsets: new Uint32Array( [ 0, 2 ] ) } ), /do not match/ );
+	}
+	await assert.rejects( b3.b3SweepConvexDecompositionAsync( ...quad ), /at least 4 vertices/ );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true } ).offsets.length - 1, 3,
+		'decompositions still work after 1,200 rejected calls' );
+	// a job started again stops the run before it and gives the new one's result
+	if ( b3.ConvexDecompositionJobImpl )
+	{
+		const job = new b3.ConvexDecompositionJobImpl();
+		job.start( positions, indices, {}, false );
+		job.start( positions, indices, { ...fromTriangles, surfaceMerge: true }, false );
+		while ( !job.isReady() ) await new Promise( ( r ) => setTimeout( r, 5 ) );
+		assert.equal( job.takeResult().offsets.length - 1, 3, 'a restarted job gives the second decomposition' );
+		job.delete();
+	}
 	// the cache key: triangles by default, and V-HACD's own options only count for its pieces
 	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, { surfaceMerge: true, ...o } );
+	assert.equal( key( { sweepStep: -1 } ), key( {} ), 'sweepStep -1 lets the sweep choose' );
+	assert.notEqual( key( { sweepStep: 0 } ), key( {} ), 'sweepStep 0 is a step' );
+	assert.notEqual( key( { sweepStep: 2 } ), key( { sweepStep: 0 } ), 'and the step counts' );
+	assert.equal( key( { sweepStep: NaN } ), key( {} ), 'a NaN step is no step' );
+	assert.equal( key( { sweepStep: 3, sweep: false } ), key( { sweep: false } ), 'without the sweep the step means nothing' );
+	assert.notEqual( key( { maxConvexHulls: 0 } ), key( { maxConvexHulls: 1 } ), 'for the merge 0 is no budget, not 1' );
+	assert.equal( key( { maxConvexHulls: null, maxVerticesPerHull: null } ), key( {} ), 'null is the default' );
+	assert.equal( key( { maxVerticesPerHull: 200 } ), key( { maxVerticesPerHull: 44 } ), 'from the triangles the merge holds hulls to 44 vertices' );
 	assert.equal( key( { seedTriangles: true } ), key( {} ), 'seedTriangles is on by default' );
 	assert.equal( key( { seedTriangles: null } ), key( {} ), 'and null is the default' );
 	assert.notEqual( key( { seedTriangles: false } ), key( {} ), 'V-HACD\'s pieces are another decomposition' );

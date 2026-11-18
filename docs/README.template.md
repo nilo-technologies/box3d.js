@@ -258,11 +258,13 @@ By default the pieces it starts from are the triangles of the mesh itself, as in
 
 - The limit is a length in mesh units. A doorway reads as its width, so a limit of 5 cm aims to keep every opening wider than 5 cm, while a sliver of hull lying against a wall reads as its thickness. Two things can seal more: merges forced by `maxConvexHulls`, and an opening thin enough to fall between the sample points (`concavitySamples`).
 - To give the limit yourself, pass `maxConcavity` with `sweep: false`. A `maxConcavity` alone also turns the merge on, and then caps the sweep: no step merges to a looser limit.
-- The hull count follows from the shape and the limit: a wall with a doorway needs 3 hulls, at every limit the sweep tries, where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed.
+- The hull count follows from the shape and the limit: a wall with a doorway needs 3 hulls, at every limit the sweep tries, where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap, also across gaps between parts of the mesh that do not touch. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed. For the merge a `maxConvexHulls` of 0 is no budget.
 - The result carries `concavities` (one per piece) and `maxConcavity`, the depth each hull seals.
-- The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works.
-- It is quick on small meshes, since V-HACD does not run: the test meshes take from 25 ms to 0.8 s. The time grows with the triangle count, where V-HACD's follows its voxel resolution. On a torus it is 0.6 s at 1,500 triangles, 2.6 s at 25,000 and 4.7 s at 74,000, where V-HACD takes about 5 s at any of those.
-- The hulls follow the surface, so the inside of a thick solid is not always covered. A mug with a wall 8 cm thick loses 4.1% of its volume, where V-HACD's pieces lose under 1%.
+- The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works and gives the same hulls. It may be made of several closed parts, also parts that touch or pass into each other: a face pressed against another part, or buried in it, is not open space. Every coordinate must be finite.
+- A merged hull keeps at most 44 vertices, the most a box3d hull always fits under its cap of 128 edges, whatever `maxVerticesPerHull` asks.
+- The hulls can overlap where they meet. A dynamic body that takes its mass from its shapes then weighs more than the solid, and its center of mass can shift: set the body's mass yourself where that matters. The benchmark's `overlap` column shows how much.
+- It is quick on small meshes, since V-HACD does not run: the test meshes take from 20 ms to 0.6 s. The time grows with the triangle count, where V-HACD's follows its voxel resolution. On a torus it is 0.4 s at 1,500 triangles, 2.1 s at 25,000 and 3.9 s at 74,000, where V-HACD takes about 5 s at any of those.
+- The hulls follow the surface, so the inside of a thick solid is not always covered. Merged to 5 cm, a mug with a wall 8 cm thick loses 4.8% of its volume, where V-HACD's pieces lose under 1%.
 
 ![A wall with a doorway: V-HACD with 16 hulls, the surface merge to 5 cm under the same budget, and the surface merge to 5 cm alone](./docs/images/decomposition/doorway.png)
 
@@ -275,11 +277,12 @@ How many hulls a mesh needs depends on the limit, and the right limit is rarely 
 <Snippet source="./shapes.ts" select="decomposition-sweep" />
 
 - By default the sweep runs 9 limits from 0.5% to 8% of the diagonal of the mesh's bounding box, each 1.41 times the one before. On a wall 4 m wide and 3 m tall that is 2.5 cm to 40 cm. `minConcavity`, `maxConcavity` and `sweepSteps` change the range and the count.
-- The step kept: hull count and sealed depth are each scaled by their largest value in the sweep, and the step nearest to no hulls and nothing sealed wins. `hullWeight` leans it: above 1 toward fewer hulls, below 1 toward a closer fit.
+- The step kept: a step's hull count is scaled by that of the first step, the tightest, and its sealed depth by the loosest limit, and the step nearest to no hulls and nothing sealed wins. Each step is scored on its own, so a change at a step that is not kept does not move the choice. `hullWeight` leans it: above 1 toward fewer hulls, below 1 toward a closer fit.
+- To keep another step, decompose again with `sweepStep` set to its index, as the snippet does. The Promise variants and their cache take it like any other option.
 - From `b3SweepConvexDecomposition`, `steps[i]` has the limit (`maxConcavity`), the `hullCount` and the `sealedDepth` its hulls really seal, `best` is the index of the step kept, and `decomposition` has its hulls. It takes a decomposition's options and gives the hulls `b3ComputeConvexDecomposition` gives with `surfaceMerge`.
 - On a mesh made of flat faces the steps often all give the same hulls, sealing nothing, and the first is kept. On a curved one every hull saved costs depth, and the step kept is a trade.
 - The step kept is a heuristic over this sweep, and it moves with the range swept. It is not a proof of the fewest hulls possible: the merge is greedy and can only join the pieces it started from.
-- `maxConvexHulls` is a budget every step meets. It is 32 by default, as for any decomposition, so a mesh that wants more hulls at the tight end of the sweep needs it raised.
+- `maxConvexHulls` is a budget every step meets. It is 32 by default, as for any decomposition, so a mesh that wants more hulls at the tight end of the sweep needs it raised, or set to 0 for none. A budget that is never reached changes nothing.
 - A decomposition with `surfaceMerge` goes through the Promise variants and their cache like any other. `b3SweepConvexDecompositionAsync` is not cached. It keeps the work off the calling thread where it can: on a thread of its own in the multithreaded builds, in a Web Worker in the single-threaded builds in a browser. In single-threaded Node it runs on the calling thread, and the Promise resolves once it is done.
 
 `pnpm bench:decomposition:quality --sweep` prints the sweep of each test mesh and the step kept.
@@ -290,7 +293,7 @@ How many hulls a mesh needs depends on the limit, and the right limit is rarely 
 
 <Snippet source="./shapes.ts" select="decomposition-pieces" />
 
-- V-HACD's pieces fill the inside of the solid, so less of a thick one is left uncovered: a mug with a wall 8 cm thick misses 0.7% of its volume, against 4.1% from its triangles. V-HACD's time hardly grows with the triangle count.
+- V-HACD's pieces fill the inside of the solid, so less of a thick one is left uncovered: a mug with a wall 8 cm thick misses 0.7% of its volume, against 4.8% from its triangles merged to 5 cm. V-HACD's time hardly grows with the triangle count.
 - The merge can only be as tight as those pieces, which reach past the surface by about a voxel. A wall with a doorway comes out as 4 hulls that seal 10 cm, where the merge from its triangles gives 3 that seal nothing. Raise `resolution` for a closer fit.
 - Where it merges further than V-HACD it can cover more volume outside the mesh, a few centimeters deep over a wide area.
 - `b3MergeConvexDecomposition` runs the merge on its own over any packed decomposition: V-HACD output with a generous hull budget, or a stored asset.

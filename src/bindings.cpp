@@ -1331,6 +1331,8 @@ struct MergeOptions
 	int maxVerticesPerHull = 32;
 	int sampleCount = 8192;
 	int sweepSteps = 9;
+	// The step of the sweep to return, -1 to let the sweep choose
+	int sweepStep = -1;
 	bool sweep = true;
 	// Start from the triangles of the mesh, the default, or from V-HACD's pieces
 	bool seedTriangles = true;
@@ -1361,39 +1363,35 @@ double clampOption( val options, const char* key, double fallback, double lo, do
 	return std::min( hi, std::max( lo, v ) );
 }
 
-int readSampleCount( val options )
-{
-	return (int)clampOption( options, "concavitySamples", 8192.0, 64.0, 1048576.0 );
-}
-
-// The merge's own options. The hull budget and the vertex limit are the caller's to fill in.
-// As with clampOption a NaN falls to the lower bound, and the engine reads a weight of 0 as 1.
+// The merge's own options, with the engine's defaults. The hull budget and the vertex limit are
+// the caller's to fill in. As with clampOption a NaN falls to the lower bound, and the engine
+// reads a weight of 0 as 1 and a limit of 0 as one that follows the size of the mesh.
 MergeOptions readMergeOptions( val options )
 {
+	const b3ConvexMergeDef d = b3DefaultConvexMergeDef();
 	MergeOptions m;
-	m.maxConcavity = (float)clampOption( options, "maxConcavity", 0.0, 0.0, 3.0e38 );
-	m.minConcavity = (float)clampOption( options, "minConcavity", 0.0, 0.0, 3.0e38 );
-	m.hullWeight = (float)clampOption( options, "hullWeight", 1.0, 0.0, 3.0e38 );
-	m.sweepSteps = (int)clampOption( options, "sweepSteps", 9.0, 1.0, 64.0 );
-	m.sweep = hasOption( options, "sweep" ) ? options["sweep"].as<bool>() : true;
-	m.sampleCount = readSampleCount( options );
-	m.seedTriangles = hasOption( options, "seedTriangles" ) ? options["seedTriangles"].as<bool>() : true;
+	m.maxConcavity = (float)clampOption( options, "maxConcavity", d.maxConcavity, 0.0, 3.0e38 );
+	m.minConcavity = (float)clampOption( options, "minConcavity", d.minConcavity, 0.0, 3.0e38 );
+	m.hullWeight = (float)clampOption( options, "hullWeight", d.hullWeight, 0.0, 3.0e38 );
+	m.sweepSteps = (int)clampOption( options, "sweepSteps", d.sweepSteps, 1.0, 64.0 );
+	m.sweepStep = (int)clampOption( options, "sweepStep", d.sweepStep, -1.0, 63.0 );
+	m.sweep = hasOption( options, "sweep" ) ? options["sweep"].as<bool>() : d.enableSweep;
+	m.sampleCount = (int)clampOption( options, "concavitySamples", d.sampleCount, 64.0, 1048576.0 );
+	m.seedTriangles = hasOption( options, "seedTriangles" ) ? options["seedTriangles"].as<bool>() : d.seedTriangles;
 	return m;
 }
 
 // forceMerge: the surface merge is on whatever the options say (b3SweepConvexDecomposition)
 DecompositionOptions readDecompositionOptions( val options, bool forceMerge = false )
 {
-	const bool hasOptions = !options.isUndefined() && !options.isNull();
+	// An option given as null is one not given, as for the merge's options
 	auto num = [&]( const char* key, double fallback ) -> double
 	{
-		val v = hasOptions ? options[key] : val::undefined();
-		return v.isUndefined() ? fallback : v.as<double>();
+		return hasOption( options, key ) ? options[key].as<double>() : fallback;
 	};
 	auto flag = [&]( const char* key, bool fallback ) -> bool
 	{
-		val v = hasOptions ? options[key] : val::undefined();
-		return v.isUndefined() ? fallback : v.as<bool>();
+		return hasOption( options, key ) ? options[key].as<bool>() : fallback;
 	};
 	// Casting a double outside the uint32 range (Infinity, 1e12) is undefined
 	// behaviour, so clamp first; NaN falls to the lower bound.
@@ -1421,7 +1419,8 @@ DecompositionOptions readDecompositionOptions( val options, bool forceMerge = fa
 	{
 		o.surfaceMerge = true;
 		o.merge = readMergeOptions( options );
-		o.merge.maxHulls = (int)std::min( p.m_maxConvexHulls, (uint32_t)INT32_MAX );
+		// The merge's budget, where 0 is none, as in b3MergeConvexDecomposition
+		o.merge.maxHulls = (int)clampOption( options, "maxConvexHulls", 32.0, 0.0, 2147483647.0 );
 		o.merge.maxVerticesPerHull = o.maxVerticesPerHull;
 		// V-HACD merges only while it holds more hulls than this
 		p.m_maxConvexHulls = UINT32_MAX;
@@ -1505,6 +1504,7 @@ b3ConvexMergeDef makeMergeDef( const DecompositionMesh& mesh, const Decompositio
 	def.maxHullVertices = opts.maxVerticesPerHull;
 	def.sampleCount = opts.sampleCount;
 	def.sweepSteps = opts.sweepSteps;
+	def.sweepStep = opts.sweepStep;
 	def.enableSweep = opts.sweep;
 	def.seedTriangles = opts.seedTriangles;
 	return def;
@@ -1688,32 +1688,27 @@ public:
 	ConvexDecompositionJob() : m_vhacd( VHACD::CreateVHACD() ) {}
 	~ConvexDecompositionJob()
 	{
-		// V-HACD clears its cancel flag as a run begins, so keep asking until the thread is done
-		m_cancel = true;
-		while ( m_thread.joinable() && !m_done )
-		{
-			m_vhacd->Cancel();
-			std::this_thread::yield();
-		}
-		if ( m_thread.joinable() ) m_thread.join();
+		stop();
 		m_vhacd->Clean();
 		m_vhacd->Release();
 	}
 
-	void start( val positions, val indices, val options )
+	// Start a decomposition, or with sweep a b3SweepConvexDecomposition, whose result also says
+	// what the sweep saw. A run still going is stopped first.
+	void start( val positions, val indices, val options, bool sweep )
 	{
+		stop();
 		m_mesh = readDecompositionMesh( positions, indices );
-		m_opts = readDecompositionOptions( options );
-		run();
-	}
-
-	// The same for b3SweepConvexDecomposition: the result also says what the sweep saw.
-	void startSweep( val positions, val indices, val options )
-	{
-		m_mesh = readDecompositionMesh( positions, indices );
-		m_opts = readDecompositionOptions( options, true );
-		m_sweep = true;
-		run();
+		m_opts = readDecompositionOptions( options, sweep );
+		m_sweep = sweep;
+		m_pieces = DecompositionPieces();
+		m_cancel = false;
+		m_done = false;
+		m_thread = std::thread( [this]()
+		{
+			if ( !m_cancel ) m_pieces = decompose( m_vhacd, m_mesh, m_opts );
+			m_done = true;
+		} );
 	}
 
 	bool isReady() const { return m_done; }
@@ -1724,13 +1719,17 @@ public:
 	}
 
 private:
-	void run()
+	// V-HACD clears its cancel flag as a run begins, so keep asking until the thread is done
+	void stop()
 	{
-		m_thread = std::thread( [this]()
+		if ( !m_thread.joinable() ) return;
+		m_cancel = true;
+		while ( !m_done )
 		{
-			if ( !m_cancel ) m_pieces = decompose( m_vhacd, m_mesh, m_opts );
-			m_done = true;
-		} );
+			m_vhacd->Cancel();
+			std::this_thread::yield();
+		}
+		m_thread.join();
 	}
 
 	VHACD::IVHACD* m_vhacd;
@@ -2823,7 +2822,6 @@ EMSCRIPTEN_BINDINGS( box3d )
 	class_<ConvexDecompositionJob>( "ConvexDecompositionJobImpl" )
 		.constructor<>()
 		.function( "start", &ConvexDecompositionJob::start )
-		.function( "startSweep", &ConvexDecompositionJob::startSweep )
 		.function( "isReady", &ConvexDecompositionJob::isReady )
 		.function( "takeResult", &ConvexDecompositionJob::takeResult );
 #endif

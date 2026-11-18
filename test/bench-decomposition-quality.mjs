@@ -36,6 +36,9 @@
 //   mean       the same averaged over the surface, cm
 //   over       hull volume outside the mesh, percent of the mesh volume
 //   missing    mesh volume no hull covers, percent of the mesh volume
+//   overlap    volume held by more than one hull, counted once for each hull past the first,
+//              percent of the mesh volume: what a body that takes its mass from the hulls
+//              weighs over the solid, inside it and out
 //
 // --sweep prints, per mesh, one row per limit the merge tried (b3SweepConvexDecomposition):
 // the limit, the hulls left at it and the depth they seal, as the merge measured it. `>`
@@ -96,9 +99,9 @@ function run( name, mesh, label, options )
 
 const cells = ( r ) => [
 	r.label, String( r.hulls ), r.ms.toFixed( 0 ), ( r.sealedMax * 100 ).toFixed( 1 ), ( r.sealedMean * 100 ).toFixed( 2 ),
-	( r.overshoot * 100 ).toFixed( 1 ), ( r.missing * 100 ).toFixed( 1 ),
+	( r.overshoot * 100 ).toFixed( 1 ), ( r.missing * 100 ).toFixed( 1 ), ( r.overlap * 100 ).toFixed( 1 ),
 ];
-const HEAD = [ 'run', 'hulls', 'ms', 'sealed cm', 'mean cm', 'over %', 'missing %' ];
+const HEAD = [ 'run', 'hulls', 'ms', 'sealed cm', 'mean cm', 'over %', 'missing %', 'overlap %' ];
 
 function print( title, rows )
 {
@@ -141,8 +144,8 @@ if ( args.includes( '--versions' ) )
 				const label = `${version} (${mode})`;
 				const row = run( name, mesh, label, { maxConvexHulls: NO_BUDGET, ...versionOptions, ...modeOptions } );
 				rows.push( row );
-				const total = totals.get( label ) ?? { label, hulls: 0, ms: 0, sealedMax: 0, sealedMean: 0, overshoot: 0, missing: 0, count: 0 };
-				for ( const key of [ 'hulls', 'ms', 'sealedMax', 'sealedMean', 'overshoot', 'missing' ] ) total[ key ] += row[ key ];
+				const total = totals.get( label ) ?? { label, hulls: 0, ms: 0, sealedMax: 0, sealedMean: 0, overshoot: 0, missing: 0, overlap: 0, count: 0 };
+				for ( const key of [ 'hulls', 'ms', 'sealedMax', 'sealedMean', 'overshoot', 'missing', 'overlap' ] ) total[ key ] += row[ key ];
 				total.count += 1;
 				totals.set( label, total );
 			}
@@ -151,7 +154,7 @@ if ( args.includes( '--versions' ) )
 	}
 	// hulls and time summed over the meshes, the measures averaged
 	print( `All ${meshNames.length} meshes: hulls and ms in total, the rest on average`, [ ...totals.values() ].map( ( t ) => ( {
-		...t, sealedMax: t.sealedMax / t.count, sealedMean: t.sealedMean / t.count, overshoot: t.overshoot / t.count, missing: t.missing / t.count,
+		...t, sealedMax: t.sealedMax / t.count, sealedMean: t.sealedMean / t.count, overshoot: t.overshoot / t.count, missing: t.missing / t.count, overlap: t.overlap / t.count,
 	} ) ) );
 	process.exit( 0 );
 }
@@ -203,9 +206,9 @@ if ( args.includes( '--sweep' ) )
 			} ) );
 		}
 	}
-	table( 'Step kept per mesh', [ 'mesh', 'pieces', 'hulls', 'limit cm', 'sealed cm', 'mean cm', 'over %', 'missing %', 'ms' ],
+	table( 'Step kept per mesh', [ 'mesh', 'pieces', 'hulls', 'limit cm', 'sealed cm', 'mean cm', 'over %', 'missing %', 'overlap %', 'ms' ],
 		kept.map( ( { name, pieces, limit, row } ) => [ name, String( pieces ), String( row.hulls ), ( limit * 100 ).toFixed( 1 ), ( row.sealedMax * 100 ).toFixed( 1 ),
-			( row.sealedMean * 100 ).toFixed( 2 ), ( row.overshoot * 100 ).toFixed( 1 ), ( row.missing * 100 ).toFixed( 1 ), row.ms.toFixed( 0 ) ] ) );
+			( row.sealedMean * 100 ).toFixed( 2 ), ( row.overshoot * 100 ).toFixed( 1 ), ( row.missing * 100 ).toFixed( 1 ), ( row.overlap * 100 ).toFixed( 1 ), row.ms.toFixed( 0 ) ] ) );
 	process.exit( 0 );
 }
 
@@ -226,7 +229,7 @@ for ( const name of meshNames )
 }
 
 // How often the surface merge is at least as good as V-HACD at the same budget, per metric
-const better = { hulls: 0, sealedMax: 0, overshoot: 0, missing: 0, ms: 0 };
+const better = { hulls: 0, sealedMax: 0, overshoot: 0, missing: 0, overlap: 0, ms: 0 };
 let pairs = 0;
 for ( const { rows } of summary )
 {
@@ -238,4 +241,4 @@ for ( const { rows } of summary )
 	}
 }
 console.log( `\n${markdown ? '**' : ''}Surface merge no worse than V-HACD at the same budget, out of ${pairs} pairs${markdown ? '**' : ''}:` +
-	` fewer or equal hulls ${better.hulls}, sealed depth ${better.sealedMax}, overshoot ${better.overshoot}, missing volume ${better.missing}, time ${better.ms}` );
+	` fewer or equal hulls ${better.hulls}, sealed depth ${better.sealedMax}, overshoot ${better.overshoot}, missing volume ${better.missing}, overlap ${better.overlap}, time ${better.ms}` );

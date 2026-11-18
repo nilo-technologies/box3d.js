@@ -1,6 +1,6 @@
 /**
  * Side by side pictures of convex decompositions, for comparing V-HACD's volume merge
- * with box3d's surface merge (the `maxConcavity` option).
+ * with box3d's surface merge (the `surfaceMerge` option).
  *
  * Reads the JSON files written by `node test/bench-decomposition-quality.mjs --dump <dir>`
  * and draws, for each mesh, one panel per run: every hull in its own color over the wire

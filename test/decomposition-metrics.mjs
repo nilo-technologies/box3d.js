@@ -259,7 +259,7 @@ export function measure( mesh, pieces, { surfaceSamples = 3000, volumeSamples = 
 	depths.sort( ( a, b ) => a - b );
 
 	// volume
-	let inMesh = 0, over = 0, missing = 0;
+	let inMesh = 0, over = 0, missing = 0, overlap = 0;
 	const pad = 0.05 * diagonal;
 	for ( let s = 0; s < volumeSamples; s++ )
 	{
@@ -267,14 +267,18 @@ export function measure( mesh, pieces, { surfaceSamples = 3000, volumeSamples = 
 		const y = m.lo[ 1 ] - pad + random() * ( m.hi[ 1 ] - m.lo[ 1 ] + 2 * pad );
 		const z = m.lo[ 2 ] - pad + random() * ( m.hi[ 2 ] - m.lo[ 2 ] + 2 * pad );
 		const solid = insideMesh( m, x, y, z );
-		let covered = false;
+		// Every hull that holds the point: the hulls can overlap, and a body that takes its mass
+		// from them counts the overlap twice
+		let holders = 0;
 		for ( const h of hulls )
 		{
 			if ( x < h.lo[ 0 ] || x > h.hi[ 0 ] || y < h.lo[ 1 ] || y > h.hi[ 1 ] || z < h.lo[ 2 ] || z > h.hi[ 2 ] ) continue;
 			let inside = true;
 			for ( const q of h.planes ) if ( q[ 0 ] * x + q[ 1 ] * y + q[ 2 ] * z - q[ 3 ] > 0 ) { inside = false; break; }
-			if ( inside ) { covered = true; break; }
+			if ( inside ) holders++;
 		}
+		const covered = holders > 0;
+		if ( holders > 1 ) overlap += holders - 1;
 		if ( solid ) inMesh++;
 		if ( solid && !covered ) missing++;
 		if ( !solid && covered ) over++;
@@ -286,5 +290,6 @@ export function measure( mesh, pieces, { surfaceSamples = 3000, volumeSamples = 
 		sealedMean: sumDepth / count,
 		overshoot: over / Math.max( inMesh, 1 ),
 		missing: missing / Math.max( inMesh, 1 ),
+		overlap: overlap / Math.max( inMesh, 1 ),
 	};
 }
