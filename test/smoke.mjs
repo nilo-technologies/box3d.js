@@ -1359,6 +1359,132 @@ function debugRendererCulling( b3 )
 	b3.b3DestroyWorld( world );
 }
 
+// A TSL that builds no shader: every property and call gives another node, and
+// the uniforms are kept so the test can read their values.
+function stubTSL()
+{
+	const uniforms = [];
+	const node = ( value ) =>
+	{
+		const target = () => {};
+		target.value = value;
+		return new Proxy( target, {
+			get: ( t, key ) => ( key === 'value' ? t.value : node() ),
+			apply: () => node(),
+		} );
+	};
+	const TSL = new Proxy( {}, {
+		get: ( t, key ) => ( key === 'uniform' ? ( value ) => { const u = node( value ); uniforms.push( u ); return u; } : node() ),
+	} );
+	return { uniforms, TSL };
+}
+
+function debugRendererDistanceFade( b3 )
+{
+	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
+	const bdef = b3.b3DefaultBodyDef();
+	bdef.type = b3.b3BodyType.b3_staticBody;
+	bdef.position = [ 0, 0, -5 ];
+	b3.b3CreateBoxShape( b3.b3CreateBody( world, bdef ), b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5 );
+
+	const { THREE } = stubThree();
+	const { TSL, uniforms } = stubTSL();
+	THREE.TSL = TSL;
+	THREE.ColorManagement = { enabled: true };
+	const parent = new THREE.Group();
+	const debug = createDebugRenderer( b3, world, { THREE, parent, settings: { shapeStyle: 'both', cullDistance: 20 } } );
+	debug.update();
+
+	// Patch a shader the way three's WebGL renderer hands it over, with the chunks the fade hooks into.
+	const compile = ( material ) =>
+	{
+		const shader = {
+			uniforms: {},
+			vertexShader: '#include <common>\nvoid main() {\n#include <project_vertex>\n}',
+			fragmentShader: '#include <common>\nvoid main() {\n#include <color_fragment>\n}',
+		};
+		material.onBeforeCompile( shader );
+		return shader;
+	};
+	const group = debug.object3d.children[ 2 ];
+	const materials = [ debug.object3d.children[ 0 ].material, debug.object3d.children[ 1 ].material, ...group.children.map( ( c ) => c.material ) ];
+	assert.equal( materials.length, 4, 'lines, points, a solid mesh and its edges' );
+	const shaders = materials.map( compile );
+	for ( const shader of shaders )
+	{
+		assert.ok( shader.vertexShader.includes( 'vBox3dFadeDepth = -mvPosition.z;' ), 'the vertex shader passes view depth on' );
+		assert.ok( shader.fragmentShader.includes( 'diffuseColor.rgb *= pow(mix(box3dFadeMax, box3dFadeMin' ), 'the fragment shader scales the colour, from the camera scale to the far one' );
+		assert.ok( shader.uniforms.box3dFadeFar && shader.uniforms.box3dFadeMin && shader.uniforms.box3dFadeMax && shader.uniforms.box3dFadeGamma, 'with its uniforms' );
+	}
+	assert.ok( shaders[ 1 ].vertexShader.includes( 'attribute float aSize;' ), 'points keep their size patch' );
+	assert.ok( shaders[ 2 ].vertexShader.includes( 'vBox3dWorld = (modelMatrix' ), 'the solid mesh passes its world position on' );
+	assert.ok( shaders[ 2 ].fragmentShader.includes( 'cross(dFdx(vBox3dWorld), dFdy(vBox3dWorld))' ), 'and shades by its face normal' );
+	assert.ok( shaders[ 2 ].fragmentShader.includes( '(1.0 - box3dShade * 0.5 * (1.0 - box3dLight))' ), 'a darkening scale, which keeps the hue' );
+	for ( const i of [ 0, 1, 3 ] ) assert.ok( !shaders[ i ].fragmentShader.includes( 'box3dLight' ), 'lines, points and edges are not shaded' );
+	assert.notEqual( materials[ 2 ].colorNode, materials[ 3 ].colorNode, 'the solid mesh has its own TSL colour node' );
+	assert.notEqual( materials[ 2 ].onBeforeCompile.toString(), materials[ 3 ].onBeforeCompile.toString(), 'and its own WebGL program' );
+	assert.ok( materials.every( ( m ) => m.colorNode !== undefined ), 'every material carries the TSL colour node' );
+	const u = shaders[ 0 ].uniforms;
+	assert.ok( materials.every( ( m, i ) => shaders[ i ].uniforms.box3dFadeMin === u.box3dFadeMin ), 'all materials share one set of uniforms' );
+	const [ far, min, max, gamma, shade ] = uniforms;
+
+	assert.equal( u.box3dShade.value, 0.5, 'solid shapes are shaded by default' );
+	assert.equal( shade.value, 0.5, 'the TSL shade follows' );
+	debug.settings.solidShading = 2;
+	debug.update();
+	assert.equal( u.box3dShade.value, 1, 'solidShading is clamped to 1' );
+	debug.settings.solidShading = 0;
+	debug.update();
+	assert.equal( u.box3dShade.value, 0, '0 is flat colour' );
+	debug.settings.solidShading = undefined;
+
+	assert.equal( u.box3dFadeMin.value, 1, 'off by default: a factor of 1' );
+	assert.equal( u.box3dFadeMax.value, 1, 'at both ends' );
+	assert.equal( min.value, 1, 'for the TSL uniforms too' );
+	assert.equal( max.value, 1, 'both of them' );
+
+	debug.settings.distanceFade = true;
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 20, 'fades out to cullDistance' );
+	near( u.box3dFadeMin.value, 0.2, 1e-12, 'down to 20% by default' );
+	near( u.box3dFadeMax.value, 1.25, 1e-12, 'from 125% at the camera by default' );
+	assert.equal( u.box3dFadeGamma.value, 2.2, 'scaled as displayed under colour management' );
+	assert.equal( far.value, 20, 'the TSL far follows' );
+	near( min.value, 0.2, 1e-12, 'the TSL min follows' );
+	near( max.value, 1.25, 1e-12, 'the TSL max follows' );
+	assert.equal( gamma.value, 2.2, 'the TSL gamma follows' );
+
+	debug.settings.distanceFadeMax = 1;
+	debug.update();
+	assert.equal( u.box3dFadeMax.value, 1, 'distanceFadeMax 1 keeps the colour at the camera' );
+	debug.settings.distanceFadeMax = -1;
+	debug.update();
+	assert.equal( u.box3dFadeMax.value, 0, 'and a negative scale clamps to 0' );
+	debug.settings.distanceFadeMax = undefined;
+
+	debug.settings.camera = stubCamera( [ 0, 0, 0 ], { far: 10 } );
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 10, 'a nearer camera.far ends the fade there' );
+
+	debug.settings.cullDistance = undefined;
+	debug.settings.camera.far = 50;
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 50, 'with no cullDistance the fade ends at camera.far' );
+
+	debug.settings.camera = null;
+	debug.settings.distanceFadeMin = 0.2;
+	debug.update();
+	assert.equal( u.box3dFadeMin.value, 1, 'with neither there is no fade' );
+
+	THREE.ColorManagement.enabled = false;
+	debug.settings.cullDistance = 20;
+	debug.update();
+	assert.equal( u.box3dFadeGamma.value, 1, 'without colour management the colour scales as is' );
+
+	debug.dispose();
+	b3.b3DestroyWorld( world );
+}
+
 const IDENTITY_FRAME = () => ( { position: [ 0, 0, 0 ], quaternion: [ 0, 0, 0, 1 ] } );
 
 function zeroGravityWorld( b3 )
@@ -2617,6 +2743,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 
 	debugDraw( b3 );
 	debugRendererCulling( b3 );
+	debugRendererDistanceFade( b3 );
 
 	triangleCollision( b3 );
 
