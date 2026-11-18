@@ -131,7 +131,7 @@
 	},
 	"example-convex-decomposition": {
 		"title": "Convex Decomposition",
-		"description": "V-HACD splits a torus and an L-shape into hull shapes (one call per body); they pile into a decomposed static bowl",
+		"description": "A torus and an L-shape split into hull shapes (one call per body) pile into a decomposed static bowl. Decompose with V-HACD, which merges by volume, or with box3d's surface merge, which starts from the mesh's triangles and keeps openings open",
 		"tags": [
 			"world",
 			"physics",

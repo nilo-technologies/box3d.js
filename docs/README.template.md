@@ -248,6 +248,51 @@ In the multithreaded builds, the Promise variants run V-HACD on a thread of thei
 
 <Snippet source="./shapes.ts" select="decomposition-cache" />
 
+#### Keeping openings open: the surface merge
+
+V-HACD cuts the mesh into many small pieces and then merges them down to `maxConvexHulls` by volume. An opening is cheap in volume, so that merge can close a doorway or a window, and it stops as soon as the budget is met, however many pieces could still merge for free. With a `surfaceMerge` option box3d decomposes the mesh with a merge of its own (`b3MergeConvexPieces` in the engine). Neighboring pieces merge cheapest first, the way [HACD](https://kmamou.blogspot.com/2011/10/hacd-hierarchical-approximate-convex.html) collapses the edges of its dual graph. The cost of a merge is the depth of open space the merged hull would seal, measured as Roblox describes in [A Search for Better Convex Decomposition](https://medium.com/@val.v.gorbunov/a-search-for-better-convex-decomposition-671ea647cec): points are sampled on the mesh triangles, a ray is cast outward from each, and the run of the ray inside the hull is what the hull seals there. Merging stops when the next merge would seal more than a limit, and by default the merge finds that limit itself, with a sweep (next section).
+
+The pieces it starts from are the triangles of the mesh itself, as in HACD and the Roblox article, and V-HACD does not run. Nothing snaps to a voxel grid, so the pieces start on the surface and a mesh made of flat faces comes apart exactly.
+
+<Snippet source="./shapes.ts" select="decomposition-merge" />
+
+- The limit is a length in mesh units. A doorway reads as its width, so a limit of 5 cm aims to keep every opening wider than 5 cm, while a sliver of hull lying against a wall reads as its thickness. Two things can seal more: merges forced by `maxConvexHulls`, and an opening thin enough to fall between the sample points (`concavitySamples`).
+- To give the limit yourself, pass `maxConcavity` with `sweep: false`. A `maxConcavity` alone also turns the merge on, and then caps the sweep: no step merges to a looser limit.
+- The hull count follows from the shape and the limit: a wall with a doorway needs 3 hulls, at every limit the sweep tries, where V-HACD spends the 16 it was given. `maxConvexHulls` stays a hard cap, also across gaps between parts of the mesh that do not touch. When the limit leaves more hulls than that, merging goes on past it, still shallowest first, and `maxConcavity` on the result reports what that sealed. For the merge a `maxConvexHulls` of 0 is no budget.
+- The result carries `concavities` (one per piece) and `maxConcavity`, the depth each hull seals.
+- The mesh should be closed, since the outward side of each triangle comes from the mesh's signed volume. Either winding works and gives the same hulls. It may be made of several closed parts, also parts that touch or pass into each other: a face pressed against another part, or buried in it, is not open space. Every coordinate must be finite.
+- A merged hull keeps at most 44 vertices, the most a box3d hull always fits under its cap of 128 edges, whatever `maxVerticesPerHull` asks.
+- The hulls can overlap where they meet. A dynamic body that takes its mass from its shapes then weighs more than the solid, and its center of mass can shift: set the body's mass yourself where that matters. The benchmark's `overlap` column shows how much.
+- It is quick on small meshes, since V-HACD does not run: the test meshes take from 20 ms to 0.6 s. The time grows with the triangle count, where V-HACD's follows its voxel resolution. On a torus it is 0.4 s at 1,500 triangles, 2.1 s at 25,000 and 3.9 s at 74,000, where V-HACD takes about 5 s at any of those.
+- The hulls follow the surface, so the inside of a thick solid is not always covered. Merged to 5 cm, a mug with a wall 8 cm thick loses 4.8% of its volume, where V-HACD loses 1.4%.
+
+![A wall with a doorway: V-HACD with 16 hulls, the surface merge to 5 cm under the same budget, and the surface merge to 5 cm alone](./docs/images/decomposition/doorway.png)
+
+`pnpm bench:decomposition:quality` compares the surface merge at a limit of 5 cm with V-HACD on a set of test meshes: hull count, time, the deepest open space sealed, and the volume the hulls cover outside the mesh or miss inside it.
+
+#### How many hulls: the sweep
+
+How many hulls a mesh needs depends on the limit, and the right limit is rarely known up front. So by default the surface merge sweeps it: the pieces are merged at a series of loosening limits, and the step with the best trade between few hulls and little sealed is kept. Each limit carries on from the hulls the one before left, so the whole sweep takes about as long as a single merge, and the hull count never rises along it. `b3SweepConvexDecomposition` is the same decomposition, returned with what the sweep saw.
+
+<Snippet source="./shapes.ts" select="decomposition-sweep" />
+
+- By default the sweep runs 9 limits from 0.5% to 8% of the diagonal of the mesh's bounding box, each 1.41 times the one before. On a wall 4 m wide and 3 m tall that is 2.5 cm to 40 cm. `minConcavity`, `maxConcavity` and `sweepSteps` change the range and the count.
+- The step kept: hull count and sealed depth are each scaled by their largest value in the sweep, and the step nearest to no hulls and nothing sealed wins. Where two steps score about the same, a small change to the mesh can tip the choice. `hullWeight` leans it: above 1 toward fewer hulls, below 1 toward a closer fit.
+- To keep another step, decompose again with `sweepStep` set to its index, as the snippet does. The Promise variants and their cache take it like any other option.
+- From `b3SweepConvexDecomposition`, `steps[i]` has the limit (`maxConcavity`), the `hullCount` and the `sealedDepth` its hulls really seal, `best` is the index of the step kept, and `decomposition` has its hulls. It takes a decomposition's options and gives the hulls `b3ComputeConvexDecomposition` gives with `surfaceMerge`.
+- On a mesh made of flat faces the steps often all give the same hulls, sealing nothing, and the first is kept. On a curved one every hull saved costs depth, and the step kept is a trade.
+- The step kept is a heuristic over this sweep, and it moves with the range swept. It is not a proof of the fewest hulls possible: the merge is greedy and can only join the pieces it started from.
+- `maxConvexHulls` is a budget every step meets. It is 32 by default, as for any decomposition, so a mesh that wants more hulls at the tight end of the sweep needs it raised, or set to 0 for none. A budget that is never reached changes nothing.
+- A decomposition with `surfaceMerge` goes through the Promise variants and their cache like any other. `b3SweepConvexDecompositionAsync` is not cached. It keeps the work off the calling thread where it can: on a thread of its own in the multithreaded builds, in a Web Worker in the single-threaded builds in a browser. In single-threaded Node it runs on the calling thread, and the Promise resolves once it is done.
+
+`pnpm bench:decomposition:quality --sweep` prints the sweep of each test mesh and the step kept.
+
+#### Merging pieces of your own
+
+`b3MergeConvexDecomposition` runs the merge on its own over any packed decomposition, against the mesh it was cut from: V-HACD output with a generous hull budget, or a stored asset. The pieces it is handed are where it starts, so it can only be as tight as they are: V-HACD's pieces reach past the surface by about a voxel, and a wall with a doorway comes out as 4 hulls that seal 10 cm, where the merge from the triangles gives 3 that seal nothing. In return V-HACD's pieces fill the inside of a thick solid.
+
+<Snippet source="./shapes.ts" select="decomposition-pieces" />
+
 <ExamplesTable ids="example-convex-decomposition" />
 
 ### Resizing and Disabling Shapes

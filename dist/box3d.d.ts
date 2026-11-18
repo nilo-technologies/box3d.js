@@ -1485,6 +1485,8 @@ interface EmbindModule {
   b3ComputeConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3ConvexDecomposition;
   b3CreateConvexDecompositionShapes(bodyId: b3BodyId, shapeDef: b3ShapeDef, positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): b3DecompositionShapes;
   b3CreateConvexDecompositionShapesFromPacked(bodyId: b3BodyId, shapeDef: b3ShapeDef, packed: b3ConvexDecomposition, maxVerticesPerHull?: number): b3DecompositionShapes;
+  b3MergeConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, packed: b3ConvexDecomposition, options?: b3ConvexMergeOptions): b3ConvexDecomposition;
+  b3SweepConvexDecomposition(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionSweepOptions): b3ConvexDecompositionSweep;
   b3CreateDecompositionCompound(packed: b3ConvexDecomposition, material?: b3SurfaceMaterial): b3DecompositionCompound;
   b3CreateHeightField(heights: any, countX: number, countZ: number, scale: b3Vec3): b3HeightFieldData | null;
   b3World_CastMover(worldId: b3WorldId, origin: b3Vec3, mover: b3Capsule, translation: b3Vec3, filter: b3QueryFilter, callback: any): number;
@@ -1651,13 +1653,24 @@ export interface Manifold {
 }
 /** Packed convex decomposition: xyz points for every piece back to back, and
  * pieceCount + 1 vertex offsets (piece i is vertices offsets[i] .. offsets[i+1]). */
-export interface b3ConvexDecomposition { points: Float32Array; offsets: Uint32Array; }
+export interface b3ConvexDecomposition {
+  points: Float32Array;
+  offsets: Uint32Array;
+  /** Set by the surface merge (a `surfaceMerge` option, or b3MergeConvexDecomposition): the depth
+   * of open space each piece seals, in mesh units. */
+  concavities?: Float32Array;
+  /** Set by the surface merge: the largest value in concavities. */
+  maxConcavity?: number;
+}
 export interface b3ConvexDecompositionOptions {
-  /** Maximum number of pieces. Default 32. */
+  /** Maximum number of pieces. Default 32. With the surface merge 0 is no budget, and the
+   * budget holds across gaps between parts of the mesh that do not touch. */
   maxConvexHulls?: number;
   /** Voxel resolution; higher is more accurate and slower. Default 100000. */
   resolution?: number;
-  /** Vertex budget per piece, clamped to [4, 255]. Default 32 (box3d hulls are capped at 255 half-edges). */
+  /** Vertex budget per piece, clamped to [4, 255]. Default 32 (box3d hulls are capped at 255 half-edges).
+   * The surface merge holds its hulls to at most 44, the most a hull always fits under box3d's
+   * cap of 128 edges. */
   maxVerticesPerHull?: number;
   /** Stop splitting once a piece is within this volume error, in percent. Default 1. */
   minVolumePercentError?: number;
@@ -1667,6 +1680,52 @@ export interface b3ConvexDecompositionOptions {
   shrinkWrap?: boolean;
   /** Use V-HACD's worker threads (multithreaded builds only; ignored otherwise). Default false. */
   useThreads?: boolean;
+  /** Decompose with box3d's surface merge (b3MergeConvexPieces) instead of V-HACD's merge by
+   * volume. V-HACD merges its pieces down to maxConvexHulls by volume, and an opening is cheap
+   * in volume, so it can close a doorway or a window. The surface merge joins neighboring
+   * pieces cheapest first, where a merge costs the depth of open space the merged hull would
+   * seal (measured with rays cast outward from points on the mesh, after Roblox's "A Search
+   * for Better Convex Decomposition"). The hull count then follows from the shape;
+   * maxConvexHulls stays a hard cap: when the merge leaves more hulls, it goes on past its
+   * limit, shallowest first. The merge starts from the triangles of the mesh, as HACD does, and
+   * V-HACD does not run at all: nothing is voxelized, so a mesh made of flat faces comes apart
+   * exactly, and resolution, minVolumePercentError, maxRecursionDepth, shrinkWrap and
+   * useThreads do nothing. The hulls follow the surface, so the inside of a thick solid can stay
+   * uncovered, and the time grows with the triangle count. The mesh should be closed, and may be made
+   * of several closed parts, also parts that touch or pass into each other. Every coordinate
+   * must be finite. The hulls can overlap, so a dynamic body that takes its mass from them is
+   * heavier than the solid: set its mass yourself where that matters. Default false, or true
+   * when maxConcavity is given. */
+  surfaceMerge?: boolean;
+  /** Surface merge: find the limit on what a hull may seal instead of taking it. The pieces
+   * are merged at sweepSteps limits loosening from minConcavity to maxConcavity, each carrying
+   * on from the hulls the one before left, and the step with the best trade between few hulls
+   * and little sealed is kept. The whole sweep takes about as long as one merge. With false
+   * the pieces are merged once, to maxConcavity. Default true. */
+  sweep?: boolean;
+  /** Surface merge: the deepest open space a merged hull may seal, in mesh units: 0.05 lets a
+   * hull reach 5 cm across an opening when the mesh is in meters. With the sweep it is the
+   * loosest limit tried, by default 8% of the diagonal of the mesh's bounding box. Without
+   * the sweep it is the limit, and by default 0: only merges that seal nothing. With the
+   * sweep 0, like a value not given, stands for the default. */
+  maxConcavity?: number;
+  /** Sweep: the tightest limit tried, in mesh units. Default 0.5% of the diagonal of the
+   * mesh's bounding box. A value above maxConcavity is lowered to it. */
+  minConcavity?: number;
+  /** Sweep: the number of limits, spread geometrically from minConcavity to maxConcavity and
+   * clamped to [1, 64]. Default 9: with the default range each is 1.41 times the one before. */
+  sweepSteps?: number;
+  /** Sweep: how the step kept weighs hulls against sealed depth. Above 1 leans toward fewer
+   * hulls, below 1 toward a closer fit. Default 1, and 0 stands for it. */
+  hullWeight?: number;
+  /** Sweep: the step to keep, from 0 for the tightest, in place of the one the sweep chooses.
+   * Clamped to the last step. To choose a step by a rule of your own, sweep once with
+   * b3SweepConvexDecomposition, read its steps, then decompose again with this set. Default
+   * -1: the sweep chooses. */
+  sweepStep?: number;
+  /** Surface merge: points sampled on the mesh surface, clamped to [64, 1048576]. More
+   * samples see thinner openings and take longer. Default 8192. */
+  concavitySamples?: number;
   /** Async variants only: reuse an earlier result for the same mesh + options instead of
    * running V-HACD again. Default true. Arrays passed with the cache on must not be edited
    * in place afterwards (their hash is memoized per array object). */
@@ -1674,6 +1733,60 @@ export interface b3ConvexDecompositionOptions {
   /** Async variants only: identifies the mesh in the cache (e.g. an asset id) instead of
    * hashing its contents. Change it whenever the mesh changes. */
   cacheKey?: string;
+}
+/** Options of b3MergeConvexDecomposition, which merges the pieces it is handed. See the
+ * options of the same names in b3ConvexDecompositionOptions. */
+export interface b3ConvexMergeOptions {
+  /** Find the limit with a sweep. Default true. */
+  sweep?: boolean;
+  /** With the sweep: its loosest limit, by default 8% of the diagonal of the mesh's bounding
+   * box. Without: the limit, by default 0. In mesh units. */
+  maxConcavity?: number;
+  /** Sweep: its tightest limit, by default 0.5% of the diagonal. In mesh units. */
+  minConcavity?: number;
+  /** Sweep: the number of limits, clamped to [1, 64]. Default 9. */
+  sweepSteps?: number;
+  /** Sweep: above 1 leans toward fewer hulls, below 1 toward a closer fit. Default 1. */
+  hullWeight?: number;
+  /** Sweep: the step to keep in place of the one the sweep chooses. Default -1. */
+  sweepStep?: number;
+  /** Hull budget: merging continues past the limit, shallowest first, until this many hulls
+   * remain, at every step of a sweep, also across gaps. Default 0, no budget. */
+  maxConvexHulls?: number;
+  /** Vertex budget per merged hull, clamped to [4, 44]. Default 32. */
+  maxVerticesPerHull?: number;
+  /** Points sampled on the mesh surface, clamped to [64, 1048576]. Default 8192. */
+  concavitySamples?: number;
+}
+/** Options of b3SweepConvexDecomposition: those of a decomposition, where the surface merge
+ * is always on and nothing is cached. */
+export type b3ConvexDecompositionSweepOptions = Omit<b3ConvexDecompositionOptions, 'surfaceMerge' | 'cache' | 'cacheKey'>;
+/** One step of the surface merge's sweep: what merging to one limit left. */
+export interface b3ConvexDecompositionSweepStep {
+  /** The limit this step merged to, in mesh units. */
+  maxConcavity: number;
+  /** Hulls left at this limit. */
+  hullCount: number;
+  /** The deepest open space those hulls seal. It can sit above the limit where the pieces
+   * handed in already seal more, or a hull budget forced merges. */
+  sealedDepth: number;
+}
+/** A decomposition with the surface merge on, and what the merge's sweep saw. */
+export interface b3ConvexDecompositionSweep {
+  /** Pieces the merge started from: the triangles of the mesh. */
+  pieceCount: number;
+  /** One step per limit, tightest first. The hull count never rises along them. Without the
+   * sweep (sweep: false) there is one. */
+  steps: b3ConvexDecompositionSweepStep[];
+  /** Index into steps of the one kept: sweepStep if given, or the one the sweep chose. A step's
+   * hull count is scaled by that of the first step and its sealed depth by the loosest limit,
+   * and the step nearest to no hulls and nothing sealed wins. To keep another, decompose again
+   * with sweepStep. */
+  best: number;
+  /** The hulls of that step, ready for b3CreateConvexDecompositionShapesFromPacked or
+   * b3CreateDecompositionCompound: what b3ComputeConvexDecomposition gives with surfaceMerge
+   * and the same options. */
+  decomposition: b3ConvexDecomposition;
 }
 export interface b3ConvexDecompositionCacheStats { entries: number; hits: number; misses: number; }
 /** Shape ids created from a decomposition (ShapeIdBuffer layout, read with getShapeIdAt),
@@ -1740,6 +1853,11 @@ export interface Box3DFacade {
   /** Packed decomposition computed without blocking the calling thread (same threading as
    * b3CreateConvexDecompositionShapesAsync). Use it for static compounds and caching. */
   b3ComputeConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): Promise<b3ConvexDecomposition>;
+  /** b3SweepConvexDecomposition kept off the calling thread where it can be: on a pthread in
+   * the multithreaded builds, in a Web Worker in single-threaded browser builds. In
+   * single-threaded Node it runs on the calling thread before the Promise resolves. It is
+   * not cached: a decomposition with surfaceMerge through b3ComputeConvexDecompositionAsync is. */
+  b3SweepConvexDecompositionAsync(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionSweepOptions): Promise<b3ConvexDecompositionSweep>;
   /** Cache key the async variants use: options.cacheKey or a 64-bit hash of the mesh
    * (memoized per array pair), plus every option that changes the result. */
   b3ConvexDecompositionCacheKey(positions: ArrayLike<number>, indices: ArrayLike<number>, options?: b3ConvexDecompositionOptions): string;
