@@ -2639,7 +2639,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
 		`a wall with a doorway took ${doorway.mergedHulls} hulls with the surface merge, ${doorway.volumeHulls} without; ` +
-		`a sweep of it went from ${swept.first} hulls to ${swept.last} and kept ${swept.best}; ` +
+		`a sweep of the torus went from ${swept.first} hulls to ${swept.last} and kept ${swept.best}; ` +
 		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
 		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }
