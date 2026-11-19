@@ -5,8 +5,15 @@
 //                 rays from points on the mesh: the run of the ray inside a hull, capped at twice
 //                 the farthest it gets from the surface on the way. A doorway reads as its
 //                 width, a sliver of hull lying against a wall as its thickness.
+//                 A point on a face buried inside the solid, as a floor is inside a closed room
+//                 around it, seals nothing.
 //   overshoot     volume the hulls cover outside the mesh, as a share of the mesh volume
 //   missing       mesh volume no hull covers, as a share of the mesh volume
+//
+// Inside the mesh is where its winding number is positive: a ray from the point counts the faces
+// it leaves the solid through, less those it enters through. Closed parts that overlap or nest,
+// as most modeled art is made, count as solid wherever any of them is, which a crossing parity
+// would get wrong.
 
 function mulberry32( seed )
 {
@@ -102,8 +109,8 @@ function prepareMesh( mesh )
 
 function insideMesh( m, x, y, z )
 {
-	let crossings = 0;
-	for ( const { p } of m.cells[ m.cy( y ) * m.G + m.cz( z ) ] )
+	let winding = 0;
+	for ( const { p, n } of m.cells[ m.cy( y ) * m.G + m.cz( z ) ] )
 	{
 		// 2D point in triangle in the (y, z) plane, then the x where the ray meets it
 		const d1 = ( p[ 4 ] - p[ 1 ] ) * ( z - p[ 2 ] ) - ( p[ 5 ] - p[ 2 ] ) * ( y - p[ 1 ] );
@@ -111,11 +118,34 @@ function insideMesh( m, x, y, z )
 		const d3 = ( p[ 1 ] - p[ 7 ] ) * ( z - p[ 8 ] ) - ( p[ 2 ] - p[ 8 ] ) * ( y - p[ 7 ] );
 		if ( !( ( d1 >= 0 && d2 >= 0 && d3 >= 0 ) || ( d1 <= 0 && d2 <= 0 && d3 <= 0 ) ) ) continue;
 		const total = d1 + d2 + d3;
-		if ( total === 0 ) continue;
+		if ( total === 0 || n[ 0 ] === 0 ) continue;
 		const hitX = ( d2 * p[ 0 ] + d3 * p[ 3 ] + d1 * p[ 6 ] ) / total;
-		if ( hitX > x ) crossings++;
+		// the +x ray leaves the solid through a face turned along +x
+		if ( hitX > x ) winding += n[ 0 ] > 0 ? 1 : -1;
 	}
-	return ( crossings & 1 ) === 1;
+	return winding > 0;
+}
+
+// The winding number of a point, along a ray from it: faces it leaves the solid through count
+// one, faces it enters through take one away
+function rayWinding( m, ox, oy, oz, dx, dy, dz )
+{
+	let winding = 0;
+	for ( const { p, n } of m.tris )
+	{
+		const e1x = p[ 3 ] - p[ 0 ], e1y = p[ 4 ] - p[ 1 ], e1z = p[ 5 ] - p[ 2 ], e2x = p[ 6 ] - p[ 0 ], e2y = p[ 7 ] - p[ 1 ], e2z = p[ 8 ] - p[ 2 ];
+		const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+		const det = e1x * px + e1y * py + e1z * pz;
+		if ( Math.abs( det ) < 1e-12 ) continue;
+		const inv = 1 / det, tx = ox - p[ 0 ], ty = oy - p[ 1 ], tz = oz - p[ 2 ];
+		const u = ( tx * px + ty * py + tz * pz ) * inv;
+		if ( u < 0 || u > 1 ) continue;
+		const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+		const v = ( dx * qx + dy * qy + dz * qz ) * inv;
+		if ( v < 0 || u + v > 1 ) continue;
+		if ( ( e2x * qx + e2y * qy + e2z * qz ) * inv > 0 ) winding += n[ 0 ] * dx + n[ 1 ] * dy + n[ 2 ] * dz > 0 ? 1 : -1;
+	}
+	return winding;
 }
 
 // Distance along a ray to the nearest triangle, either side (Moller-Trumbore)
@@ -223,7 +253,9 @@ export function measure( mesh, pieces, { surfaceSamples = 3000, volumeSamples = 
 		if ( u + v > 1 ) { u = 1 - u; v = 1 - v; }
 		const p = tri.p, n = tri.n;
 		const x = p[ 0 ] + u * ( p[ 3 ] - p[ 0 ] ) + v * ( p[ 6 ] - p[ 0 ] ), y = p[ 1 ] + u * ( p[ 4 ] - p[ 1 ] ) + v * ( p[ 7 ] - p[ 1 ] ), z = p[ 2 ] + u * ( p[ 5 ] - p[ 2 ] ) + v * ( p[ 8 ] - p[ 2 ] );
-		const free = 4 * tol + rayMesh( m, x + 4 * tol * n[ 0 ], y + 4 * tol * n[ 1 ], z + 4 * tol * n[ 2 ], n[ 0 ], n[ 1 ], n[ 2 ] );
+		// A sample whose ray starts inside the solid is on a buried face: there is no open space to seal
+		const ox = x + 4 * tol * n[ 0 ], oy = y + 4 * tol * n[ 1 ], oz = z + 4 * tol * n[ 2 ];
+		const free = rayWinding( m, ox, oy, oz, n[ 0 ], n[ 1 ], n[ 2 ] ) > 0 ? 0 : 4 * tol + rayMesh( m, ox, oy, oz, n[ 0 ], n[ 1 ], n[ 2 ] );
 		let run = 0;
 		for ( const h of hulls )
 		{
