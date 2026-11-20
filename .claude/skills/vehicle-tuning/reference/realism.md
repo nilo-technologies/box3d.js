@@ -18,6 +18,8 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | `tractionControl` | car's own | car's own | on | on | on | |
 | `abs` | car's own | car's own | on | on | on | |
 
+A car can carry its own rear grip for a level: `rearGrip: { 50: 0.99 }` in the car layer replaces the row's value for that car. The sports car does, so its tail moves at 50% (findings #52). Use it when the shared row is right for the other cars; do not change the row for one car.
+
 "Car's own" means the real car's setting: modern road and supercars have ABS (and supercars TC); a rally car has neither.
 
 ## What each level must do (the metrics check these)

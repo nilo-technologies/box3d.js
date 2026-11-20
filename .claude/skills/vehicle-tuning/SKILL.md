@@ -23,8 +23,9 @@ Every field and what the engine really does with it is in [reference/parameters.
    from the repo root. It needs the built `dist/` (already committed). One car takes about a second.
 5. **Fix one symptom at a time** with the cheat sheet below. Change one knob, re-run, keep a note of what moved. Never widen a target range to make a car pass. If you believe a target is wrong, say so separately.
 6. **Drive it with the keyboard**: `node examples/scripts/vehicle-wasd.mjs --preset <name>` or `--car <name>` (about 3 s a preset). A WASD driver laps a flat course through `createSteeringLimiter`, as a keyboard player does in the examples, sweeping the pace in g, and reports the highest clean pace (mean over three driver styles) and how the car fails above it (slide, plough or spin). Compare clean paces before and after a change; differences under 0.1 g are noise. Arcade levels should fail by sliding, not ploughing; see "Keyboard driving" below.
-7. **Check robustness**: run again with `--perturb`, which repeats every test with the mass 3% off and the grip 2% off each way. A car that only passes at its exact values will flip on the next small change.
-8. **Done** when every check passes, perturbed runs included. For a set of cars (one car at several realism levels), also run them together so the realism ordering checks run: `--car <name>` for matrix cars, or check by hand that grip and braking improve and roll falls as realism drops.
+7. **Drive the mountain pass** when the brief is about how the car feels: `node examples/scripts/vehicle-feel.mjs --preset <name>` with a matrix preset such as `sports-50-rwd` (ten keyboard runs, about 15 s). It reports how hard the car pulls out of corners, how much it moves around, slides it recovered, spins and sudden stops (over 1.5 m/s lost in one step: on the pass nearly always a guardrail, but the count does not tell a rail from a bank). `--set engine.maxTorque=486` (repeatable) tries a field of that preset's car layer without editing the presets; it only works on matrix presets, and refuses a field the car does not have. See "Driving feel" below.
+8. **Check robustness**: run again with `--perturb`, which repeats every test with the mass 3% off and the grip 2% off each way. A car that only passes at its exact values will flip on the next small change.
+9. **Done** when every check passes, perturbed runs included. For a set of cars (one car at several realism levels), also run them together so the realism ordering checks run: `--car <name>` for matrix cars, or check by hand that grip and braking improve and roll falls as realism drops.
 
 To work on the committed matrix instead, use `--preset rally-50-awd`, `--car rally` (all 15 rally presets) or `--all` (45 presets, about 15 s). Add `--json` for machine readable output and `--quick` to skip the top speed run while iterating.
 
@@ -85,6 +86,16 @@ Most players use WASD: full lock, full throttle or full brake, nothing in betwee
 - The same recipe fitted the rally car and the supercar: a rear tire bias, slide friction near the peak, `speedReference` 15, a rear brake near the ideal split. Check the rear differential too: a strongly locking one (1.6 on the rally car) spins the car on power (findings #39).
 - Arcade levels must still slide when overdone. `rearGrip` just under 1 (0.975 at arcade) turns the RWD car's overspeed failure from a plough into a slide; FWD and AWD cars still run wide, as front driven cars do.
 
+## Driving feel
+
+What a session on the pass with the sports car taught (findings #51-52):
+
+- Measure before and after with `vehicle-feel.mjs`, and compare the mean rows. Single runs are chaotic: a spin or a hit in one run is not a result. Changes to the engine, gearbox, steering, differential and brakes mostly land inside that spread, so take a change only when the mean moves and the metrics still pass.
+- Torque is what adds pull. Second and third gear are power limited, so more torque shows there. First gear is capped by traction control at about two thirds of the tires' grip, so gearing, shift points and a lighter flywheel do not add punch out of a hairpin.
+- `engine.angularDamping` is power under another name (0.08 takes a sixth of the torque at the limiter). Leave it alone when the brief names a power figure.
+- To make a level livelier, loosen the rear at that level with the car's own `rearGrip` (`rearGrip: { 50: 0.99 }`), not on the rear tire: the tire serves every level, and the arcade levels are already at their limit. Watch the keyboard moves in the metrics: 14-18° at 50% is lively, 25° is the limit, and they must hold with `--perturb`.
+- More power and a looser rear both cost the autopilot at its top pace, because it holds full throttle into a slide. Run the laps at 0.8, 0.85 and 0.9 on every track after either, and with `--keys` on the pass.
+
 ## Symptom to knob cheat sheet
 
 | Symptom | First knob | Then |
@@ -106,6 +117,8 @@ Most players use WASD: full lock, full throttle or full brake, nothing in betwee
 | spins braking in a turn (`forgiving brakeTurn`, `trailBrake`) | rear `maxBrakeTorque` down toward the ideal split (about 25-30% of the braking on a 50/50 car), rear tire side grip up (`rear.tire`) | lower `rollInfluence`, less `speedReference`. With the steering limiter, keep `brakingPeakScale` at 1 (findings #30, #37) |
 | keyboard driver ploughs wide in corners (`vehicle-wasd.mjs`: low clean pace, fails by plough) | `speedReference` up, `latSlide` toward `latPeak` | the limiter's `peakScale` (1.5); never fix it with anti-roll or springs, they do not move the balance (findings #38) |
 | keyboard driver spins on corner exit or lift (fails by spin) | `tractionControl` on, rear tire side grip up (`rear.tire` `latPeak` and `latSlide`) | an earlier rear peak (`rear.tire.latPeakAngle`), a less locking rear differential (`drive.rearLsd`) |
+| flat out of corners, wants more punch | `engine.maxTorque`: second and third gear are power limited | not gearing or shift points, which measured nothing; a lighter engine (inertia 0.12) adds about 3% and swings one perturbed arcade car past the limit when lifting; first gear is capped by traction control (findings #51) |
+| a level is too tidy: the tail never moves, the car ploughs when overdone | the car's own `rearGrip` at that level (0.99 at 50% on the sports car) | not the rear tire in the car layer: it takes the arcade levels past 25° (findings #52) |
 | arcade car ploughs when overdone, should slide | `rearGrip` just under 1 at that level | keep the keyboard moves under 25° in `--perturb` |
 | full lock at speed turns too little (`turnsAtSpeed`) | `steering.speedReference` up | lower `counterSteer`: it takes lock away in every corner (findings #31) |
 | too much body roll | anti-roll bars, then spring `frequency`, lower `centerOfMassOffset` y | `rollInfluence` (an assist: realism 50 and below) |

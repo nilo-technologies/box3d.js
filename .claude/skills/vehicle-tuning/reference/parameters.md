@@ -46,8 +46,8 @@ Tire friction is multiplied by ground friction ÷ 0.6 (`B3_VEHICLE_REFERENCE_FRI
 | `maxTorque`, `peakTorqueRpm` | 380, 4500 | The curve is linear from idle to the peak and from the peak to `maxRpm`. |
 | `idleTorqueScale`, `maxRpmTorqueScale` | 0.6, 0.75 | Torque fraction at idle and at the limiter. |
 | `idleRpm`, `maxRpm` | 900, 6800 | `maxRpm` is the limiter. |
-| `inertia` | 0.3 | Engine and flywheel. Lower is quicker revving. With traction control on, spinning up this inertia in first gear eats into the torque the tire gets (see findings). |
-| `angularDamping` | 0.08 | Engine braking. |
+| `inertia` | 0.3 | Engine and flywheel. Lower is quicker revving. With traction control on, spinning up this inertia in first gear eats into the torque the tire gets (see findings). On the sports car 0.12 (from 0.2) pulled 3% harder but made lifting mid corner rotate the car more, past the limit on one perturbed arcade car (findings #51). |
+| `angularDamping` | 0.08 | Engine braking, and friction at full throttle. On the sports car 0.08 takes 58 N·m at 6900 rpm, so lowering it adds power (findings #51). |
 
 ## turbo
 

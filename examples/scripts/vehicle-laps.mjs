@@ -5,8 +5,9 @@
 //   node examples/scripts/vehicle-laps.mjs --track stage --car rally
 //   node examples/scripts/vehicle-laps.mjs --all            every matrix preset on both tracks
 //   node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset sports-50-rwd
-//   add --keys to drive with keys instead, --pace 0.85 for the share of the grip it corners at,
-//   --json for machine readable output
+//   add --keys to drive with keys instead, --line to follow the racing line instead of the
+//   centreline, --pace 0.85 for the share of the grip it corners at, --json for machine readable
+//   output
 //
 // The autopilot steers at a point ahead on the centreline and plans its speed from the corners
 // ahead: as fast as the tires grip and the speed sensitive steering can turn, allowing for the
@@ -18,6 +19,11 @@
 // With --keys it drives as a keyboard player does, with the same plan: full lock (A or D) while
 // the heading to the point ahead is off by more than 2 degrees, through createSteeringLimiter as
 // in the examples, and full throttle (W) or full brake (S), nothing in between.
+//
+// With --line it follows the track's racing line (track.racingLine) and holds its speed plan
+// (racingLineSpeeds) as well. There is no spare road beside that line, so it steers as a path
+// follower: to the line's heading a little ahead, and toward the line by how far the car is
+// beside it, as a share of the lock the steering has at that speed.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -27,7 +33,7 @@ const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
 const { wheeledVehiclePresets, createSteeringLimiter } = await import(
 	new URL('src/wheeled-vehicles.js', root).href
 );
-const { buildRaceTrack, createRaceTrackBodies, wheelsIgnoreRails } = await import(
+const { buildRaceTrack, createRaceTrackBodies, racingLineSpeeds, wheelsIgnoreRails } = await import(
 	new URL('examples/src/vehicle-tracks.js', root).href
 );
 
@@ -44,6 +50,8 @@ export function driveLap(trackName, preset, options = {}) {
 		timeout = 400,
 		// Keyboard inputs: full lock, full throttle or full brake
 		keys = false,
+		// Follow the track's racing line instead of its centreline
+		racingLine = false,
 		// Called every step with the car's progress and pose, for debugging
 		onStep,
 	} = options;
@@ -88,13 +96,37 @@ export function driveLap(trackName, preset, options = {}) {
 
 	// Corner speed at each sample: the tire grip limit, and the speed at which the steering can
 	// still reach the angle the corner needs (wheelbase / radius plus a margin for slip)
+	// The path the driver aims along: the centreline, or the racing line, which has a point for
+	// each centreline sample
+	const path = racingLine ? track.racingLine : line;
+	const pathHeading = (k) => {
+		const a = path[wrap(k - 1)];
+		const b = path[wrap(k + 1)];
+		return Math.atan2(b.x - a.x, b.z - a.z);
+	};
+	// The radius of the path around a sample: the turn over the 6 samples either side by the
+	// distance along it (12 m on the centreline)
+	const pathRadius = (i) => {
+		if (!racingLine) {
+			const a = line[wrap(i - 6)];
+			const b = line[wrap(i + 6)];
+			const turn = Math.abs(
+				Math.atan2(a.tx * b.tz - a.tz * b.tx, a.tx * b.tx + a.tz * b.tz),
+			);
+			return 12 / Math.max(turn, 1e-6);
+		}
+		let turn = pathHeading(i + 6) - pathHeading(i - 6);
+		turn = Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn)));
+		let distance = 0;
+		for (let k = i - 6; k < i + 6; k++) {
+			const a = path[wrap(k)];
+			const b = path[wrap(k + 1)];
+			distance += Math.hypot(b.x - a.x, b.z - a.z);
+		}
+		return distance / Math.max(turn, 1e-6);
+	};
 	const cornerSpeed = line.map((_, i) => {
-		const a = line[wrap(i - 6)];
-		const b = line[wrap(i + 6)];
-		const turn = Math.abs(
-			Math.atan2(a.tx * b.tz - a.tz * b.tx, a.tx * b.tx + a.tz * b.tz),
-		);
-		const radius = 12 / Math.max(turn, 1e-6);
+		const radius = pathRadius(i);
 		const need = (1.4 * wheelbase) / radius;
 		const steer =
 			need >= maxAngle
@@ -104,6 +136,19 @@ export function driveLap(trackName, preset, options = {}) {
 					: Number.POSITIVE_INFINITY;
 		return Math.min(Math.sqrt(pace * grip * 9.81 * radius), steer);
 	});
+	const lineSpeeds = racingLine
+		? racingLineSpeeds(
+				track,
+				{
+					grip,
+					peakAngle: def.wheels[0].tire.lateralPeakAngle,
+					wheelbase,
+					maxAngle,
+					speedReference,
+				},
+				pace,
+			)
+		: null;
 	if (track.bumpSection) {
 		for (let i = track.bumpSection.from; i <= track.bumpSection.to; i++) {
 			cornerSpeed[i % n] = Math.min(cornerSpeed[i % n], bumpKmh / 3.6);
@@ -154,8 +199,26 @@ export function driveLap(trackName, preset, options = {}) {
 
 		// Far off the road, slow down and head back to it, as a player would
 		const lost = Math.sqrt(bestD) > 12;
-		const aim = line[wrap(index + Math.round(lost ? 10 : Math.max(8, speed * 0.7)))];
+		const aim = path[wrap(index + Math.round(lost ? 10 : Math.max(8, speed * 0.7)))];
 		let err = Math.atan2(aim.x - pos[0], aim.z - pos[2]) - yaw;
+		// Steer input for a heading error: a fixed gain when chasing a point
+		let steerGain = 2.5;
+		if (racingLine && !lost) {
+			// Chasing a point ahead cuts corners and overshoots when the line crosses the road, and
+			// on the racing line there is no spare road for either. So here the driver turns to
+			// the line's own heading a little way ahead, and toward the line by how far the car
+			// is beside it (the "Stanley" path follower). That sum is the angle the front wheels
+			// need, so the steer input is its share of the lock the steering has at this speed:
+			// at 110 km/h that is a few degrees, and a fixed gain asked for only part of it.
+			const here = path[index];
+			const beside = (here.x - pos[0]) * Math.cos(yaw) - (here.z - pos[2]) * Math.sin(yaw);
+			err =
+				pathHeading(index + Math.round(Math.max(3, speed * 0.25))) -
+				yaw +
+				Math.atan2(1.5 * beside, speed + 5);
+			const x = speedReference > 0 ? speed / speedReference : 0;
+			steerGain = (1 + x * x) / maxAngle;
+		}
 		err = Math.atan2(Math.sin(err), Math.cos(err));
 		// Braking distance to each corner ahead, with less deceleration downhill
 		let target = Number.POSITIVE_INFINITY;
@@ -165,6 +228,9 @@ export function driveLap(trackName, preset, options = {}) {
 			const v = cornerSpeed[wrap(index + k)];
 			target = Math.min(target, Math.sqrt(v * v + 2 * decel * k));
 		}
+		// On the racing line there is no spare road to run wide on, so its own speed plan, which
+		// shares the grip between braking and cornering, caps the target too
+		if (lineSpeeds) target = Math.min(target, lineSpeeds[index]);
 		if (lost) target = Math.min(target, 30 / 3.6);
 		const e = target - speed;
 		let throttle = e > 0 ? Math.min(1, e * 0.5 + 0.2) : 0;
@@ -188,7 +254,7 @@ export function driveLap(trackName, preset, options = {}) {
 			api.b3WheeledVehicle_SetInput(vehicle, {
 				forward: throttle,
 				brake: e < -1 ? Math.min(1, -e * 0.3) : 0,
-				steer: Math.max(-1, Math.min(1, -err * 2.5)),
+				steer: Math.max(-1, Math.min(1, -err * steerGain)),
 				handbrake: 0,
 			});
 		}
@@ -256,6 +322,7 @@ if (isMain) {
 		else if (a === '--all') args.all = true;
 		else if (a === '--json') args.json = true;
 		else if (a === '--keys') args.keys = true;
+		else if (a === '--line') args.line = true;
 		else if (a === '--pace') {
 			args.pace = Number(argv[++i]);
 			// A fraction of the grip limit: 0 or less would never move the car
@@ -273,7 +340,7 @@ if (isMain) {
 	});
 	if (names.length === 0) {
 		console.error(
-			'usage: vehicle-laps.mjs [--track circuit|stage|downhill|uphill] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--keys] [--json]',
+			'usage: vehicle-laps.mjs [--track circuit|stage|downhill|uphill] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--keys] [--line] [--json]',
 		);
 		process.exit(2);
 	}
@@ -282,6 +349,7 @@ if (isMain) {
 		for (const name of names) {
 			const r = driveLap(trackName, wheeledVehiclePresets[name], {
 				keys: args.keys,
+				racingLine: args.line,
 				...(args.pace === undefined ? {} : { pace: args.pace }),
 			});
 			const pass = r.completed && r.minUp > 0.3;

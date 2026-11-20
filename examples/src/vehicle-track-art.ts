@@ -5,7 +5,12 @@
 // point track gets a finish gate, and a mountain pass its guardrails.
 
 import * as THREE from 'three';
-import { type RaceTrack, railHeight } from './vehicle-tracks';
+import {
+	type RaceTrack,
+	type RacingLineCar,
+	racingLineSpeeds,
+	railHeight,
+} from './vehicle-tracks';
 
 export const topo = {
 	fog: 0xf1ece2,
@@ -399,6 +404,140 @@ export function addRaceTrackArt(
 		group.add(gate);
 	}
 	return group;
+}
+
+/** The racing line's colours: flat out, ease off, brake */
+const lineColors = {
+	go: new THREE.Color(0x3b9dff),
+	lift: new THREE.Color(0xffd43b),
+	brake: new THREE.Color(0xff4b3e),
+};
+
+/** How far ahead of the car the racing line shows what to do (m), fading out over the last part */
+const lineAhead = 300;
+const lineFade = 80;
+
+export interface RacingLineArt {
+	mesh: THREE.Mesh;
+	/**
+	 * Colours the line ahead of the car for the speed it is doing: blue where it can stay flat
+	 * out, yellow where it should ease off, red where it must brake to make the corner. `index`
+	 * is the centreline sample the car is at and `speed` its speed (m/s). The plan follows the
+	 * car's own tires and steering, so it is redone when `car` changes.
+	 */
+	update(index: number, speed: number, car: RacingLineCar): void;
+}
+
+/**
+ * The track's racing line as a strip on the road. Blue all the way round until `update` colours
+ * the stretch ahead of the car.
+ */
+export function addRacingLineArt(
+	scene: THREE.Scene,
+	track: RaceTrack,
+): RacingLineArt {
+	const line = track.racingLine;
+	const n = line.length;
+	const half = 0.22;
+	const lift = track.road ? 0.05 : 0.07;
+	const positions = new Float32Array(n * 6);
+	const colors = new Float32Array(n * 6);
+	for (let i = 0; i < n; i++) {
+		const c = track.centerline[i];
+		const p = line[i];
+		// Across the road, as the centreline has it: left of the direction of travel is (tz, -tx)
+		for (const [k, side] of [-1, 1].entries()) {
+			const x = p.x + c.tz * side * half;
+			const z = p.z - c.tx * side * half;
+			positions.set(
+				[x, (track.road ? p.y : track.groundAt(x, z)) + lift, z],
+				(i * 2 + k) * 3,
+			);
+			lineColors.go.toArray(colors, (i * 2 + k) * 3);
+		}
+	}
+	const indices: number[] = [];
+	for (let i = 0; i < (track.closed ? n : n - 1); i++) {
+		const a = i * 2;
+		const b = ((i + 1) % n) * 2;
+		indices.push(a, b, a + 1, a + 1, b, b + 1);
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+	const colorAttribute = new THREE.BufferAttribute(colors, 3);
+	colorAttribute.setUsage(THREE.DynamicDrawUsage);
+	geometry.setAttribute('color', colorAttribute);
+	geometry.setIndex(indices);
+	const mesh = new THREE.Mesh(
+		geometry,
+		new THREE.MeshBasicMaterial({
+			vertexColors: true,
+			transparent: true,
+			opacity: 0.85,
+			side: THREE.DoubleSide,
+			depthWrite: false,
+			polygonOffset: true,
+			polygonOffsetFactor: -4,
+			polygonOffsetUnits: -4,
+		}),
+	);
+	mesh.renderOrder = 1;
+	scene.add(mesh);
+
+	let speeds: Float32Array | null = null;
+	let planned: RacingLineCar | null = null;
+	// The stretch coloured last time, to turn it back to blue
+	let from = 0;
+	let count = 0;
+	const color = new THREE.Color();
+	const paint = (i: number, c: THREE.Color) => {
+		c.toArray(colors, i * 6);
+		c.toArray(colors, i * 6 + 3);
+	};
+	const sample = (k: number) =>
+		track.closed ? ((k % n) + n) % n : Math.min(Math.max(k, 0), n - 1);
+
+	return {
+		mesh,
+		update(index, speed, car) {
+			if (
+				!speeds ||
+				!planned ||
+				planned.grip !== car.grip ||
+				planned.peakAngle !== car.peakAngle ||
+				planned.wheelbase !== car.wheelbase ||
+				planned.maxAngle !== car.maxAngle ||
+				planned.speedReference !== car.speedReference
+			) {
+				planned = { ...car };
+				// A little under the grip the autopilot laps at, so the red comes early
+				speeds = racingLineSpeeds(track, car, 0.85);
+			}
+			for (let k = 0; k < count; k++) paint(sample(from + k), lineColors.go);
+			from = index;
+			count = track.closed ? lineAhead : Math.min(lineAhead, n - index);
+			for (let k = 0; k < count; k++) {
+				const i = sample(index + k);
+				// Against the fastest the car may be there: within a tenth of it ease off, over
+				// it brake
+				const ratio = speed / Math.max(speeds[i], 1);
+				if (ratio <= 0.9) color.copy(lineColors.go);
+				else if (ratio <= 1)
+					color.lerpColors(lineColors.go, lineColors.lift, (ratio - 0.9) / 0.1);
+				else
+					color.lerpColors(
+						lineColors.lift,
+						lineColors.brake,
+						Math.min((ratio - 1) / 0.12, 1),
+					);
+				// Further off it fades back to blue: by then the car's speed will have changed
+				const far = (k - (lineAhead - lineFade)) / lineFade;
+				if (far > 0) color.lerp(lineColors.go, Math.min(far, 1));
+				paint(i, color);
+			}
+			colorAttribute.needsUpdate = true;
+		},
+	};
 }
 
 /**
