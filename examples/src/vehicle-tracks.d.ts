@@ -182,6 +182,8 @@ export const raceTracks: Record<RaceTrackName, RaceTrackDef>;
 /** Guardrail wall thickness and height above the road (m) */
 export const railThickness: number;
 export const railHeight: number;
+/** Radius of the rounded collision segments the rails are made of (m) */
+export const railRadius: number;
 
 /** The guardrails' collision category: the chassis hits them, the wheel casts skip them */
 export const railCategory: bigint;

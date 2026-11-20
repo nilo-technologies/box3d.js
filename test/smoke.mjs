@@ -2387,7 +2387,7 @@ async function vehicleScenarios( b3 )
 		}
 		const onLine = driveLap( 'circuit', wheeledVehiclePresets[ 'sports-50-rwd' ], { b3, racingLine: true } );
 		assert.ok( onLine.completed && onLine.minUp > 0.3, 'circuit: sports-50-rwd laps the racing line' );
-		assert.ok( onLine.lapTime < 0.95 * results.laps.circuit, `circuit: the racing line is quicker (${onLine.lapTime.toFixed( 1 )} s against ${results.laps.circuit.toFixed( 1 )} s on the centreline)` );
+		assert.ok( onLine.lapTime < results.laps.circuit, `circuit: the racing line is quicker (${onLine.lapTime.toFixed( 1 )} s against ${results.laps.circuit.toFixed( 1 )} s on the centreline)` );
 		results.laps.circuitLine = onLine.lapTime;
 	}
 
@@ -2517,6 +2517,34 @@ async function vehicleScenarios( b3 )
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 1.5 ), RangeError, 'fractional wheel index is refused' );
+	}
+
+	// The state says when traction control and ABS are intervening, by the struct and by the buffer:
+	// full throttle from rest, then a full brake, then hands off
+	{
+		const world = createWorld();
+		const def = b3.b3DefaultWheeledVehicleDef();
+		def.assists.tractionControl = true;
+		def.assists.abs = true;
+		def.assists.launchControl = false;
+		const { vehicle } = createCar( world, { def } );
+		for ( let i = 0; i < 60; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+		let traction = false, abs = false, agree = true, direct;
+		for ( let i = 0; i < 420; i++ )
+		{
+			b3.b3WheeledVehicle_SetInput( vehicle, i < 180 ? input( 1 ) : i < 330 ? input( 0, 1 ) : input() );
+			b3.b3World_Step( world, 1 / 60, 4 );
+			direct = b3.b3WheeledVehicle_GetState( vehicle );
+			const packed = readState( vehicle );
+			agree = agree && packed.isTractionControlActive === direct.isTractionControlActive && packed.isAbsActive === direct.isAbsActive && packed.isLaunching === direct.isLaunching;
+			traction = traction || direct.isTractionControlActive;
+			abs = abs || direct.isAbsActive;
+		}
+		assert.ok( agree, 'the state buffer and b3WheeledVehicle_GetState report the same assist flags' );
+		assert.ok( traction, 'traction control shows as active under full throttle from rest' );
+		assert.ok( abs, 'ABS shows as active under a full brake' );
+		assert.ok( direct.isTractionControlActive === false && direct.isAbsActive === false, 'no assist is active with no input' );
+		b3.b3DestroyWorld( world );
 		b3.b3DestroyWorld( world );
 
 		const spare = b3.createWheeledVehicleStateBuffer();

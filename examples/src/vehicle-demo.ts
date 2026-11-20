@@ -1189,8 +1189,14 @@ export async function runWheeledVehicleDemo(
 			car.live.fullBoost > 0
 				? `boost ${formatBoost(state.boost, car.live.fullBoost)}`
 				: '',
-			car.live.tractionControl ? 'TC' : '',
-			car.live.abs ? 'ABS' : '',
+			// An assist that is on shows its name, and in capitals with a mark while it is
+			// actually cutting torque (b3WheeledVehicleState isTractionControlActive, isAbsActive)
+			car.live.tractionControl
+				? state.isTractionControlActive
+					? 'TC ●'
+					: 'tc'
+				: '',
+			car.live.abs ? (state.isAbsActive ? 'ABS ●' : 'abs') : '',
 			state.isLaunching ? 'LAUNCH' : '',
 			state.stuck ? (touchShown ? 'stuck: tap ↻' : 'stuck: press R') : '',
 		];

@@ -231,6 +231,7 @@ function setTire(wheel, tire) {
 	wheel.tire.lateralSlideAngle = deg(tire.latSlideAngle);
 	wheel.tire.lateralSlideFriction = tire.latSlide;
 	wheel.tire.rollingResistance = tire.rolling;
+	wheel.tire.curveRounding = tire.rounding ?? 0;
 }
 
 // Shared by every car: geometry, suspension and tire per axle, then the rest of the car
@@ -260,6 +261,7 @@ function applyCar(def, car) {
 			wheel.suspension.frequency = axleSettings.frequency;
 			wheel.suspension.compressionDamping = car.suspension.compressionDamping;
 			wheel.suspension.reboundDamping = car.suspension.reboundDamping;
+			wheel.suspension.bumpStopRestitution = car.suspension.bumpStopRestitution ?? 0;
 			wheel.suspension.preload = car.suspension.preload ?? 0;
 			setTire(wheel, axleSettings.tire ? { ...car.tire, ...axleSettings.tire } : car.tire);
 		},
@@ -270,11 +272,14 @@ function applyCar(def, car) {
 	def.transmission.shiftUpRpm = car.shiftUpRpm;
 	def.transmission.shiftDownRpm = car.shiftDownRpm;
 	def.transmission.shiftTime = car.shiftTime;
+	def.transmission.clutchReleaseTime = car.clutchReleaseTime ?? def.transmission.clutchReleaseTime;
+	def.transmission.revMatch = car.revMatch ?? false;
 	setAntiRoll(def, car.antiRoll[0], car.antiRoll[1]);
 	def.steering.maxAngle = deg(car.steering.maxAngle);
 	def.steering.speedReference = car.steering.speedReference;
 	def.steering.steerSpeed = car.steering.steerSpeed;
 	def.steering.returnSpeed = car.steering.returnSpeed;
+	def.steering.counterSteerLock = car.steering.counterSteerLock ?? 0;
 	def.assists.downforce = car.downforce;
 	def.assists.drag = car.drag;
 	def.assists.tractionControl = car.tractionControl;
@@ -301,40 +306,60 @@ export const wheeledVehicleCars = {
 		wheelInertia: 1.0,
 		// About 26% of the braking on the rear, near the ideal split at full braking. More rear brake
 		// locks the inside rear when braking in a turn, and ABS does not catch it while cornering.
-		front: { width: 0.245, brake: 2600, frequency: 1.5 },
-		// The rear tires grip as hard as the fronts but reach it sooner (5.5 degrees of slip against 7)
-		// and hold it past the peak, so a lift or a flick through the steering limiter does not swing
-		// the tail out. A rear with 5% more grip did that too, but left the front to wash out at full
-		// lock: the car pushed wide in every corner.
+		front: { width: 0.245, brake: 2400, frequency: 1.5 },
+		// The rear tires reach their grip sooner than the fronts (9 degrees of slip against 12) and
+		// grip 10% harder fully sliding than at their peak: the further the tail steps out, the
+		// harder they pull it back, so lifting, a slalom and a flick swing the tail and it returns.
 		rear: {
 			width: 0.275,
-			brake: 900,
+			brake: 783,
 			frequency: 1.65,
-			tire: { latPeakAngle: 5.5, latSlide: 1.1 },
+			tire: { latPeakAngle: 9, latSlide: 1.1 },
 		},
-		handbrake: 2500,
+		handbrake: 2175,
 		// Soft springs on long travel, so the body visibly squats, dives and rolls (1.2 degrees of
 		// pitch accelerating, 2.2 braking, 2.3 of roll at 100%). A softer spring sags further, so
 		// maxLength rises with it and the car keeps its ride height and center of mass.
 		suspension: {
 			minLength: 0.15,
 			maxLength: 0.38,
-			// Low compression damping against the rebound lets sharp bumps pass through the
-			// spring instead of kicking the body, as real dampers do
+			// Low compression damping lets sharp bumps pass through the spring instead of
+			// kicking the body. Low rebound damping lets the body come back up after a landing:
+			// from a 1 m drop it rises 5 cm above its ride height and settles in about a second.
+			// At 0.75 it rose 0.2 cm, and the car looked stuck to the ground. 0.3 is also where
+			// the landing off the circuit's big hump goes wrong least often (1 lap in 30).
 			compressionDamping: 0.3,
-			reboundDamping: 0.75,
+			reboundDamping: 0.3,
+			// A hard landing bounces: the bump stops give back 40% of the speed the body meets
+			// them with. From 1 m the body rises 7 cm above its ride height (5 without), from 2 m
+			// it hops 12 cm with the wheels off the ground for a fifth of a second (7 cm, none).
+			// At 0.5 the hop is 20 cm, but one perturbed arcade car tips over on rough ground,
+			// and the circuit's big hump goes wrong more often (5 laps in 60 against 1).
+			bumpStopRestitution: 0.4,
 		},
+		// 1.0 of grip both ways, so 1.3 at 50% realism, where the car was tuned by hand on the
+		// mountain pass: 3.0 of side grip took the hairpins at 50 km/h and was far too much, then
+		// 1.5, then 1.3; forward grip above the side grip was too much braking. The brakes above
+		// are sized to it.
 		tire: {
-			peakSlip: 0.1,
-			longPeak: 1.15,
+			peakSlip: 0.12,
+			// A touch over the side grip: at 1.0 the 100% RWD car took 6.1 s to 100 km/h and the
+			// arcade car 25.9 m to stop, both just outside the class
+			longPeak: 1.04,
 			slideSlip: 0.4,
-			longSlide: 0.95,
-			latPeakAngle: 7,
-			latPeak: 1.1,
-			latSlideAngle: 18,
-			// The fronts keep most of their grip past the peak, where full lock on a keyboard runs them
-			latSlide: 1.06,
+			longSlide: 0.96,
+			// Late peaks for a rounded curve. It starts 1.5 times as steep as straight lines to
+			// the same peak, so with the peaks at 9 and 7 degrees the car answered the steering
+			// too hard (brake and turn swung the 50% AWD car to 25 degrees). At 12 and 9 the last
+			// 15% of the grip arrives over the last third of the angle.
+			latPeakAngle: 12,
+			latPeak: 1.0,
+			latSlideAngle: 25,
+			// Nothing lost past the peak: a front that slides keeps steering
+			latSlide: 1.0,
 			rolling: 0.013,
+			// Smooth curves through the same points, as on a real tire: no corner at the peak
+			rounding: 1,
 		},
 		// 370 hp at 6900 rpm: the torque falls in a line from its peak to 75% of it at the limiter.
 		// In second and third gear the car is power limited, so the torque is what it pulls with
@@ -353,20 +378,31 @@ export const wheeledVehicleCars = {
 		// setting sits that far below 90%.
 		shiftUpRpm: 6200,
 		shiftDownRpm: 3200,
-		shiftTime: 0.12,
+		// A shift by hand: 0.3 s with the clutch open, in which the revs go to the next gear
+		// (down on an upshift, blipped up on a downshift), then 0.25 s for the clutch to take
+		// up with the throttle following it. At 0.12 s with no rev match the throttle came
+		// back on an open clutch: the revs flared and the clutch dragged them down.
+		shiftTime: 0.3,
+		clutchReleaseTime: 0.25,
+		revMatch: true,
 		// Stiffer bars on the softer springs keep the roll within each realism level's range
 		antiRoll: [20000, 16000],
 		steering: {
 			maxAngle: 34,
-			speedReference: 14,
+			// Lock left at speed, sized to the side grip: 20 turned the fronts in harder than
+			// the rear could follow and spun the car in a slalom (80 degrees of sideslip)
+			speedReference: 15,
 			steerSpeed: 4,
 			returnSpeed: 6,
+			// Opposite lock reaches toward where the car is sliding: a 20 degree slide at
+			// 110 km/h is caught in 0.8 s with full opposite lock (1.9 s without, after swinging
+			// out to 53 degrees). At 1 a keyboard over-corrects.
+			counterSteerLock: 0.5,
 		},
 		downforce: 0.25,
 		drag: 0.4,
-		// Stability and traction control, as the real cars have. A keyboard throttle is all or nothing,
-		// and without it the rear steps out on every corner exit.
-		tractionControl: true,
+		// No traction control: the throttle is the driver's. ABS stays.
+		tractionControl: false,
 		abs: true,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
 		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4, awdRearGrip: 0.985 },
@@ -392,14 +428,13 @@ export const wheeledVehicleCars = {
 		wheelRadius: 0.37,
 		wheelInertia: 1.13,
 		front: { width: 0.235, brake: 2580, frequency: 1.3 },
-		// The rear tires grip sooner (9 degrees against 11) and 5% more, and hold on past their peak,
-		// so a keyboard driver lifting or braking mid corner through the steering limiter does not
-		// swing the rear out
+		// The rear tires grip sooner (11.5 degrees against 14.5) and 5% more, and 10% harder again
+		// fully sliding than at their peak, so a tail that steps out is pulled back
 		rear: {
 			width: 0.235,
 			brake: 1680,
 			frequency: 1.4,
-			tire: { latPeak: 1.05, latSlide: 1.05, latPeakAngle: 9 },
+			tire: { latPeak: 1.05, latSlide: 1.155, latPeakAngle: 11.5 },
 		},
 		handbrake: 4480,
 		// Soft springs (1.3/1.4 Hz) so the body pitches 2-2.5 degrees on launch, 3 under braking and
@@ -411,18 +446,27 @@ export const wheeledVehicleCars = {
 			maxLength: 0.45,
 			preload: 0.037,
 			compressionDamping: 0.3,
-			reboundDamping: 0.7,
+			// As on the sports car: the body comes back up after a landing, and bounces off the
+			// bump stops after a hard one. 0.4 of rebound damping, not the sports car's 0.3: on
+			// these soft springs the FWD arcade car was still rocking two seconds after a drop.
+			// 0.3 of bounce, not 0.4: one perturbed 50% RWD car went over on rough ground.
+			reboundDamping: 0.4,
+			bumpStopRestitution: 0.3,
 		},
+		// Rounded curves, as on the sports car: the peaks sit a third later than they did on
+		// straight lines (11 and 9 degrees), where the steeper start of the curve would make the
+		// car answer the steering too hard, and nothing is lost past the front's peak
 		tire: {
 			peakSlip: 0.18,
 			longPeak: 1.05,
 			slideSlip: 0.6,
-			longSlide: 0.92,
-			latPeakAngle: 11,
+			longSlide: 0.97,
+			latPeakAngle: 14.5,
 			latPeak: 1.0,
-			latSlideAngle: 28,
-			latSlide: 0.96,
+			latSlideAngle: 30,
+			latSlide: 1.0,
 			rolling: 0.018,
+			rounding: 1,
 		},
 		engine: {
 			maxTorque: 400,
@@ -435,7 +479,11 @@ export const wheeledVehicleCars = {
 		finalDrive: 4.93,
 		shiftUpRpm: 6500,
 		shiftDownRpm: 3600,
-		shiftTime: 0.08,
+		// Shifts as on the sports car: 0.3 s with the clutch open while the revs go to the next
+		// gear, then 0.25 s for the clutch to take up with the throttle following it
+		shiftTime: 0.3,
+		clutchReleaseTime: 0.25,
+		revMatch: true,
 		// Stiffer bars on the softer springs keep the 25% level inside its roll range
 		antiRoll: [18000, 13500],
 		steering: {
@@ -443,6 +491,7 @@ export const wheeledVehicleCars = {
 			speedReference: 15,
 			steerSpeed: 5,
 			returnSpeed: 7,
+			counterSteerLock: 0.5,
 		},
 		downforce: 0.15,
 		drag: 0.45,
@@ -476,7 +525,8 @@ export const wheeledVehicleCars = {
 			width: 0.325,
 			brake: 1500,
 			frequency: 1.85,
-			tire: { latPeakAngle: 5.5, latSlide: 1.25 },
+			// Sooner than the fronts (7.5 degrees against 8.5) and 10% harder fully sliding
+			tire: { latPeakAngle: 7.5, latSlide: 1.375 },
 		},
 		handbrake: 2000,
 		// Soft springs (1.7/1.85 Hz) so the body visibly pitches and rolls: about 1.1 degrees of squat,
@@ -491,19 +541,26 @@ export const wheeledVehicleCars = {
 			// Low compression damping against the rebound lets sharp bumps pass through the
 			// spring instead of kicking the body, as real dampers do
 			compressionDamping: 0.35,
-			reboundDamping: 0.8,
+			// Softer rebound as on the sports car, but less of it, and no bounce off the bump stops:
+			// on 15 cm of travel the car bottoms out on rough ground, and with any bounce (0.4 down
+			// to 0.05) one or another 50% car went over there.
+			reboundDamping: 0.45,
 		},
+		// The sports car's treatment with the supercar's own grip: rounded curves with the peaks
+		// a third later than on straight lines (6.5 and 5.5 degrees), and nothing lost past the
+		// front's peak. With 9% less grip, as the sports car lost, it fell out of its class (1.09 g
+		// against 1.1), and peaks at 11 degrees left the steering too little lock at speed.
 		tire: {
 			peakSlip: 0.09,
 			longPeak: 1.3,
 			slideSlip: 0.35,
-			longSlide: 1.0,
-			latPeakAngle: 6.5,
+			longSlide: 1.2,
+			latPeakAngle: 8.5,
 			latPeak: 1.25,
-			latSlideAngle: 16,
-			// The fronts keep most of their grip past the peak, where full lock on a keyboard runs them
-			latSlide: 1.18,
+			latSlideAngle: 18,
+			latSlide: 1.25,
 			rolling: 0.012,
+			rounding: 1,
 		},
 		engine: {
 			maxTorque: 720,
@@ -518,17 +575,23 @@ export const wheeledVehicleCars = {
 		// setting is that much lower. Near the limiter an upshift would never fire at all.
 		shiftUpRpm: 7150,
 		shiftDownRpm: 4200,
-		shiftTime: 0.08,
+		// Shifts as on the sports car: 0.3 s with the clutch open while the revs go to the next
+		// gear, then 0.25 s for the clutch to take up with the throttle following it
+		shiftTime: 0.3,
+		clutchReleaseTime: 0.25,
+		revMatch: true,
 		antiRoll: [30000, 26000],
 		steering: {
 			maxAngle: 32,
 			speedReference: 15,
 			steerSpeed: 4,
 			returnSpeed: 6,
+			counterSteerLock: 0.5,
 		},
 		downforce: 0.6,
 		drag: 0.38,
-		tractionControl: true,
+		// No traction control, as on the sports car. ABS stays.
+		tractionControl: false,
 		abs: true,
 		drive: { frontLsd: 1.1, rearLsd: 1.4, centerLsd: 1.25, awdFront: 0.3 },
 	},
@@ -588,6 +651,8 @@ export const drivetrainLayers = {
  * Realism levels, from a car as it would really drive (100) to a full arcade car (0).
  * `tireGrip` and `downforceScale` multiply the car's values; `comDrop` lowers the center of
  * mass below the car's own (m). `tractionControl` and `abs` of null keep the car's own setting.
+ * No level forces traction control: the cars are driven without it, and a level that turned it
+ * on would overrule that. ABS is on from 50% down.
  * The rear brakes scale with `tireGrip` too, so the brake balance stays the same share of the
  * grip at every level.
  *
@@ -646,7 +711,7 @@ export const realismLevels = {
 		airControl: 1.5,
 		airAngularDamping: 2.5,
 		maxTiltAngle: 0,
-		tractionControl: true,
+		tractionControl: null,
 		abs: true,
 	},
 	25: {
@@ -662,7 +727,7 @@ export const realismLevels = {
 		airControl: 2.5,
 		airAngularDamping: 3,
 		maxTiltAngle: 70,
-		tractionControl: true,
+		tractionControl: null,
 		abs: true,
 	},
 	0: {
@@ -678,7 +743,7 @@ export const realismLevels = {
 		airControl: 3.5,
 		airAngularDamping: 3.5,
 		maxTiltAngle: 55,
-		tractionControl: true,
+		tractionControl: null,
 		abs: true,
 	},
 };

@@ -91,15 +91,18 @@ export function showcaseStart(): {
 	};
 }
 
-function describeRealism(realism: WheeledVehicleRealism): string {
+function describeRealism(
+	car: WheeledVehicleCarName,
+	realism: WheeledVehicleRealism,
+): string {
 	const level = realismLevels[realism];
-	const aids = [
-		level.tractionControl ? 'TC' : '',
-		level.abs ? 'ABS' : '',
-	].filter(Boolean);
+	// No level forces traction control any more, so it is the car's own
+	const tractionControl =
+		level.tractionControl ?? wheeledVehicleCars[car].tractionControl;
+	const abs = level.abs ?? wheeledVehicleCars[car].abs;
 	const parts = [
 		`grip ×${level.tireGrip.toFixed(2)}`,
-		aids.length ? `${aids.join(' and ')} on` : "the car's own TC and ABS",
+		[tractionControl ? 'TC' : 'no TC', abs ? 'ABS' : 'no ABS'].join(', '),
 	];
 	if (level.rollInfluence > 0)
 		parts.push(`roll influence ${level.rollInfluence}`);
@@ -282,7 +285,7 @@ export function addShowcase(host: ShowcaseHost): void {
 		const car = wheeledVehicleCars[params.car];
 		host.setInfo(
 			wheeledVehiclePresets[presetName()].title,
-			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.realism)}.` +
+			`${car.blurb}<br>${realismLevels[params.realism].title}: ${describeRealism(params.car, params.realism)}.` +
 				`<br>${turboTypes[showcaseTurbo(params.turbo, params.car)].title}.`,
 			'<br>1/2/3 sports, rally, supercar · [ ] less or more realistic · F/G/H front, rear, all wheel drive · Y turbo',
 		);

@@ -571,6 +571,10 @@ export interface WheeledVehicleStateRecord {
   stuck: boolean;
   /** Launch control is managing the drive torque */
   isLaunching: boolean;
+  /** Traction control held the drive torque below what the throttle asked for in the last step */
+  isTractionControlActive: boolean;
+  /** ABS held a wheel's brake torque below what the brake asked for in the last step */
+  isAbsActive: boolean;
 }
 export interface WheeledVehicleWheelRecord {
   /** Wheel center, world space */

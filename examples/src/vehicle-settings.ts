@@ -109,6 +109,8 @@ const controllerTips: Record<string, Record<string, string>> = {
 			'Extra spring length that lifts the car without changing the stiffness',
 		enableBumpStop:
 			'Hard stop at the min length, so hard landings cannot push the wheel through the chassis',
+		bumpStopRestitution:
+			'Share of its landing speed the body bounces back up with off the bump stop. 0 stays down.',
 		radius:
 			'Wheel radius. A larger wheel turns the same torque into less force at the ground.',
 		width: 'Wheel width, used by the cylinder ground probe',
@@ -147,6 +149,8 @@ const controllerTips: Record<string, Record<string, string>> = {
 			'How much less grip per newton a tire has as its load rises, as real tires do. With it, moving weight onto an axle (stiffer bars or springs, the center of mass) costs that axle grip: a stiffer front bar adds understeer, a stiffer rear bar oversteer. 0 makes grip proportional to the load, so the balance barely moves. Road tires are about 0.1-0.25.',
 		referenceLoad:
 			'Load at which the friction coefficients apply (N). 0 uses the static load on the wheel, so the car grips as set at rest and only the weight transfer changes it.',
+		curveRounding:
+			'Shape of the grip curves. 0 is straight lines between their points. 1 is a smooth curve through the same points: grip builds faster from no slip and eases into the peak.',
 	},
 	'Anti-roll': {
 		stiffness:
@@ -191,6 +195,8 @@ const controllerTips: Record<string, Record<string, string>> = {
 		shiftTime:
 			'Time the clutch stays open and the throttle is cut during a shift',
 		clutchReleaseTime: 'Time for the clutch to engage again after a shift',
+		revMatch:
+			'Shifts as a driver does: the revs go to the next gear while the clutch is open, then the throttle comes back in with the clutch. Off, the throttle returns on an open clutch and the revs flare.',
 		shiftLatency:
 			'Minimum time between automatic shifts, so the gearbox does not hunt between gears',
 		clutchStrength:
@@ -214,6 +220,8 @@ const controllerTips: Record<string, Record<string, string>> = {
 			'Speed where the steer angle is halved. It falls off with speed squared. 0 keeps full lock at any speed.',
 		steerSpeed: 'How fast the wheels turn toward a larger angle (rad/s)',
 		returnSpeed: 'How fast the wheels turn back to center (rad/s)',
+		counterSteerLock:
+			'Extra lock while steering into a slide, as a share of the slide angle. At 1, full opposite lock points the wheels where the car is going.',
 		ackermann:
 			'0 turns both front wheels by the same angle. 1 is full Ackermann geometry, where the inside wheel turns more to follow a tighter circle.',
 		steeringLimit:
@@ -445,6 +453,7 @@ export function createWheeledVehicleSettings(
 			maxLength: suspensionField('maxLength'),
 			preload: suspensionField('preload'),
 			enableBumpStop: suspensionField('enableBumpStop'),
+			bumpStopRestitution: suspensionField('bumpStopRestitution'),
 			radius: wheelField('radius'),
 			width: wheelField('width'),
 			inertia: wheelField('inertia'),
@@ -466,6 +475,7 @@ export function createWheeledVehicleSettings(
 		s.add(p, 'maxLength', 0.05, 1.2, 0.01).name('max length (m)');
 		s.add(p, 'preload', 0, 0.3, 0.005).name('preload (m)');
 		s.add(p, 'enableBumpStop').name('bump stop');
+		s.add(p, 'bumpStopRestitution', 0, 1, 0.05).name('bump stop bounce');
 		s.add(p, 'radius', 0.15, 0.8, 0.01).name('wheel radius (m)');
 		s.add(p, 'width', 0.05, 0.6, 0.01).name('wheel width (m)');
 		s.add(p, 'inertia', 0.1, 10, 0.1).name('wheel inertia');
@@ -489,6 +499,7 @@ export function createWheeledVehicleSettings(
 			longitudinalRelaxationLength: tireField('longitudinalRelaxationLength'),
 			loadSensitivity: tireField('loadSensitivity'),
 			referenceLoad: tireField('referenceLoad'),
+			curveRounding: tireField('curveRounding'),
 		});
 		t.add(q, 'longitudinalPeakSlip', 0.02, 0.5, 0.01).name('long. peak slip');
 		t.add(q, 'longitudinalPeakFriction', 0.1, 3, 0.01).name('long. peak μ');
@@ -506,6 +517,7 @@ export function createWheeledVehicleSettings(
 		t.add(q, 'referenceLoad', 0, 10000, 50).name(
 			'reference load (N, 0 static)',
 		);
+		t.add(q, 'curveRounding', 0, 1, 0.05).name('curve rounding');
 	}
 
 	// ---- Anti-roll bars
@@ -685,6 +697,10 @@ export function createWheeledVehicleSettings(
 		.name('clutch release (s)')
 		.onChange(applyTransmission);
 	transmissionFolder
+		.add(transmission, 'revMatch')
+		.name('rev match')
+		.onChange(applyTransmission);
+	transmissionFolder
 		.add(transmission, 'shiftLatency', 0, 2, 0.05)
 		.name('shift latency (s)')
 		.onChange(applyTransmission);
@@ -776,6 +792,10 @@ export function createWheeledVehicleSettings(
 		.name('return speed')
 		.onChange(applySteering);
 	steeringFolder.add(steering, 'ackermann', 0, 1, 0.01).onChange(applySteering);
+	steeringFolder
+		.add(steering, 'counterSteerLock', 0, 1, 0.05)
+		.name('counter steer lock')
+		.onChange(applySteering);
 	const aids = { steeringLimit: true };
 	steeringFolder.add(aids, 'steeringLimit').name('grip limit');
 
