@@ -60,7 +60,34 @@ const DEFAULTS = {
 	depthTest: true,
 	renderOrder: 0,
 	shapeCacheFrames: 300,
+	distanceFade: false,
+	distanceFadeMin: 0.2,
+	distanceFadeMax: 1.25,
+	solidShading: 0.5,
 };
+
+// Distance fade, by view depth from the camera that renders the material, so
+// the fade's far end is the plane `cullDistance` puts on culling. Added after
+// box3d's colours and the vertex colours, before three's output conversion.
+const FADE_VARYING = 'varying float vBox3dFadeDepth;';
+const FADE_UNIFORMS =
+	'uniform float box3dFadeFar;\nuniform float box3dFadeMin;\nuniform float box3dFadeMax;\nuniform float box3dFadeGamma;\nuniform float box3dShade;';
+const FADE_SCALE = 'mix(box3dFadeMax, box3dFadeMin, clamp(vBox3dFadeDepth / box3dFadeFar, 0.0, 1.0))';
+
+// Face shading for solid shapes: a fixed light from above, in front and to the
+// right, in world space, so it holds still as the camera orbits. The normal is
+// the face's own, from screen-space derivatives of the world position, so each
+// face of a box takes one shade even where its vertices are shared. It only
+// darkens, so the hue stays: a face turned straight away from the light drops
+// to 1 - `solidShading` of its colour.
+const SHADE_LIGHT = [0.3, 1, 0.6];
+const SHADE_VARYING = 'varying vec3 vBox3dWorld;';
+const SHADE_FRAGMENT = [
+	'vec3 box3dCross = cross(dFdx(vBox3dWorld), dFdy(vBox3dWorld));',
+	'float box3dLength = length(box3dCross);',
+	`float box3dLight = box3dLength > 0.0 ? dot(box3dCross / box3dLength, normalize(vec3(${SHADE_LIGHT.join(', ')}))) : 1.0;`,
+	`diffuseColor.rgb *= pow(${FADE_SCALE} * (1.0 - box3dShade * 0.5 * (1.0 - box3dLight)), box3dFadeGamma);`,
+].join('\n\t');
 
 // Frustum corners in NDC x/y. Depth comes from near/far, not NDC z, so WebGL
 // ([-1, 1]), WebGPU ([0, 1]) and reversed-depth projections all work.
@@ -222,11 +249,112 @@ export function createDebugRenderer(b3, worldId, options) {
 	const corners = new Float32Array(24);
 	const basis = { ux: 1, uy: 0, uz: 0, vx: 0, vy: 0, vz: 1, dx: 0, dy: 1, dz: 0 };
 
+	// Every debug material carries the distance fade, and solid shapes the face
+	// shading too, so changing either compiles nothing: off is a factor of 1.
+	// WebGL takes them through onBeforeCompile. three/webgpu ignores that and
+	// copies `colorNode` over to the node material it builds from a classic one.
+	const fadeUniforms = {
+		box3dFadeFar: { value: 1 },
+		box3dFadeMin: { value: 1 },
+		box3dFadeMax: { value: 1 },
+		box3dFadeGamma: { value: 1 },
+		box3dShade: { value: 0 },
+	};
+	const TSL = THREE.TSL;
+	let fadeNodes = null;
+	let fadeColorNode = null;
+	let shadedColorNode = null;
+	if (TSL) {
+		fadeNodes = {
+			far: TSL.uniform(1),
+			min: TSL.uniform(1),
+			max: TSL.uniform(1),
+			gamma: TSL.uniform(1),
+			shade: TSL.uniform(0),
+		};
+		const t = TSL.saturate(TSL.positionView.z.negate().div(fadeNodes.far));
+		const scale = TSL.mix(fadeNodes.max, fadeNodes.min, t);
+		fadeColorNode = TSL.materialColor.mul(TSL.pow(scale, fadeNodes.gamma));
+		// three's own flat normal, in view space, turned into world space.
+		const normal = TSL.cameraWorldMatrix.mul(TSL.vec4(TSL.normalFlat, 0)).xyz.normalize();
+		const light = TSL.dot(normal, TSL.vec3(...SHADE_LIGHT).normalize());
+		const shade = TSL.float(1).sub(fadeNodes.shade.mul(0.5).mul(TSL.float(1).sub(light)));
+		shadedColorNode = TSL.materialColor.mul(TSL.pow(scale.mul(shade), fadeNodes.gamma));
+	}
+
+	function fadeShader(shader, shaded) {
+		Object.assign(shader.uniforms, fadeUniforms);
+		const vary = shaded ? `${FADE_VARYING}\n${SHADE_VARYING}` : FADE_VARYING;
+		const world = shaded ? '\n\tvBox3dWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;' : '';
+		const color = shaded ? SHADE_FRAGMENT : `diffuseColor.rgb *= pow(${FADE_SCALE}, box3dFadeGamma);`;
+		shader.vertexShader = shader.vertexShader
+			.replace('#include <common>', `#include <common>\n${vary}`)
+			.replace('#include <project_vertex>', `#include <project_vertex>\n\tvBox3dFadeDepth = -mvPosition.z;${world}`);
+		shader.fragmentShader = shader.fragmentShader
+			.replace('#include <common>', `#include <common>\n${vary}\n${FADE_UNIFORMS}`)
+			.replace('#include <color_fragment>', `#include <color_fragment>\n\t${color}`);
+	}
+
+	function plainFade(shader) {
+		fadeShader(shader, false);
+	}
+
+	function shadedFade(shader) {
+		fadeShader(shader, true);
+	}
+
+	function withFade(material, patch) {
+		material.onBeforeCompile = patch
+			? (shader) => {
+					fadeShader(shader, false);
+					patch(shader);
+				}
+			: plainFade;
+		if (fadeColorNode) material.colorNode = fadeColorNode;
+		return material;
+	}
+
+	function withShading(material) {
+		material.onBeforeCompile = shadedFade;
+		if (shadedColorNode) material.colorNode = shadedColorNode;
+		return material;
+	}
+
+	// The colour scales by `distanceFadeMax` at the camera, falling linearly to
+	// `distanceFadeMin` at `cullDistance`, or at `camera.far` when that is nearer
+	// or `cullDistance` is not set. Both scale the colour as displayed: with
+	// colour management on (three's default) the sRGB value scales by about that
+	// much (a gamma of 2.2 on the linear colour), so 0.2 takes 0xff0000 to about
+	// 0x300000. Above 1 a channel clips at full, so 0xff0000 cannot brighten.
+	function syncFade() {
+		const cull = settings.cullDistance;
+		const camFar = settings.camera ? settings.camera.far : undefined;
+		let far = cull ?? camFar;
+		if (cull != null && camFar != null && camFar < cull) far = camFar;
+		const on = !!settings.distanceFade && Number.isFinite(far) && far > 0;
+		const min = on ? Math.max(settings.distanceFadeMin ?? 0.2, 0) : 1;
+		const max = on ? Math.max(settings.distanceFadeMax ?? 1.25, 0) : 1;
+		const gamma = THREE.ColorManagement && THREE.ColorManagement.enabled ? 2.2 : 1;
+		fadeUniforms.box3dFadeFar.value = on ? far : 1;
+		fadeUniforms.box3dFadeMin.value = min;
+		fadeUniforms.box3dFadeMax.value = max;
+		fadeUniforms.box3dFadeGamma.value = gamma;
+		const shade = Math.min(Math.max(settings.solidShading ?? 0, 0), 1);
+		fadeUniforms.box3dShade.value = shade;
+		if (fadeNodes) {
+			fadeNodes.far.value = fadeUniforms.box3dFadeFar.value;
+			fadeNodes.min.value = min;
+			fadeNodes.max.value = max;
+			fadeNodes.gamma.value = gamma;
+			fadeNodes.shade.value = shade;
+		}
+	}
+
 	const geometries = new Map();
 	const objects = new Map();
 
 	const lineGeometry = new THREE.BufferGeometry();
-	const lineMaterial = new THREE.LineBasicMaterial({ vertexColors: true });
+	const lineMaterial = withFade(new THREE.LineBasicMaterial({ vertexColors: true }));
 	const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
 	lines.frustumCulled = false;
 	lines.matrixAutoUpdate = false;
@@ -234,12 +362,14 @@ export function createDebugRenderer(b3, worldId, options) {
 	let lineCapacity = 0;
 
 	const pointGeometry = new THREE.BufferGeometry();
-	const pointMaterial = new THREE.PointsMaterial({ vertexColors: true, sizeAttenuation: false });
-	pointMaterial.onBeforeCompile = (shader) => {
-		shader.vertexShader = shader.vertexShader
-			.replace('#include <common>', '#include <common>\nattribute float aSize;')
-			.replace('gl_PointSize = size;', 'gl_PointSize = size * (aSize / 8.0);');
-	};
+	const pointMaterial = withFade(
+		new THREE.PointsMaterial({ vertexColors: true, sizeAttenuation: false }),
+		(shader) => {
+			shader.vertexShader = shader.vertexShader
+				.replace('#include <common>', '#include <common>\nattribute float aSize;')
+				.replace('gl_PointSize = size;', 'gl_PointSize = size * (aSize / 8.0);');
+		},
+	);
 	const points = new THREE.Points(pointGeometry, pointMaterial);
 	points.frustumCulled = false;
 	points.matrixAutoUpdate = false;
@@ -401,12 +531,14 @@ export function createDebugRenderer(b3, worldId, options) {
 		function addPart(geometry) {
 			owned.push(geometry);
 			if (solid) {
-				const mat = new THREE.MeshBasicMaterial({
-					side: THREE.DoubleSide,
-					polygonOffset: true,
-					polygonOffsetFactor: 1,
-					polygonOffsetUnits: 1,
-				});
+				const mat = withShading(
+					new THREE.MeshBasicMaterial({
+						side: THREE.DoubleSide,
+						polygonOffset: true,
+						polygonOffsetFactor: 1,
+						polygonOffsetUnits: 1,
+					}),
+				);
 				const mesh = new THREE.Mesh(geometry, mat);
 				mesh.matrixAutoUpdate = false;
 				// Fixed local geometry, so three's own bounding-sphere test is exact.
@@ -417,7 +549,7 @@ export function createDebugRenderer(b3, worldId, options) {
 			if (wire) {
 				const edges = new THREE.EdgesGeometry(geometry);
 				owned.push(edges);
-				const mat = new THREE.LineBasicMaterial();
+				const mat = withFade(new THREE.LineBasicMaterial());
 				const segs = new THREE.LineSegments(edges, mat);
 				segs.matrixAutoUpdate = false;
 				segs.frustumCulled = true;
@@ -777,6 +909,7 @@ export function createDebugRenderer(b3, worldId, options) {
 	function update() {
 		frame++;
 		syncDrawOpts();
+		syncFade();
 		// The camera and `drawingBounds` may not overlap. box3d wants a valid box.
 		b3.getDebugDraw(buf, worldId, boundsEmpty(drawOpts.drawingBounds) ? emptyOpts : drawOpts);
 		if (settings.shapes) syncShapes();

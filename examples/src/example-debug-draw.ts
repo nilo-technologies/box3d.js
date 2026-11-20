@@ -3,7 +3,9 @@
 // its own pad from restitution alone. Each Debug checkbox changes the overlay.
 // The Filter folder hides the category-2 post (mask 1) and drops the joint row
 // (it sits past drawingBounds.minZ). The Culling folder culls to the AABB of
-// the camera's view: freeze it, then orbit out to see the cut and its box. Disabled
+// the camera's view: freeze it, then orbit out to see the cut and its box. It can
+// also darken the overlay with distance, down to a share of its colour at
+// cullDistance. Disabled
 // bodies leave the broadphase, and a time-of-impact colour lasts a single
 // frame, so those two states are not in the scene.
 
@@ -666,6 +668,8 @@ const flags = [
 ] as const;
 for (const key of flags) show.add(settings, key);
 show.add(settings, 'shapeStyle', ['wireframe', 'solid', 'both']);
+// How much a solid face darkens as it turns from the light. 0 is flat colour.
+show.add(settings, 'solidShading', 0, 1, 0.05);
 
 const scale = app.gui.addFolder('Scale');
 scale.add(settings, 'forceScale', 0, 0.15, 0.005);
@@ -799,6 +803,16 @@ cullFolder
 		applyCulling();
 	});
 cullFolder.add(cullProxy, 'showBox').name('show cull box');
+// Shades by depth from the camera on screen, from distanceFadeMax at the camera
+// to distanceFadeMin at cullDistance, whether or not culling is on.
+cullFolder.add(settings, 'distanceFade').name('fade with distance');
+cullFolder
+	.add(settings, 'distanceFadeMax', 0.5, 2, 0.05)
+	.name('fade at camera');
+cullFolder
+	.add(settings, 'distanceFadeMin', 0, 1, 0.05)
+	.name('fade at cullDistance');
+applyCulling();
 // The live camera's box has its near face right at the camera and would crowd
 // the view, so draw it only when frozen (or for the Filter folder's
 // drawingBounds).

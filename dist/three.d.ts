@@ -37,6 +37,8 @@ export interface DebugMaterial {
 	side?: number;
 	needsUpdate: boolean;
 	onBeforeCompile?: (...args: any[]) => void;
+	/** Set under `three/webgpu`, which copies it to the node material it renders with. */
+	colorNode?: unknown;
 	dispose(): void;
 }
 
@@ -58,6 +60,10 @@ export interface DebugThree {
 	Quaternion: new (...args: any[]) => { setFromUnitVectors(a: unknown, b: unknown): unknown };
 	Vector3: new (...args: any[]) => { set(x: number, y: number, z: number): unknown };
 	DoubleSide: number;
+	/** Read to match the distance fade to the displayed colour. */
+	ColorManagement?: { enabled: boolean };
+	/** Present in `three/webgpu`. The distance fade builds a colour node from it. */
+	TSL?: any;
 }
 
 /** Structural stand-in for a three Camera: a `PerspectiveCamera` or `OrthographicCamera`. */
@@ -100,6 +106,13 @@ export interface DebugColorMap {
 export interface DebugRendererSettings {
 	shapes?: boolean;
 	shapeStyle?: 'wireframe' | 'solid' | 'both';
+	/**
+	 * Shades solid shapes by the way each face turns, from a fixed light above,
+	 * in front and to the right in world space. 0 is flat colour. A face turned
+	 * straight away from the light keeps `1 - solidShading` of its colour, so the
+	 * hue stays. Default 0.5. Edge lines are not shaded.
+	 */
+	solidShading?: number;
 	bounds?: boolean;
 	joints?: boolean;
 	jointExtras?: boolean;
@@ -133,6 +146,24 @@ export interface DebugRendererSettings {
 	 * frustum's AABB grows with it, so a far plane of 1000 culls very little.
 	 */
 	cullDistance?: number;
+	/**
+	 * Shade everything by its depth from the camera that renders it: the colour
+	 * scales by `distanceFadeMax` at the camera and falls linearly to
+	 * `distanceFadeMin` at `cullDistance` (or `camera.far`, when that is nearer
+	 * or `cullDistance` is not set) and beyond. Needs one of the two. Shapes,
+	 * lines and points all fade, per pixel. Default false.
+	 */
+	distanceFade?: boolean;
+	/**
+	 * The colour scale at the far end of `distanceFade`. Default 0.2. It scales
+	 * the colour as displayed, so 0.2 takes 0xff0000 to about 0x300000.
+	 */
+	distanceFadeMin?: number;
+	/**
+	 * The colour scale at the camera for `distanceFade`. Default 1.25, a quarter
+	 * brighter. A channel clips at full, so a channel already at 0xff stays there.
+	 */
+	distanceFadeMax?: number;
 	/**
 	 * How many `update` calls a shape that stops being drawn (culled, filtered
 	 * out, or destroyed) keeps its Three objects, hidden, before they are freed.

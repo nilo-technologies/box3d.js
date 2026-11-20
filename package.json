@@ -1,6 +1,6 @@
 {
   "name": "box3d.js",
-  "version": "0.4.0",
+  "version": "0.7.0",
   "description": "WebAssembly bindings for Nilo's fork of box3d, Erin Catto's 3D physics engine",
   "type": "module",
   "exports": {
@@ -43,6 +43,7 @@
     "build:debug": "node scripts/build.mjs --debug",
     "test": "node test/smoke.mjs",
     "bench:decomposition": "node test/bench-decomposition-cache.mjs",
+    "bench:decomposition:quality": "node test/bench-decomposition-quality.mjs",
     "bench:physics": "node test/bench-physics.mjs",
     "bench:physics:compare": "node test/bench-physics-compare.mjs",
     "docs:build": "node docs/build.js",
