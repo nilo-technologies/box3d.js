@@ -28,11 +28,12 @@
 // order in each reader still has to match the C++ packing order by hand.
 //
 // This file is a TEMPLATE, not linked directly. scripts/build.mjs reads bindings.cpp's
-// compiled _layoutMeta()/_outMeta() getters off a probe module and substitutes the two
-// placeholder tokens below (the LAYOUT stride table and the OUT-META reader list) with
-// literals, emitting build/facade.generated.js — which is what gets linked. So the
-// metadata still originates in bindings.cpp, but the shipped runtime never decodes those
-// strings. (Keep the raw tokens out of comments — the build substitutes them by name.)
+// compiled _layoutMeta()/_outMeta() getters off a probe module and substitutes the
+// placeholder tokens below (the LAYOUT stride table, the OUT-META reader list and
+// V-HACD's thread count) with literals, emitting build/facade.generated.js — which is
+// what gets linked. So the metadata still originates in bindings.cpp, but the shipped
+// runtime never decodes those strings. (Keep the raw tokens out of comments — the build
+// substitutes them by name.)
 
 // Tier strides, published by src/bindings.cpp's layout namespace (injected at build).
 const LAYOUT = __B3_LAYOUT__;
@@ -494,6 +495,12 @@ function getBodyPlaneResultAt( out, buf, i )
 //   const id = b3.createShapeId();
 //   for ( let i = 0; i < b3.getNumShapeIds( res ); i++ ) b3.getShapeIdAt( id, res, i );
 //
+// With a `surfaceMerge` option box3d's surface merge (b3MergeConvexPieces) decomposes the mesh
+// instead: neighboring pieces merge cheapest first, and a merge costs the depth of open space
+// the merged hull would seal, so a doorway stays open. It starts from the triangles of the mesh
+// and V-HACD does not run. How much a hull may seal is found by a sweep unless `sweep: false`
+// leaves it to `maxConcavity`.
+//
 // The blocking bindings live in src/bindings.cpp. The Promise variants below keep
 // the calling thread free while V-HACD runs:
 //
@@ -517,9 +524,15 @@ function canUseDecompositionWorker()
 		&& typeof URL.createObjectURL === 'function';
 }
 
+// A job is a decomposition, or with `sweep` set a b3SweepConvexDecomposition.
 function computeDecompositionNow( job )
 {
-	try { job.resolve( Module.b3ComputeConvexDecomposition( job.positions, job.indices, job.options ) ); }
+	try
+	{
+		job.resolve( job.sweep
+			? Module.b3SweepConvexDecomposition( job.positions, job.indices, job.options )
+			: Module.b3ComputeConvexDecomposition( job.positions, job.indices, job.options ) );
+	}
 	catch ( err ) { job.reject( err ); }
 }
 
@@ -547,9 +560,16 @@ ready.then(() => self.postMessage({ type: 'ready' }),
 self.onmessage = async ({ data }) => {
 	const b3 = await ready;
 	let packed;
-	try { packed = b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options); }
+	try {
+		packed = data.sweep
+			? b3.b3SweepConvexDecomposition(data.positions, data.indices, data.options)
+			: b3.b3ComputeConvexDecomposition(data.positions, data.indices, data.options);
+	}
 	catch (err) { self.postMessage({ type: 'error', id: data.id, message: String(err?.message ?? err) }); return; }
-	self.postMessage({ type: 'result', id: data.id, packed }, [packed.points.buffer, packed.offsets.buffer]);
+	// hand the hull buffers over instead of copying them
+	const d = data.sweep ? packed.decomposition : packed;
+	self.postMessage({ type: 'result', id: data.id, packed },
+		[d.points.buffer, d.offsets.buffer, ...(d.concavities ? [d.concavities.buffer] : [])]);
 };`;
 	const url = URL.createObjectURL( new Blob( [ src ], { type: 'text/javascript' } ) );
 	const w = { worker: null, pending: new Map(), nextId: 1, failed: false };
@@ -583,12 +603,74 @@ self.onmessage = async ({ data }) => {
 	return w;
 }
 
-// Promise of the packed decomposition, computed off the calling thread in ST browsers.
-function decomposeOffThread( positions, indices, options )
+// The checks the binding makes on its input, made here first. An error thrown inside wasm leaves
+// its frames behind: the stack space and the copies they held are never given back, and a
+// couple of hundred such errors corrupt the module. With `finite` (the surface merge) every
+// coordinate must also be finite.
+function checkDecompositionMesh( positions, indices, finite )
+{
+	const positionCount = positions?.length;
+	const indexCount = indices?.length;
+	if ( !Number.isInteger( positionCount ) || positionCount % 3 !== 0 ) throw new Error( 'box3d.js: positions length must be a multiple of 3' );
+	if ( !Number.isInteger( indexCount ) || indexCount % 3 !== 0 ) throw new Error( 'box3d.js: indices length must be a multiple of 3' );
+	if ( positionCount < 12 || indexCount < 12 ) throw new Error( 'box3d.js: mesh needs at least 4 vertices and 4 triangles' );
+	const vertexCount = positionCount / 3;
+	// The binding reads indices as a Uint32Array does
+	for ( let i = 0; i < indexCount; i++ )
+	{
+		if ( ( indices[ i ] >>> 0 ) >= vertexCount ) throw new Error( 'box3d.js: triangle index out of range' );
+	}
+	if ( finite )
+	{
+		for ( let i = 0; i < positionCount; i++ )
+		{
+			if ( !Number.isFinite( Math.fround( positions[ i ] ) ) ) throw new Error( 'box3d.js: positions must be finite' );
+		}
+	}
+}
+
+function checkPackedDecomposition( packed, finite )
+{
+	if ( packed === undefined || packed === null ) throw new Error( 'box3d.js: packed decomposition is required' );
+	const points = packed.points;
+	const offsets = packed.offsets;
+	const count = offsets?.length ?? 0;
+	if ( count === 0 || ( offsets[ 0 ] >>> 0 ) !== 0 ) throw new Error( 'box3d.js: packed offsets must start with 0' );
+	for ( let i = 1; i < count; i++ )
+	{
+		if ( ( offsets[ i ] >>> 0 ) < ( offsets[ i - 1 ] >>> 0 ) ) throw new Error( 'box3d.js: packed offsets must be non-decreasing' );
+	}
+	if ( ( offsets[ count - 1 ] >>> 0 ) * 3 !== ( points?.length ?? 0 ) ) throw new Error( 'box3d.js: packed offsets do not match points length' );
+	if ( finite )
+	{
+		for ( let i = 0; i < points.length; i++ )
+		{
+			if ( !Number.isFinite( Math.fround( points[ i ] ) ) ) throw new Error( 'box3d.js: packed points must be finite' );
+		}
+	}
+}
+
+// Does a decomposition with these options run the surface merge? As readDecompositionOptions.
+function surfaceMergeAsked( options )
+{
+	const given = ( v ) => v !== undefined && v !== null;
+	return given( options?.surfaceMerge ) ? !!options.surfaceMerge : given( options?.maxConcavity );
+}
+
+function checkBody( bodyId )
+{
+	if ( !Module.b3Body_IsValid( bodyId ) ) throw new Error( 'box3d.js: body is not valid' );
+}
+
+// Promise of the packed decomposition (or, with `sweep`, of b3SweepConvexDecomposition's result), computed off the
+// calling thread in ST browsers.
+function decomposeOffThread( positions, indices, options, sweep = false )
 {
 	return new Promise( ( resolve, reject ) =>
 	{
-		const job = { resolve, reject, positions, indices, options };
+		try { checkDecompositionMesh( positions, indices, sweep || surfaceMergeAsked( options ) ); }
+		catch ( err ) { reject( err ); return; }
+		const job = { resolve, reject, positions, indices, options, sweep };
 		if ( !canUseDecompositionWorker() ) { computeDecompositionNow( job ); return; }
 		decompositionWorker ??= startDecompositionWorker();
 		const w = decompositionWorker;
@@ -597,7 +679,7 @@ function decomposeOffThread( positions, indices, options )
 		w.pending.set( id, job );
 		try
 		{
-			w.worker.postMessage( { id, positions, indices, options } );
+			w.worker.postMessage( { id, positions, indices, options, sweep } );
 		}
 		catch ( err )
 		{
@@ -607,14 +689,16 @@ function decomposeOffThread( positions, indices, options )
 	} );
 }
 
-function runDecompositionJob( positions, indices, options, finish )
+function runDecompositionJob( positions, indices, options, sweep = false )
 {
 	return new Promise( ( resolve, reject ) =>
 	{
+		try { checkDecompositionMesh( positions, indices, sweep || surfaceMergeAsked( options ) ); }
+		catch ( err ) { reject( err ); return; }
 		const job = new Module.ConvexDecompositionJobImpl();
 		try
 		{
-			job.start( positions, indices, options );
+			job.start( positions, indices, options, sweep );
 		}
 		catch ( err )
 		{
@@ -629,7 +713,7 @@ function runDecompositionJob( positions, indices, options, finish )
 				setTimeout( poll, DECOMPOSITION_POLL_MS );
 				return;
 			}
-			try { resolve( finish( job ) ); }
+			try { resolve( job.takeResult() ); }
 			catch ( err ) { reject( err ); }
 			finally { job.delete(); }
 		};
@@ -637,10 +721,10 @@ function runDecompositionJob( positions, indices, options, finish )
 	} );
 }
 
-function decomposeAsync( positions, indices, options )
+function decomposeAsync( positions, indices, options, sweep = false )
 {
-	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options );
-	return runDecompositionJob( positions, indices, options, ( job ) => job.takeResult() );
+	if ( !Module.ConvexDecompositionJobImpl ) return decomposeOffThread( positions, indices, options, sweep );
+	return runDecompositionJob( positions, indices, options, sweep );
 }
 
 // --- convex decomposition cache ------------------------------------------------
@@ -654,7 +738,7 @@ function decomposeAsync( positions, indices, options )
 // `options.cacheKey` (e.g. an asset id) replaces the mesh hash entirely.
 
 const DECOMPOSITION_CACHE_LIMIT = 512;
-const DECOMPOSITION_KEY_VERSION = 'b3cd1';
+const DECOMPOSITION_KEY_VERSION = 'b3cd2';
 
 let decompositionCache = new Map(); // key -> Promise<packed>; Map order = LRU order
 let decompositionMeshHashes = new WeakMap(); // positions -> WeakMap<indices, { hash, positionsLength, indicesLength }>
@@ -745,20 +829,59 @@ function decompositionMeshHash( positions, indices )
 function b3ConvexDecompositionCacheKey( positions, indices, options )
 {
 	const o = options ?? {};
-	const num = ( v, fallback ) => ( v === undefined ? fallback : Number( v ) );
+	const num = ( v, fallback ) => ( v === undefined || v === null ? fallback : Number( v ) );
 	const mesh = o.cacheKey !== undefined && o.cacheKey !== null
 		? `id:${o.cacheKey}`
 		: `mesh:${decompositionMeshHash( positions, indices )}`;
+	const merge = decompositionMergeKey( o );
+	// Started from the mesh's triangles the surface merge does not run V-HACD, so the options
+	// that are V-HACD's alone change nothing
+	const vhacd = merge[ 0 ] === 'triangles'
+		? [ '-' ]
+		: [ Math.trunc( Math.max( 1000, num( o.resolution, 100000 ) ) ), num( o.minVolumePercentError, 1 ),
+			Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ), o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0 ];
+	// The merge reads a budget of 0 as none, V-HACD as 1. The merge keeps at most 44 vertices.
+	const budget = num( o.maxConvexHulls, 32 );
+	const vertices = Math.trunc( Math.min( 255, Math.max( 4, num( o.maxVerticesPerHull, 32 ) ) ) );
 	return [
 		DECOMPOSITION_KEY_VERSION,
 		mesh,
-		Math.trunc( Math.max( 1, num( o.maxConvexHulls, 32 ) ) ),
-		Math.trunc( Math.max( 1000, num( o.resolution, 100000 ) ) ),
-		Math.trunc( Math.min( 255, Math.max( 4, num( o.maxVerticesPerHull, 32 ) ) ) ),
-		num( o.minVolumePercentError, 1 ),
-		Math.trunc( Math.max( 1, num( o.maxRecursionDepth, 10 ) ) ),
-		o.shrinkWrap === undefined || o.shrinkWrap ? 1 : 0,
+		merge[ 0 ] === '-' ? Math.trunc( Math.max( 1, budget ) ) : Math.trunc( Math.min( 2147483647, Math.max( 0, budget ) ) || 0 ),
+		merge[ 0 ] === 'triangles' ? Math.min( 44, vertices ) : vertices,
+		...vhacd,
+		...merge,
 	].join( '|' );
+}
+
+// sweepStep as the binding reads it: -1 to let the sweep choose, a NaN falls to -1
+function sweepStepKey( value )
+{
+	const step = Math.min( 63, Math.max( -1, value === undefined || value === null ? -1 : Number( value ) ) );
+	return Number.isNaN( step ) ? -1 : Math.trunc( step ) + 0;
+}
+
+// The surface merge's part of the key. It is off unless `surfaceMerge` or, failing that,
+// `maxConcavity` asks for it, and then starts from the mesh's triangles. As in the binding, a NaN falls to the lower bound and a length is held to 3e38 as
+// a float. The sweep is on unless turned off, the engine
+// reads a weight of 0 as 1, and without the sweep its range, step count and weight change nothing.
+function decompositionMergeKey( o )
+{
+	const given = ( v ) => v !== undefined && v !== null;
+	if ( !( given( o.surfaceMerge ) ? o.surfaceMerge : given( o.maxConcavity ) ) ) return [ '-' ];
+	const clamp = ( v, fallback, lo, hi ) => Math.min( hi, Math.max( lo, given( v ) ? Number( v ) : fallback ) ) || lo;
+	const key = [
+		'triangles',
+		Math.fround( clamp( o.maxConcavity, 0, 0, 3e38 ) ),
+		Math.trunc( clamp( o.concavitySamples, 8192, 64, 1048576 ) ),
+	];
+	if ( given( o.sweep ) && !o.sweep ) return [ ...key, 'fixed' ];
+	return [
+		...key,
+		Math.fround( clamp( o.minConcavity, 0, 0, 3e38 ) ),
+		Math.trunc( clamp( o.sweepSteps, 9, 1, 64 ) ),
+		Math.fround( clamp( o.hullWeight, 1, 0, 3e38 ) ) || 1,
+		sweepStepKey( o.sweepStep ),
+	];
 }
 
 function cachedDecomposition( positions, indices, options )
@@ -800,8 +923,11 @@ function b3ComputeConvexDecompositionAsync( positions, indices, options )
 {
 	if ( options?.cache === false ) return decomposeAsync( positions, indices, options );
 	// callers get their own copy, so editing the result can't corrupt the cache
-	return cachedDecomposition( positions, indices, options ).then( ( packed ) =>
-		( { points: packed.points.slice(), offsets: packed.offsets.slice() } ) );
+	return cachedDecomposition( positions, indices, options ).then( ( packed ) => ( {
+		points: packed.points.slice(),
+		offsets: packed.offsets.slice(),
+		...( packed.concavities && { concavities: packed.concavities.slice(), maxConcavity: packed.maxConcavity } ),
+	} ) );
 }
 
 function assertBodyStillValid( bodyId )
@@ -820,6 +946,26 @@ function b3CreateConvexDecompositionShapesAsync( bodyId, shapeDef, positions, in
 		assertBodyStillValid( bodyId );
 		return Module.b3CreateConvexDecompositionShapesFromPacked( bodyId, shapeDef, packed, options?.maxVerticesPerHull );
 	} );
+}
+
+// --- convex decomposition sweep ------------------------------------------------
+// The surface merge finds its limit with a sweep: it merges its pieces, by default the
+// triangles of the mesh, at a series of loosening limits in one pass and keeps the step with
+// the best trade between few hulls and little sealed (b3MergeConvexPieces in the engine). A decomposition with `surfaceMerge` gets
+// that step. b3SweepConvexDecomposition is the same decomposition returned with what the sweep
+// saw, to see why a hull count was chosen or to tune the range:
+//
+//   const sweep = b3.b3SweepConvexDecomposition( positions, indices );
+//   for ( const { maxConcavity, hullCount, sealedDepth } of sweep.steps ) { ... }
+//   b3.b3CreateConvexDecompositionShapesFromPacked( body, shapeDef, sweep.decomposition );
+
+// The same kept off the calling thread where it can be: on a pthread in the multithreaded
+// builds, in the decomposition worker in single-threaded browser builds. In single-threaded
+// Node it runs on the calling thread before the Promise resolves. It is not cached: a
+// decomposition with `surfaceMerge` through b3ComputeConvexDecompositionAsync is.
+function b3SweepConvexDecompositionAsync( positions, indices, options )
+{
+	return decomposeAsync( positions, indices, options, true );
 }
 
 function b3PackConvexDecomposition( parts )
@@ -1301,12 +1447,69 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 	const rawShapes = Module.b3CreateConvexDecompositionShapes;
 	const rawShapesFromPacked = Module.b3CreateConvexDecompositionShapesFromPacked;
 	const rawCompound = Module.b3CreateDecompositionCompound;
-	Module.b3ComputeConvexDecomposition = ( positions, indices, options ) => rawCompute( positions, indices, options );
+	const rawMerge = Module.b3MergeConvexDecomposition;
+	const rawSweep = Module.b3SweepConvexDecomposition;
+	// Each checks its input before it enters wasm: see checkDecompositionMesh.
+	let blockingOptions = ( options ) => options;
+	Module.b3ComputeConvexDecomposition = ( positions, indices, options ) =>
+	{
+		checkDecompositionMesh( positions, indices, surfaceMergeAsked( options ) );
+		return rawCompute( positions, indices, blockingOptions( options ) );
+	};
 	Module.b3CreateConvexDecompositionShapes = ( bodyId, shapeDef, positions, indices, options ) =>
-		rawShapes( bodyId, shapeDef, positions, indices, options );
+	{
+		checkBody( bodyId );
+		checkDecompositionMesh( positions, indices, surfaceMergeAsked( options ) );
+		return rawShapes( bodyId, shapeDef, positions, indices, blockingOptions( options ) );
+	};
 	Module.b3CreateConvexDecompositionShapesFromPacked = ( bodyId, shapeDef, packed, maxVerticesPerHull ) =>
-		rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
-	Module.b3CreateDecompositionCompound = ( packed, material ) => rawCompound( packed, material );
+	{
+		checkBody( bodyId );
+		checkPackedDecomposition( packed, false );
+		return rawShapesFromPacked( bodyId, shapeDef, packed, maxVerticesPerHull );
+	};
+	Module.b3CreateDecompositionCompound = ( packed, material ) =>
+	{
+		checkPackedDecomposition( packed, false );
+		return rawCompound( packed, material );
+	};
+	Module.b3MergeConvexDecomposition = ( positions, indices, packed, options ) =>
+	{
+		checkDecompositionMesh( positions, indices, true );
+		checkPackedDecomposition( packed, true );
+		return rawMerge( positions, indices, packed, options );
+	};
+	Module.b3SweepConvexDecomposition = ( positions, indices, options ) =>
+	{
+		checkDecompositionMesh( positions, indices, true );
+		return rawSweep( positions, indices, blockingOptions( options ) );
+	};
+
+	// Threaded builds start a pool of threads as they load: `pthreadPoolSize` in the
+	// factory's options, 4 by default. A world, a recording player and a blocking V-HACD
+	// run with useThreads take their threads synchronously and join them when done, so
+	// those threads must come from the pool: one made on demand starts only after this
+	// thread returns to its event loop, and joining it first never returns. So a world or
+	// player steps on at most one worker per idle pool thread plus the calling thread
+	// (box3d steps a world to the same bits at any worker count, so only speed changes),
+	// and a blocking V-HACD run without enough idle threads runs without its own. An
+	// async decomposition's thread, and V-HACD's own under it, may start on demand.
+	if ( typeof PThread !== 'undefined' )
+	{
+		const idleThreads = () => PThread.unusedWorkers.length;
+		const workersFor = ( count ) => ( count > 1 ? Math.min( count, idleThreads() + 1 ) : count );
+		const VHACD_THREADS = __B3_VHACD_THREADS__;
+		const rawCreateWorld = Module.b3CreateWorld;
+		const rawCreatePlayer = Module.b3RecPlayer_CreateFromRecording;
+		const rawSetPlayerWorkers = Module.b3RecPlayer_SetWorkerCount;
+		Module.b3CreateWorld = ( def ) =>
+			rawCreateWorld( def.workerCount > 1 ? { ...def, workerCount: workersFor( def.workerCount ) } : def );
+		Module.b3RecPlayer_CreateFromRecording = ( recording, workerCount ) =>
+			rawCreatePlayer( recording, workersFor( workerCount ) );
+		Module.b3RecPlayer_SetWorkerCount = ( player, count ) => rawSetPlayerWorkers( player, workersFor( count ) );
+		blockingOptions = ( options ) =>
+			( options?.useThreads && idleThreads() < VHACD_THREADS ? { ...options, useThreads: false } : options );
+	}
 
 	// Every wheel's chassis-space pose and raw spin in one call. The raw writer packs the records
 	// into a static wasm scratch (stable address, so resolved once); copy them into the caller's
@@ -1356,7 +1559,7 @@ if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
 		createWheeledVehicleStateBuffer, getWheeledVehicleStateData, destroyWheeledVehicleStateBuffer, getNumWheeledVehicleWheels,
 		createWheeledVehicleStateRecord, getWheeledVehicleStateAt, createWheeledVehicleWheelRecord, getWheeledVehicleWheelAt,
 		B3_MAX_VEHICLE_WHEELS: MAX_WHEELED_VEHICLE_WHEELS, B3_WHEELED_VEHICLE_WHEEL_LOCAL_STRIDE: WHEELED_VEHICLE_WHEEL_LOCAL,
-		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync,
+		b3ComputeConvexDecompositionAsync, b3CreateConvexDecompositionShapesAsync, b3SweepConvexDecompositionAsync,
 		b3PackConvexDecomposition, b3UnpackConvexDecomposition,
 		b3ConvexDecompositionCacheKey, b3ClearConvexDecompositionCache, b3GetConvexDecompositionCacheStats,
 	} );

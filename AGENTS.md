@@ -40,12 +40,18 @@ pnpm test           # smoke tests against dist/
 pnpm docs:build     # regenerates README.md from docs/README.template.md
 pnpm docs:check     # type-checks doc snippets
 pnpm check          # biome lint + format check for examples/src
+pnpm bench:decomposition:quality   # V-HACD's merge against the surface merge (surfaceMerge)
 ```
 
 ## Vehicle presets
 
 - `src/wheeled-vehicles.js` (with `src/wheeled-vehicles.d.ts`, shipped as `box3d.js/wheeled-vehicles`) holds the vehicle presets: the four originals and a 45 car matrix (sports, rally, super x realism 100/75/50/25/0 x fwd/rwd/awd), built in layers (car, then drivetrain, then realism level). The metrics and laps scripts read `src/wheeled-vehicles.js` directly, so tuning needs no rebuild, but `dist/wheeled-vehicles.mjs` and `dist/wheeled-vehicles.d.ts` are plain copies that must be refreshed before committing (`pnpm build` does it; `pnpm test` fails on a stale copy).
 - To build or tune a car, follow the skill in `.claude/skills/vehicle-tuning/SKILL.md`, and check the result with `node examples/scripts/vehicle-metrics.mjs` (`--preset <name>`, `--car <name>`, `--all`, or `--file <module>`). Every matrix preset must pass it. For how easy a car is to drive with a keyboard, run `node examples/scripts/vehicle-wasd.mjs --car <name>`: a WASD driver through `createSteeringLimiter`, reporting the highest clean cornering pace and how the car fails above it. On the race tracks, `node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset sports-50-rwd` (add `--keys` for the keyboard driver).
+
+## Convex decomposition
+
+- Without the surface merge, `b3ComputeConvexDecomposition` and friends run V-HACD (`vendor/v-hacd`). With `surfaceMerge: true`, or a `maxConcavity` alone, the engine's `b3MergeConvexPieces` (`vendor/box3d/src/convex_merge.c`) decomposes the mesh instead, merging pieces against the mesh surface instead of by volume. It starts from the triangles of the mesh (`b3ConvexMergeDef::seedTriangles`, which the bindings set, not an option) and V-HACD does not run. By default the merge finds its limit with a sweep (`b3ConvexMergeDef::enableSweep`); `sweep: false` merges once, to `maxConcavity`. `b3MergeConvexDecomposition` runs the merge on its own over the pieces it is handed, and `b3SweepConvexDecomposition` is a decomposition with the merge on, returned with the steps of the sweep. The bindings read the options, fill in the defaults and clamp them (`readMergeOptions` in `src/bindings.cpp`, mirrored for the cache key by `decompositionMergeKey` in `src/facade.js`, which must change together). The engine does the rest: the range that follows the mesh size when `minConcavity` or `maxConcavity` is left out, the sweep, and the choice of step.
+- `test/bench-decomposition-quality.mjs` compares the surface merge with V-HACD on the procedural meshes in `test/decomposition-meshes.mjs`, with the metrics in `test/decomposition-metrics.mjs` (hull count, time, deepest open space sealed, volume over, missing, and overlap between hulls). Run it before and after touching either merge. `--sweep` prints each mesh's sweep and the step kept. `--dump <dir>` writes each result as JSON, and `node examples/scripts/decomposition-screenshots.mjs <dir> <out>` draws them side by side.
 
 ## Conventions
 

@@ -7,22 +7,27 @@ import type { Box3DModule } from 'box3d.js';
 //   Cross-Origin-Embedder-Policy: require-corp
 const isolated = self.crossOriginIsolated === true;
 
-// Pick the right build at runtime; fall back gracefully when isolation is absent
-const factory = isolated
-    ? (await import('box3d.js/mt-inline')).default
-    : (await import('box3d.js/inline')).default;
+// The workers a world will step on, the calling thread counted.
+const hwThreads = navigator.hardwareConcurrency ?? 4;
+// At most 32, box3d's limit (B3_MAX_WORKERS): every worker past the first is a thread started as the build loads.
+const workerCount = isolated ? Math.min(32, Math.max(2, hwThreads - 1)) : 0;
 
-const b3: Box3DModule = await factory();
+// Pick the right build at runtime; fall back gracefully when isolation is absent.
+// The threaded build starts its threads as it loads (pthreadPoolSize, 4 by default):
+// one for each worker past the calling thread.
+const b3: Box3DModule = isolated
+    ? await (await import('box3d.js/mt-inline')).default({ pthreadPoolSize: workerCount - 1 })
+    : await (await import('box3d.js/inline')).default();
 /* SNIPPET_END: mt-init */
 
 /* SNIPPET_START: mt-world */
 const worldDef = b3.b3DefaultWorldDef();
 worldDef.gravity = [0, -10, 0];
 
-// Set workerCount to enable box3d's internal multi-threaded solver.
-// box3d clamps this to [1, 32] (B3_MAX_WORKERS). Leave at 0 for single-threaded.
-const hwThreads = navigator.hardwareConcurrency ?? 4;
-worldDef.workerCount = isolated ? Math.max(2, hwThreads - 1) : 0;
+// Set workerCount to enable box3d's internal multi-threaded solver. box3d clamps
+// it to [1, 32] (B3_MAX_WORKERS), and the threaded build to the pool's idle
+// threads plus the calling one. Leave at 0 for single-threaded.
+worldDef.workerCount = workerCount;
 
 const world = b3.b3CreateWorld(worldDef);
 /* SNIPPET_END: mt-world */

@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DynamicMover } from '../dist/character.mjs';
 import { createDebugRenderer } from '../dist/three.mjs';
+import { MESHES } from './decomposition-meshes.mjs';
+import { hullPlanes } from './decomposition-metrics.mjs';
 
 function fallingBox( b3 )
 {
@@ -571,6 +573,297 @@ async function convexDecomposition( b3, extraOptions = {} )
 	return { pieces: res.count, restY };
 }
 
+// The surface merge (surfaceMerge, b3MergeConvexDecomposition): a wall with a doorway keeps
+// its doorway open at a fraction of V-HACD's hull count, a hull budget is met by force, and
+// the Promise variants and the cache carry the options. Here the merge goes to a limit given
+// (sweep: false). decompositionSweep below covers the default, where the limit is found.
+async function surfaceMerge( b3, extraOptions = {} )
+{
+	const { positions, indices } = MESHES.doorway.mesh();
+	const base = { resolution: 50000, ...extraOptions };
+	const fixed = { ...base, maxConcavity: 0.05, sweep: false };
+	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
+		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
+	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ], lintel = [ 0, 2.6, 0 ];
+
+	const volume = b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 32 } );
+	assert.equal( volume.concavities, undefined, 'no concavities without the surface merge' );
+	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...base, maxConvexHulls: 32, maxConcavity: 0.05, surfaceMerge: false } ).points ),
+		Array.from( volume.points ), 'surfaceMerge: false keeps V-HACD\'s merge whatever else is given' );
+	const merged = b3.b3ComputeConvexDecomposition( positions, indices, { ...fixed, maxConvexHulls: 32 } );
+	const count = merged.offsets.length - 1;
+	assert.ok( count >= 3 && count < volume.offsets.length - 1, `surface merge needs fewer hulls (${count} against ${volume.offsets.length - 1})` );
+	assert.ok( merged.concavities instanceof Float32Array && merged.concavities.length === count, 'one concavity per piece' );
+	assert.equal( merged.maxConcavity, Math.max( ...merged.concavities ), 'maxConcavity is the largest concavity' );
+	assert.ok( merged.maxConcavity < 0.25, `merged hulls seal little (${merged.maxConcavity.toFixed( 3 )} m)` );
+	assert.ok( covers( merged, wall ) && covers( merged, lintel ), 'the wall is covered' );
+	assert.ok( !covers( merged, doorway ), 'the doorway stays open' );
+
+	// a hull budget under what the limit leaves is met by forced merges, and the result says what they sealed
+	const forced = b3.b3ComputeConvexDecomposition( positions, indices, { ...fixed, maxConvexHulls: 1 } );
+	assert.equal( forced.offsets.length - 1, 1, 'maxConvexHulls is a hard cap' );
+	assert.ok( forced.maxConcavity > 0.8 && covers( forced, doorway ), `one hull seals the doorway (${forced.maxConcavity.toFixed( 2 )} m)` );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...base, surfaceMerge: true, maxConvexHulls: 1 } ).offsets.length - 1, 1,
+		'and holds at every step of a sweep' );
+
+	// the merge on its own, over a packed decomposition from anywhere
+	const again = b3.b3MergeConvexDecomposition( positions, indices, volume, { maxConcavity: 0.05, sweep: false } );
+	assert.ok( again.offsets.length - 1 <= count + 2 && !covers( again, doorway ), 'merging V-HACD output keeps the doorway open' );
+	assert.equal( b3.b3MergeConvexDecomposition( positions, indices, volume, { maxConvexHulls: 2 } ).offsets.length - 1, 2, 'merge meets a budget' );
+	const swept = b3.b3MergeConvexDecomposition( positions, indices, volume );
+	assert.ok( swept.offsets.length - 1 >= 3 && swept.offsets.length - 1 <= again.offsets.length - 1 && !covers( swept, doorway ),
+		'options may be omitted: the limit is found by a sweep' );
+	assert.throws( () => b3.b3MergeConvexDecomposition( positions, indices ), /packed decomposition is required/, 'merge needs a decomposition' );
+	assert.throws( () => b3.b3MergeConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), volume ),
+		/out of range/, 'merge checks the mesh' );
+
+	// shapes straight from a merged decomposition
+	const world = groundedWorld( b3 );
+	const body = dynamicBody( b3, world, 5 );
+	const shapes = b3.b3CreateConvexDecompositionShapes( body, b3.b3DefaultShapeDef(), positions, indices, fixed );
+	assert.equal( shapes.count, count, 'one hull shape per merged piece' );
+	assert.equal( shapes.skipped, 0, 'no merged piece skipped' );
+
+	// the Promise variants run the merge too, and the cache keeps merged and unmerged apart
+	b3.b3ClearConvexDecompositionCache();
+	const options = { ...fixed, maxConvexHulls: 32 };
+	const asyncMerged = await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	assert.equal( asyncMerged.offsets.length - 1, count, 'async compute merges the same' );
+	assert.deepEqual( Array.from( asyncMerged.points ), Array.from( merged.points ), 'async compute yields the same hulls' );
+	assert.ok( asyncMerged.concavities instanceof Float32Array && asyncMerged.maxConcavity === merged.maxConcavity, 'async compute carries the concavities' );
+	const cached = await b3.b3ComputeConvexDecompositionAsync( positions, indices, options );
+	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the merged decomposition is cached' );
+	assert.deepEqual( Array.from( cached.concavities ), Array.from( merged.concavities ), 'a cache hit carries the concavities' );
+	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, o );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( {} ), 'maxConcavity turns the merge on, and changes the key' );
+	assert.notEqual( key( { surfaceMerge: true } ), key( {} ), 'so does surfaceMerge' );
+	assert.equal( key( { surfaceMerge: false, maxConcavity: 0.05 } ), key( {} ), 'surfaceMerge: false is no merge' );
+	assert.equal( key( { surfaceMerge: null, maxConcavity: 0.05 } ), key( { maxConcavity: 0.05 } ), 'a null surfaceMerge is not given' );
+	assert.equal( key( { surfaceMerge: true, maxConcavity: 0.05 } ), key( { maxConcavity: 0.05 } ), 'a limit alone asks for the merge' );
+	assert.notEqual( key( { maxConcavity: 0 } ), key( {} ), 'a zero limit is still a merge' );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.1 } ), 'the limit is part of the key' );
+	assert.equal( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 8192 } ), 'the default sample count is normalized' );
+	assert.notEqual( key( { maxConcavity: 0.05 } ), key( { maxConcavity: 0.05, concavitySamples: 1000 } ), 'the sample count is part of the key' );
+	assert.equal( key( { concavitySamples: 1000, minConcavity: 0.1, sweepSteps: 3, hullWeight: 2, sweep: false } ), key( {} ), 'the merge\'s options mean nothing without it' );
+	assert.equal( key( { maxConcavity: NaN } ), key( { maxConcavity: 0 } ), 'a NaN limit is zero, as in the binding' );
+	assert.equal( key( { maxConcavity: -1 } ), key( { maxConcavity: 0 } ), 'a negative limit is zero' );
+	assert.equal( key( { maxConcavity: Infinity } ), key( { maxConcavity: 3e38 } ), 'the limit is held to 3e38' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: NaN } ), key( { maxConcavity: 0.05, concavitySamples: 64 } ), 'a NaN sample count is the minimum' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: 1e9 } ), key( { maxConcavity: 0.05, concavitySamples: 1048576 } ), 'the sample count is clamped' );
+	assert.equal( key( { maxConcavity: 0.05, concavitySamples: null } ), key( { maxConcavity: 0.05 } ), 'a null sample count is the default' );
+	// the sweep: on by default, and its range, step count and weight only count while it is on
+	const on = { surfaceMerge: true };
+	assert.equal( key( on ), key( { ...on, sweep: true, minConcavity: 0, maxConcavity: 0, sweepSteps: 9, hullWeight: 1 } ), 'the sweep\'s defaults are normalized' );
+	assert.equal( key( on ), key( { ...on, sweep: null, minConcavity: null, sweepSteps: null, hullWeight: null } ), 'null options are the defaults' );
+	assert.notEqual( key( on ), key( { ...on, sweep: false } ), 'the sweep is part of the key' );
+	assert.notEqual( key( on ), key( { ...on, minConcavity: 0.1 } ), 'so is its tightest limit' );
+	assert.notEqual( key( on ), key( { ...on, sweepSteps: 5 } ), 'its step count' );
+	assert.notEqual( key( on ), key( { ...on, hullWeight: 2 } ), 'and its weight' );
+	assert.equal( key( { ...on, sweep: false } ), key( { ...on, sweep: false, minConcavity: 0.1, sweepSteps: 5, hullWeight: 2 } ), 'which mean nothing without the sweep' );
+	assert.equal( key( { ...on, sweepSteps: 0 } ), key( { ...on, sweepSteps: 1 } ), 'the step count is clamped below' );
+	assert.equal( key( { ...on, sweepSteps: NaN } ), key( { ...on, sweepSteps: 1 } ), 'a NaN step count is the minimum' );
+	assert.equal( key( { ...on, sweepSteps: 1000 } ), key( { ...on, sweepSteps: 64 } ), 'and above' );
+	assert.equal( key( { ...on, sweepSteps: 3.9 } ), key( { ...on, sweepSteps: 3 } ), 'and truncated' );
+	assert.equal( key( { ...on, hullWeight: 0 } ), key( on ), 'a weight of zero counts as 1, as in the engine' );
+	assert.equal( key( { ...on, hullWeight: -3 } ), key( on ), 'so does a negative one' );
+	assert.equal( key( { ...on, hullWeight: NaN } ), key( on ), 'and one that is not a number' );
+	b3.b3ClearConvexDecompositionCache();
+
+	b3.b3DestroyWorld( world );
+	return { volumeHulls: volume.offsets.length - 1, mergedHulls: count };
+}
+
+// The sweep: by default the surface merge finds its limit. The mesh's triangles are merged at a
+// series of loosening limits in one pass and one step is kept. Most of this runs on a torus,
+// which has hulls to lose step by step. The end covers a wall with a doorway, which comes apart
+// exactly. b3SweepConvexDecomposition returns the decomposition with what the sweep saw.
+async function decompositionSweep( b3, extraOptions = {} )
+{
+	const { positions, indices } = MESHES.doorway.mesh();
+	const torus = MESHES.torus.mesh();
+	const base = { ...extraOptions };
+	const covers = ( packed, point ) => b3.b3UnpackConvexDecomposition( packed ).some( ( piece ) =>
+		hullPlanes( piece ).every( ( q ) => q[ 0 ] * point[ 0 ] + q[ 1 ] * point[ 1 ] + q[ 2 ] * point[ 2 ] - q[ 3 ] <= 1e-4 ) );
+	const doorway = [ 0, 1, 0 ], wall = [ -1.2, 1, 0 ];
+	const hole = [ 0, 0, 0 ], tube = [ 1, 0, 0 ];
+	const sweepOf = ( options ) => b3.b3SweepConvexDecomposition( torus.positions, torus.indices, { ...base, ...options } );
+
+	// defaults: 9 limits from 0.5% to 8% of the bounding box diagonal, 1.41 apart
+	const sweep = sweepOf( {} );
+	assert.equal( sweep.steps.length, 9, 'nine steps by default' );
+	const lo = [ 0, 1, 2 ].map( ( k ) => Math.min( ...torus.positions.filter( ( _, i ) => i % 3 === k ) ) );
+	const hi = [ 0, 1, 2 ].map( ( k ) => Math.max( ...torus.positions.filter( ( _, i ) => i % 3 === k ) ) );
+	const diagonal = Math.hypot( hi[ 0 ] - lo[ 0 ], hi[ 1 ] - lo[ 1 ], hi[ 2 ] - lo[ 2 ] );
+	assert.ok( Math.abs( sweep.steps[ 0 ].maxConcavity - 0.005 * diagonal ) < 1e-5, 'the sweep starts at 0.5% of the diagonal' );
+	assert.ok( Math.abs( sweep.steps[ 8 ].maxConcavity - 0.08 * diagonal ) < 1e-5, 'and ends at 8%' );
+	assert.equal( sweep.pieceCount, torus.indices.length / 3, 'the merge starts from the triangles' );
+	sweep.steps.forEach( ( step, i ) =>
+	{
+		assert.deepEqual( Object.keys( step ).sort(), [ 'hullCount', 'maxConcavity', 'sealedDepth' ], `step ${i}: a limit, a hull count and a depth` );
+		if ( i > 0 )
+		{
+			assert.ok( step.maxConcavity > sweep.steps[ i - 1 ].maxConcavity, `step ${i}: the limit loosens` );
+			assert.ok( step.hullCount <= sweep.steps[ i - 1 ].hullCount, `step ${i}: the hull count never rises` );
+			assert.ok( step.sealedDepth >= sweep.steps[ i - 1 ].sealedDepth, `step ${i}: the sealed depth never falls` );
+		}
+	} );
+	assert.ok( sweep.steps[ 0 ].hullCount > sweep.steps[ 8 ].hullCount, 'loosening the limit saves hulls' );
+
+	// the step kept, and its hulls
+	const best = sweep.steps[ sweep.best ], kept = sweep.decomposition;
+	assert.ok( best.hullCount >= 4 && best.hullCount < sweep.steps[ 0 ].hullCount, `the step kept sits inside the sweep (${best.hullCount} hulls)` );
+	assert.ok( sweep.best === 0 || best.hullCount < sweep.steps[ sweep.best - 1 ].hullCount, 'it is the first step at its hull count' );
+	assert.equal( kept.offsets.length - 1, best.hullCount, 'the decomposition is that step\'s' );
+	assert.equal( kept.maxConcavity, best.sealedDepth, 'sealedDepth is what its hulls seal' );
+	assert.ok( kept.concavities instanceof Float32Array && kept.concavities.length === best.hullCount, 'it carries concavities' );
+	assert.ok( covers( kept, tube ), 'the tube is covered' );
+	assert.ok( !covers( kept, hole ), 'the hole stays open' );
+
+	// a decomposition with surfaceMerge is that step, and ready to use
+	const auto = b3.b3ComputeConvexDecomposition( torus.positions, torus.indices, { ...base, surfaceMerge: true } );
+	assert.deepEqual( Array.from( auto.points ), Array.from( kept.points ), 'surfaceMerge sweeps by default and gives the step kept' );
+	assert.deepEqual( Array.from( auto.offsets ), Array.from( kept.offsets ), 'hull for hull' );
+	assert.equal( auto.steps, undefined, 'a packed decomposition does not carry the steps' );
+	const world = groundedWorld( b3 );
+	const shapes = b3.b3CreateConvexDecompositionShapes( dynamicBody( b3, world, 5 ), b3.b3DefaultShapeDef(), torus.positions, torus.indices, { ...base, surfaceMerge: true } );
+	assert.equal( shapes.count, best.hullCount, 'one hull shape per hull of the step kept' );
+	b3.b3DestroyWorld( world );
+
+	// the range, the step count and the weight of hulls
+	const ranged = sweepOf( { minConcavity: 0.5, maxConcavity: 2, sweepSteps: 3, hullWeight: 100 } );
+	assert.equal( ranged.steps.length, 3, 'sweepSteps limits' );
+	assert.ok( ranged.steps[ 0 ].maxConcavity === 0.5 && Math.abs( ranged.steps[ 1 ].maxConcavity - 1 ) < 1e-6 && ranged.steps[ 2 ].maxConcavity === 2,
+		'spread geometrically from minConcavity to maxConcavity' );
+	assert.equal( ranged.steps[ 2 ].hullCount, 1, 'a limit wider than the hole leaves one hull' );
+	assert.ok( ranged.best === 2 && covers( ranged.decomposition, hole ), 'a heavy hull weight keeps it, hole sealed' );
+	const light = sweepOf( { minConcavity: 0.02, maxConcavity: 2, sweepSteps: 3, hullWeight: 0.01 } );
+	assert.ok( light.best === 0 && !covers( light.decomposition, hole ), 'a light one keeps the first step, hole open' );
+	const fewer = sweepOf( { hullWeight: 4 } ), closer = sweepOf( { hullWeight: 0.25 } );
+	assert.ok( fewer.steps[ fewer.best ].hullCount <= best.hullCount && best.hullCount <= closer.steps[ closer.best ].hullCount,
+		'hullWeight leans the step kept toward fewer hulls or a closer fit' );
+
+	// maxConcavity caps a sweep, and a budget holds at every step
+	const capped = sweepOf( { maxConcavity: 0.05 } );
+	assert.ok( capped.steps.length === 9 && Math.abs( capped.steps[ 8 ].maxConcavity - 0.05 ) < 1e-7, 'maxConcavity is the loosest limit tried' );
+	const tight = sweepOf( { maxConcavity: 0.01 } );
+	assert.ok( tight.steps.length === 1 && Math.abs( tight.steps[ 0 ].maxConcavity - 0.01 ) < 1e-7, 'under the tightest limit it is the only one' );
+	assert.ok( sweepOf( { maxConvexHulls: 2 } ).steps.every( ( s ) => s.hullCount <= 2 ), 'a hull budget holds at every step' );
+	assert.ok( sweepOf( { surfaceMerge: false } ).steps.length === 9, 'the surface merge is always on here' );
+
+	// the step count is clamped to [1, 64], and one step, or no sweep, is one merge
+	const one = sweepOf( { sweepSteps: 1 } );
+	assert.ok( one.steps.length === 1 && one.best === 0, 'one step, which is the one kept' );
+	for ( const sweepSteps of [ 0, -3, 0.5, NaN ] ) assert.equal( sweepOf( { sweepSteps } ).steps.length, 1, `sweepSteps: ${sweepSteps} is one step` );
+	assert.equal( sweepOf( { sweepSteps: 3.9 } ).steps.length, 3, 'a fractional count is truncated' );
+	assert.equal( sweepOf( { sweepSteps: 1000 } ).steps.length, 64, 'and held to 64' );
+	assert.equal( sweepOf( { sweepSteps: null } ).steps.length, 9, 'null is the default' );
+	const fixed = sweepOf( { sweep: false, maxConcavity: 0.05 } );
+	assert.ok( fixed.steps.length === 1 && fixed.best === 0 && Math.abs( fixed.steps[ 0 ].maxConcavity - 0.05 ) < 1e-7, 'without the sweep the limit given is the one step' );
+	assert.deepEqual( Array.from( fixed.decomposition.points ),
+		Array.from( b3.b3ComputeConvexDecomposition( torus.positions, torus.indices, { ...base, maxConcavity: 0.05, sweep: false } ).points ),
+		'and the decomposition is the merge to it' );
+	assert.throws( () => b3.b3SweepConvexDecomposition( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'the mesh is checked' );
+
+	// the Promise variant gives the same, and a swept decomposition is cached like any other
+	const asyncSweep = await b3.b3SweepConvexDecompositionAsync( torus.positions, torus.indices, base );
+	assert.deepEqual( asyncSweep.steps, sweep.steps, 'async sweep: the same steps' );
+	assert.equal( asyncSweep.best, sweep.best, 'async sweep: the same step kept' );
+	assert.deepEqual( Array.from( asyncSweep.decomposition.points ), Array.from( kept.points ), 'async sweep: the same hulls' );
+	await assert.rejects( b3.b3SweepConvexDecompositionAsync( positions, new Uint32Array( [ 0, 1, 9999, 0, 1, 2, 0, 2, 3, 1, 2, 3 ] ), base ), /out of range/, 'async sweep checks the mesh' );
+	b3.b3ClearConvexDecompositionCache();
+	const options = { ...base, surfaceMerge: true };
+	const asyncAuto = await b3.b3ComputeConvexDecompositionAsync( torus.positions, torus.indices, options );
+	assert.deepEqual( Array.from( asyncAuto.points ), Array.from( kept.points ), 'async compute sweeps the same' );
+	await b3.b3ComputeConvexDecompositionAsync( torus.positions, torus.indices, options );
+	assert.equal( b3.b3GetConvexDecompositionCacheStats().hits, 1, 'the swept decomposition is cached' );
+	b3.b3ClearConvexDecompositionCache();
+
+	// the default: the merge starts from the triangles of the mesh, and V-HACD does not run
+	const fromTriangles = { ...extraOptions };
+	const seeded = b3.b3SweepConvexDecomposition( positions, indices, fromTriangles );
+	assert.equal( seeded.pieceCount, indices.length / 3, 'by default the merge starts from the triangles' );
+	assert.equal( seeded.steps.length, 9, 'and sweeps its limit' );
+	assert.equal( seeded.decomposition.offsets.length - 1, 3, 'the wall is its two sides and its lintel' );
+	assert.ok( seeded.decomposition.maxConcavity < 1e-3, 'nothing is sealed' );
+	assert.ok( covers( seeded.decomposition, wall ) && !covers( seeded.decomposition, doorway ), 'the wall is covered, the doorway open' );
+	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, resolution: 1000, shrinkWrap: false } ).decomposition,
+		seeded.decomposition, 'V-HACD\'s options change nothing' );
+	assert.deepEqual( b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, seedTriangles: false } ).decomposition,
+		seeded.decomposition, 'and the removed seedTriangles is ignored' );
+	assert.deepEqual( Array.from( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true } ).points ),
+		Array.from( seeded.decomposition.points ), 'the same from a decomposition' );
+	const asyncSeeded = await b3.b3ComputeConvexDecompositionAsync( positions, indices, { ...fromTriangles, surfaceMerge: true, cache: false } );
+	assert.deepEqual( Array.from( asyncSeeded.points ), Array.from( seeded.decomposition.points ), 'and from the Promise variant' );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: 2 } ).offsets.length - 1, 2, 'a hull budget is met' );
+	// b3MergeConvexDecomposition merges what it is handed: V-HACD's pieces, merged against the surface
+	const vhacd = b3.b3ComputeConvexDecomposition( positions, indices, { resolution: 50000, maxConvexHulls: 1000 } );
+	const mergedPieces = b3.b3MergeConvexDecomposition( positions, indices, vhacd );
+	assert.ok( mergedPieces.offsets.length - 1 < vhacd.offsets.length - 1, 'the merge on its own joins the pieces it is handed' );
+	assert.ok( covers( mergedPieces, wall ) && !covers( mergedPieces, doorway ), 'and keeps the doorway open' );
+	// a mesh with no extent gives the merge nothing to make hulls of: no hulls, the triangles still counted
+	const point = b3.b3SweepConvexDecomposition( new Float32Array( 12 ).fill( 1 ), new Uint32Array( [ 0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2 ] ) );
+	assert.equal( point.pieceCount, 4, 'pieceCount is the triangle count even when nothing comes of them' );
+	assert.equal( point.decomposition.offsets.length - 1, 0, 'a mesh with no extent has no hulls' );
+	assert.ok( point.steps.length === 1 && point.best === 0 && point.steps[ 0 ].hullCount === 0, 'and one step that says so' );
+	// sweepStep keeps the step asked for, with the same steps
+	for ( let k = 0; k < seeded.steps.length; k++ )
+	{
+		const chosen = b3.b3SweepConvexDecomposition( positions, indices, { ...fromTriangles, sweepStep: k } );
+		assert.equal( chosen.best, k, 'sweepStep is the step kept' );
+		assert.equal( chosen.decomposition.offsets.length - 1, seeded.steps[ k ].hullCount, 'and its hulls are that step\'s' );
+		assert.deepEqual( chosen.steps, seeded.steps, 'the steps are the same' );
+	}
+	// a vertex limit past what a box3d hull always fits is held to 44
+	const wide = b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxVerticesPerHull: 200 } );
+	assert.equal( wide.offsets.length - 1, 3, 'a high vertex limit costs no merge' );
+	// the merge's hull budget: 0 is none, null is the default
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: 0 } ).offsets.length - 1, 3,
+		'a budget of 0 is no budget' );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true, maxConvexHulls: null, maxVerticesPerHull: null } ).offsets.length - 1, 3,
+		'null is the default budget and vertex limit' );
+	// input is checked before it reaches wasm, and a failed call leaves the module as it was
+	const quad = [ new Float32Array( [ 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0 ] ), new Uint32Array( [ 0, 1, 2, 0, 2, 3 ] ) ];
+	const nan = Float32Array.from( positions ); nan[ 4 ] = NaN;
+	for ( let i = 0; i < 400; i++ )
+	{
+		assert.throws( () => b3.b3SweepConvexDecomposition( ...quad ), /at least 4 vertices/ );
+		assert.throws( () => b3.b3ComputeConvexDecomposition( nan, indices, { surfaceMerge: true } ), /positions must be finite/ );
+		assert.throws( () => b3.b3MergeConvexDecomposition( positions, indices, { points: new Float32Array( 3 ), offsets: new Uint32Array( [ 0, 2 ] ) } ), /do not match/ );
+	}
+	await assert.rejects( b3.b3SweepConvexDecompositionAsync( ...quad ), /at least 4 vertices/ );
+	assert.equal( b3.b3ComputeConvexDecomposition( positions, indices, { ...fromTriangles, surfaceMerge: true } ).offsets.length - 1, 3,
+		'decompositions still work after 1,200 rejected calls' );
+	// a job started again stops the run before it and gives the new one's result
+	if ( b3.ConvexDecompositionJobImpl )
+	{
+		const job = new b3.ConvexDecompositionJobImpl();
+		job.start( positions, indices, {}, false );
+		job.start( positions, indices, { ...fromTriangles, surfaceMerge: true }, false );
+		while ( !job.isReady() ) await new Promise( ( r ) => setTimeout( r, 5 ) );
+		assert.equal( job.takeResult().offsets.length - 1, 3, 'a restarted job gives the second decomposition' );
+		job.delete();
+	}
+	// the cache key: triangles by default, and V-HACD's own options only count for its pieces
+	const key = ( o ) => b3.b3ConvexDecompositionCacheKey( positions, indices, { surfaceMerge: true, ...o } );
+	assert.equal( key( { sweepStep: -1 } ), key( {} ), 'sweepStep -1 lets the sweep choose' );
+	assert.notEqual( key( { sweepStep: 0 } ), key( {} ), 'sweepStep 0 is a step' );
+	assert.notEqual( key( { sweepStep: 2 } ), key( { sweepStep: 0 } ), 'and the step counts' );
+	assert.equal( key( { sweepStep: NaN } ), key( {} ), 'a NaN step is no step' );
+	assert.equal( key( { sweepStep: 3, sweep: false } ), key( { sweep: false } ), 'without the sweep the step means nothing' );
+	assert.notEqual( key( { maxConvexHulls: 0 } ), key( { maxConvexHulls: 1 } ), 'for the merge 0 is no budget, not 1' );
+	assert.equal( key( { maxConvexHulls: null, maxVerticesPerHull: null } ), key( {} ), 'null is the default' );
+	assert.equal( key( { maxVerticesPerHull: 200 } ), key( { maxVerticesPerHull: 44 } ), 'from the triangles the merge holds hulls to 44 vertices' );
+	assert.equal( key( { seedTriangles: false } ), key( {} ), 'the removed seedTriangles means nothing' );
+	assert.equal( key( { resolution: 5000, minVolumePercentError: 3, maxRecursionDepth: 4, shrinkWrap: false } ), key( {} ),
+		'from the triangles, V-HACD\'s options mean nothing' );
+	assert.notEqual( key( { maxConvexHulls: 8 } ), key( {} ), 'the hull budget still counts' );
+	assert.notEqual( key( { maxVerticesPerHull: 16 } ), key( {} ), 'and the vertex limit' );
+	assert.equal( b3.b3ConvexDecompositionCacheKey( positions, indices, { maxConcavity: undefined } ), b3.b3ConvexDecompositionCacheKey( positions, indices, {} ),
+		'none of it means anything without the surface merge' );
+
+	return { first: sweep.steps[ 0 ].hullCount, best: best.hullCount, last: sweep.steps[ 8 ].hullCount };
+}
+
 // The async variants' cache: hits, in-flight sharing, key normalization, asset ids,
 // hash sensitivity, copy-on-return, and that failures are not cached.
 async function decompositionCache( b3, world, options )
@@ -1061,6 +1354,132 @@ function debugRendererCulling( b3 )
 	debug.update();
 	assert.equal( debug.cullBounds, null, 'no camera and no drawingBounds leaves the draw unbounded' );
 	assert.equal( visible(), 4, 'and draws every box' );
+
+	debug.dispose();
+	b3.b3DestroyWorld( world );
+}
+
+// A TSL that builds no shader: every property and call gives another node, and
+// the uniforms are kept so the test can read their values.
+function stubTSL()
+{
+	const uniforms = [];
+	const node = ( value ) =>
+	{
+		const target = () => {};
+		target.value = value;
+		return new Proxy( target, {
+			get: ( t, key ) => ( key === 'value' ? t.value : node() ),
+			apply: () => node(),
+		} );
+	};
+	const TSL = new Proxy( {}, {
+		get: ( t, key ) => ( key === 'uniform' ? ( value ) => { const u = node( value ); uniforms.push( u ); return u; } : node() ),
+	} );
+	return { uniforms, TSL };
+}
+
+function debugRendererDistanceFade( b3 )
+{
+	const world = b3.b3CreateWorld( b3.b3DefaultWorldDef() );
+	const bdef = b3.b3DefaultBodyDef();
+	bdef.type = b3.b3BodyType.b3_staticBody;
+	bdef.position = [ 0, 0, -5 ];
+	b3.b3CreateBoxShape( b3.b3CreateBody( world, bdef ), b3.b3DefaultShapeDef(), 0.5, 0.5, 0.5 );
+
+	const { THREE } = stubThree();
+	const { TSL, uniforms } = stubTSL();
+	THREE.TSL = TSL;
+	THREE.ColorManagement = { enabled: true };
+	const parent = new THREE.Group();
+	const debug = createDebugRenderer( b3, world, { THREE, parent, settings: { shapeStyle: 'both', cullDistance: 20 } } );
+	debug.update();
+
+	// Patch a shader the way three's WebGL renderer hands it over, with the chunks the fade hooks into.
+	const compile = ( material ) =>
+	{
+		const shader = {
+			uniforms: {},
+			vertexShader: '#include <common>\nvoid main() {\n#include <project_vertex>\n}',
+			fragmentShader: '#include <common>\nvoid main() {\n#include <color_fragment>\n}',
+		};
+		material.onBeforeCompile( shader );
+		return shader;
+	};
+	const group = debug.object3d.children[ 2 ];
+	const materials = [ debug.object3d.children[ 0 ].material, debug.object3d.children[ 1 ].material, ...group.children.map( ( c ) => c.material ) ];
+	assert.equal( materials.length, 4, 'lines, points, a solid mesh and its edges' );
+	const shaders = materials.map( compile );
+	for ( const shader of shaders )
+	{
+		assert.ok( shader.vertexShader.includes( 'vBox3dFadeDepth = -mvPosition.z;' ), 'the vertex shader passes view depth on' );
+		assert.ok( shader.fragmentShader.includes( 'diffuseColor.rgb *= pow(mix(box3dFadeMax, box3dFadeMin' ), 'the fragment shader scales the colour, from the camera scale to the far one' );
+		assert.ok( shader.uniforms.box3dFadeFar && shader.uniforms.box3dFadeMin && shader.uniforms.box3dFadeMax && shader.uniforms.box3dFadeGamma, 'with its uniforms' );
+	}
+	assert.ok( shaders[ 1 ].vertexShader.includes( 'attribute float aSize;' ), 'points keep their size patch' );
+	assert.ok( shaders[ 2 ].vertexShader.includes( 'vBox3dWorld = (modelMatrix' ), 'the solid mesh passes its world position on' );
+	assert.ok( shaders[ 2 ].fragmentShader.includes( 'cross(dFdx(vBox3dWorld), dFdy(vBox3dWorld))' ), 'and shades by its face normal' );
+	assert.ok( shaders[ 2 ].fragmentShader.includes( '(1.0 - box3dShade * 0.5 * (1.0 - box3dLight))' ), 'a darkening scale, which keeps the hue' );
+	for ( const i of [ 0, 1, 3 ] ) assert.ok( !shaders[ i ].fragmentShader.includes( 'box3dLight' ), 'lines, points and edges are not shaded' );
+	assert.notEqual( materials[ 2 ].colorNode, materials[ 3 ].colorNode, 'the solid mesh has its own TSL colour node' );
+	assert.notEqual( materials[ 2 ].onBeforeCompile.toString(), materials[ 3 ].onBeforeCompile.toString(), 'and its own WebGL program' );
+	assert.ok( materials.every( ( m ) => m.colorNode !== undefined ), 'every material carries the TSL colour node' );
+	const u = shaders[ 0 ].uniforms;
+	assert.ok( materials.every( ( m, i ) => shaders[ i ].uniforms.box3dFadeMin === u.box3dFadeMin ), 'all materials share one set of uniforms' );
+	const [ far, min, max, gamma, shade ] = uniforms;
+
+	assert.equal( u.box3dShade.value, 0.5, 'solid shapes are shaded by default' );
+	assert.equal( shade.value, 0.5, 'the TSL shade follows' );
+	debug.settings.solidShading = 2;
+	debug.update();
+	assert.equal( u.box3dShade.value, 1, 'solidShading is clamped to 1' );
+	debug.settings.solidShading = 0;
+	debug.update();
+	assert.equal( u.box3dShade.value, 0, '0 is flat colour' );
+	debug.settings.solidShading = undefined;
+
+	assert.equal( u.box3dFadeMin.value, 1, 'off by default: a factor of 1' );
+	assert.equal( u.box3dFadeMax.value, 1, 'at both ends' );
+	assert.equal( min.value, 1, 'for the TSL uniforms too' );
+	assert.equal( max.value, 1, 'both of them' );
+
+	debug.settings.distanceFade = true;
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 20, 'fades out to cullDistance' );
+	near( u.box3dFadeMin.value, 0.2, 1e-12, 'down to 20% by default' );
+	near( u.box3dFadeMax.value, 1.25, 1e-12, 'from 125% at the camera by default' );
+	assert.equal( u.box3dFadeGamma.value, 2.2, 'scaled as displayed under colour management' );
+	assert.equal( far.value, 20, 'the TSL far follows' );
+	near( min.value, 0.2, 1e-12, 'the TSL min follows' );
+	near( max.value, 1.25, 1e-12, 'the TSL max follows' );
+	assert.equal( gamma.value, 2.2, 'the TSL gamma follows' );
+
+	debug.settings.distanceFadeMax = 1;
+	debug.update();
+	assert.equal( u.box3dFadeMax.value, 1, 'distanceFadeMax 1 keeps the colour at the camera' );
+	debug.settings.distanceFadeMax = -1;
+	debug.update();
+	assert.equal( u.box3dFadeMax.value, 0, 'and a negative scale clamps to 0' );
+	debug.settings.distanceFadeMax = undefined;
+
+	debug.settings.camera = stubCamera( [ 0, 0, 0 ], { far: 10 } );
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 10, 'a nearer camera.far ends the fade there' );
+
+	debug.settings.cullDistance = undefined;
+	debug.settings.camera.far = 50;
+	debug.update();
+	assert.equal( u.box3dFadeFar.value, 50, 'with no cullDistance the fade ends at camera.far' );
+
+	debug.settings.camera = null;
+	debug.settings.distanceFadeMin = 0.2;
+	debug.update();
+	assert.equal( u.box3dFadeMin.value, 1, 'with neither there is no fade' );
+
+	THREE.ColorManagement.enabled = false;
+	debug.settings.cullDistance = 20;
+	debug.update();
+	assert.equal( u.box3dFadeGamma.value, 1, 'without colour management the colour scales as is' );
 
 	debug.dispose();
 	b3.b3DestroyWorld( world );
@@ -2179,10 +2598,152 @@ function dynamicMover( b3 )
 	return { standY, stepY, rideZ: endZ - startZ };
 }
 
-async function check( label, importPath, decompositionOptions )
+// The number-only entry points another Wasm module imports (a game class
+// compiled to Wasm calls box3d with no JavaScript in between): each reads and
+// writes what its facade twin does, and a world driven through them steps to
+// the same bits as one driven through the facade.
+function numberOnlyEntryPoints( b3 )
+{
+	const id = ( body ) => [ body.index1, body.world0, body.generation ];
+	const scene = () =>
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -10, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const ground = b3.b3CreateBody( world, b3.b3DefaultBodyDef() );
+		b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 25, 0.5, 25 );
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = [ 0.3, 4, -0.2 ];
+		const body = b3.b3CreateBody( world, bodyDef );
+		b3.b3CreateBoxShape( body, b3.b3DefaultShapeDef(), 0.5, 0.25, 0.75 );
+		return { world, body };
+	};
+
+	const { world, body } = scene();
+	const ids = id( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 1 );
+	assert.equal( b3._nilo_body_type( ...ids ), b3.b3Body_GetType( body ).value ?? b3.b3Body_GetType( body ) );
+	assert.equal( b3._nilo_body_mass( ...ids ), Math.fround( b3.b3Body_GetMass( body ) ) );
+	b3.b3Body_SetLinearVelocity( body, [ 1.1, 2.2, -3.3 ] );
+	b3.b3Body_SetAngularVelocity( body, [ -0.4, 0.5, 0.6 ] );
+	for ( let i = 0; i < 20; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	const linear = b3.b3Body_GetLinearVelocity( [ 0, 0, 0 ], body );
+	const angular = b3.b3Body_GetAngularVelocity( [ 0, 0, 0 ], body );
+	const position = b3.b3Body_GetPosition( [ 0, 0, 0 ], body );
+	const rotation = b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], body );
+	for ( let axis = 0; axis < 3; axis++ )
+	{
+		assert.equal( b3._nilo_body_linear_velocity( ...ids, axis ), linear[ axis ], `linear velocity ${axis}` );
+		assert.equal( b3._nilo_body_angular_velocity( ...ids, axis ), angular[ axis ], `angular velocity ${axis}` );
+		assert.equal( b3._nilo_body_position( ...ids, axis ), position[ axis ], `position ${axis}` );
+	}
+	for ( let component = 0; component < 4; component++ )
+		assert.equal( b3._nilo_body_rotation( ...ids, component ), rotation[ component ], `rotation ${component}` );
+
+	// The same writes, one world through the facade and one through the entry points.
+	const drive = ( { world: w, body: b }, direct ) =>
+	{
+		const i = id( b );
+		const steps = [];
+		for ( let frame = 0; frame < 90; frame++ )
+		{
+			const t = frame / 60;
+			const v = [ Math.sin( t ) * 2.000001, 0.3333333, Math.cos( t ) / 3 ];
+			if ( direct )
+			{
+				b3._nilo_body_set_linear_velocity( ...i, ...v );
+				if ( frame % 7 === 0 ) b3._nilo_body_apply_linear_impulse_to_center( ...i, 0.1, 0.7, -0.05, 1 );
+				if ( frame % 11 === 0 ) b3._nilo_body_apply_force_to_center( ...i, 3, 0, 1.5, 1 );
+				if ( frame === 45 ) b3._nilo_body_set_transform( ...i, 1.25, 3.5, -2.75, 0, 0.3826834, 0, 0.9238795 );
+				if ( frame === 60 ) b3._nilo_body_set_angular_velocity( ...i, 0.1, 0.2, 0.3 );
+			}
+			else
+			{
+				b3.b3Body_SetLinearVelocity( b, v );
+				if ( frame % 7 === 0 ) b3.b3Body_ApplyLinearImpulseToCenter( b, [ 0.1, 0.7, -0.05 ], true );
+				if ( frame % 11 === 0 ) b3.b3Body_ApplyForceToCenter( b, [ 3, 0, 1.5 ], true );
+				if ( frame === 45 ) b3.b3Body_SetTransform( b, [ 1.25, 3.5, -2.75 ], [ 0, 0.3826834, 0, 0.9238795 ] );
+				if ( frame === 60 ) b3.b3Body_SetAngularVelocity( b, [ 0.1, 0.2, 0.3 ] );
+			}
+			b3.b3World_Step( w, 1 / 60, 4 );
+			steps.push( ...b3.b3Body_GetPosition( [ 0, 0, 0 ], b ), ...b3.b3Body_GetRotation( [ 0, 0, 0, 0 ], b ) );
+		}
+		return steps;
+	};
+	const facade = drive( scene(), false );
+	const direct = drive( scene(), true );
+	assert.deepEqual( direct, facade, 'a world driven through the entry points steps as one driven through the facade' );
+
+	// Kinematic targets and type changes.
+	const kinematic = scene();
+	const k = id( kinematic.body );
+	b3._nilo_body_set_type( ...k, b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	assert.equal( b3._nilo_body_type( ...k ), b3.b3BodyType.b3_kinematicBody.value ?? b3.b3BodyType.b3_kinematicBody );
+	b3._nilo_body_set_target_transform( ...k, 2, 5, 0, 0, 0, 0, 1, 1 / 60, 1 );
+	b3.b3World_Step( kinematic.world, 1 / 60, 4 );
+	assert.ok( Math.abs( b3._nilo_body_position( ...k, 0 ) - 2 ) < 1e-4, 'a kinematic body reaches its target' );
+
+	b3.b3DestroyBody( body );
+	assert.equal( b3._nilo_body_is_valid( ...ids ), 0, 'a destroyed body is not valid' );
+	return { frames: facade.length / 7 };
+}
+
+// Every pthread runs the embind bindings block again when it first starts, and a
+// world's threads start together. They must leave the main thread's binding metadata
+// (_outMeta, _retMeta) alone: appending to it from several threads at once corrupted
+// the heap and aborted the module now and then (before 0.6.0). Destroying the world
+// joins its threads, so every one of them has run the block by then.
+function threadStarts( b3, workerCount )
+{
+	const rows = () => [ b3._outMeta().length, b3._retMeta().length ];
+	const loaded = rows();
+	const def = b3.b3DefaultWorldDef();
+	def.workerCount = workerCount;
+	const world = b3.b3CreateWorld( def );
+	assert.equal( b3.b3World_GetWorkerCount( world ), workerCount, 'the world got the workers it asked for' );
+	b3.b3World_Step( world, 1 / 60, 4 );
+	b3.b3DestroyWorld( world );
+	assert.deepEqual( rows(), loaded, 'threads that start leave the binding metadata as the main thread recorded it' );
+	return { threads: workerCount - 1, outRows: loaded[ 0 ], retRows: loaded[ 1 ] };
+}
+
+// The threaded builds' pool (pthreadPoolSize, 4 by default). A world takes its threads
+// synchronously and joins them when destroyed, so it gets the idle pool threads plus
+// the calling one, never a thread that starts only once the caller yields. Async
+// decompositions start threads on demand when the pool has none idle.
+async function threadPool( Box3D )
+{
+	const counts = [];
+	for ( const options of [ {}, { pthreadPoolSize: 0 }, { pthreadPoolSize: 2 }, { pthreadPoolSize: Infinity } ] )
+	{
+		const b3 = await Box3D( options );
+		const def = b3.b3DefaultWorldDef();
+		def.workerCount = 16;
+		const first = b3.b3CreateWorld( def );
+		const second = b3.b3CreateWorld( def ); // the first holds every idle thread
+		counts.push( [ b3.b3World_GetWorkerCount( first ), b3.b3World_GetWorkerCount( second ) ] );
+		b3.b3World_Step( first, 1 / 60, 4 );
+		b3.b3DestroyWorld( second );
+		b3.b3DestroyWorld( first );
+		const third = b3.b3CreateWorld( def ); // the first's threads are back in the pool
+		counts.push( [ b3.b3World_GetWorkerCount( third ) ] );
+		b3.b3DestroyWorld( third );
+	}
+	assert.deepEqual( counts, [ [ 5, 1 ], [ 5 ], [ 1, 1 ], [ 1 ], [ 3, 1 ], [ 3 ], [ 5, 1 ], [ 5 ] ], 'a world steps on the idle pool threads plus the calling one, and a pool size that is not finite takes the default' );
+
+	const b3 = await Box3D( { pthreadPoolSize: 0 } );
+	const { positions, indices } = torusMesh();
+	const options = { maxConvexHulls: 4, resolution: 10000, cache: false };
+	const pieces = await Promise.all( [ 1, 2, 3 ].map( () => b3.b3ComputeConvexDecompositionAsync( positions, indices, options ) ) );
+	assert.ok( pieces.every( ( p ) => p.offsets.length > 2 ), 'async decompositions on an empty pool start threads of their own' );
+	return { defaultWorkers: counts[ 0 ][ 0 ], decompositions: pieces.length };
+}
+
+async function check( label, importPath, decompositionOptions, moduleOptions )
 {
 	const { default: Box3D } = await import( importPath );
-	const b3 = await Box3D();
+	const b3 = await Box3D( moduleOptions );
 
 	const v = b3.b3GetVersion();
 	const { startY, endY } = fallingBox( b3 );
@@ -2209,9 +2770,12 @@ async function check( label, importPath, decompositionOptions )
 	const { height, speed } = moverAndPogoJoints( b3 );
 
 	const { pieces, restY } = await convexDecomposition( b3, decompositionOptions );
+	const doorway = await surfaceMerge( b3, decompositionOptions );
+	const swept = await decompositionSweep( b3, decompositionOptions );
 
 	debugDraw( b3 );
 	debugRendererCulling( b3 );
+	debugRendererDistanceFade( b3 );
 
 	triangleCollision( b3 );
 
@@ -2227,13 +2791,17 @@ async function check( label, importPath, decompositionOptions )
 		`200 m runs ${presets}, 50 cars ${vehicle.perf.toFixed( 3 )} ms/step` );
 
 	const mover = dynamicMover( b3 );
+	const direct = numberOnlyEntryPoints( b3 );
 
 	console.log( `  ${label}: box3d v${v.major}.${v.minor}.${v.revision} — ` +
 		`sphere fell ${startY.toFixed( 2 )} -> ${endY.toFixed( 2 )} and settled; ` +
 		`read ${n} contact(s)/${totalPoints} point(s), a sensor touch, and ${planeCount} mover plane(s) from the buffers; ` +
 		`pogo held a mover at y=${height.toFixed( 2 )} while its joint drove vx=${speed.toFixed( 2 )}; ` +
 		`torus decomposed into ${pieces} hulls and rested at y=${restY.toFixed( 2 )}; ` +
-		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform` );
+		`a wall with a doorway took ${doorway.mergedHulls} hulls with the surface merge, ${doorway.volumeHulls} without; ` +
+		`a sweep of the torus went from ${swept.first} hulls to ${swept.last} and kept ${swept.best}; ` +
+		`dynamic mover stood at y=${mover.standY.toFixed( 2 )}, climbed to y=${mover.stepY.toFixed( 2 )}, rode ${mover.rideZ.toFixed( 2 )} m on a platform; ` +
+		`number-only entry points stepped ${direct.frames} frames as the facade did` );
 }
 
 console.log( 'box3d.js smoke test' );
@@ -2246,6 +2814,20 @@ for ( const [ source, built ] of [ [ 'three.js', 'three.mjs' ], [ 'three.d.ts', 
 }
 await check( 'separate-wasm', '../dist/box3d.mjs' );
 await check( 'inline       ', '../dist/box3d.inline.mjs' );
-await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true } );
+// The blocking decomposition uses V-HACD's 8 threads only when the pool has them idle.
+await check( 'mt (threads) ', '../dist/box3d.mt.mjs', { useThreads: true }, { pthreadPoolSize: 9 } );
+// The threaded single-file build ships the same entry points: published games step on threads.
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.inline.mjs' );
+	const direct = numberOnlyEntryPoints( await Box3D() );
+	console.log( `  mt-inline    : number-only entry points stepped ${direct.frames} frames as the facade did` );
+}
+{
+	const { default: Box3D } = await import( '../dist/box3d.mt.mjs' );
+	const started = threadStarts( await Box3D( { pthreadPoolSize: 15 } ), 16 );
+	console.log( `  mt threads   : ${started.threads} threads started and joined; _outMeta() still ${started.outRows} rows, _retMeta() ${started.retRows}` );
+	const pool = await threadPool( Box3D );
+	console.log( `  mt pool      : a world asking for 16 workers got ${pool.defaultWorkers} on the default pool; ${pool.decompositions} async decompositions on an empty one` );
+}
 console.log( 'OK' );
 process.exit( 0 ); // the MT build's pthread pool keeps Node alive
