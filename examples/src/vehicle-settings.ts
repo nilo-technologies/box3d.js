@@ -231,6 +231,10 @@ const controllerTips: Record<string, Record<string, string>> = {
 		tractionControl:
 			'Limits the throttle so no driven wheel gets more torque than its tire can transmit. On rear wheels it also leaves grip for cornering, so full throttle mid corner does not spin the car.',
 		abs: 'Caps the brake torque at what the tire can transmit, leaving room for cornering, so the wheels do not lock and the car still steers while braking in a turn. It also caps engine braking on the driven wheels.',
+		absBrakeBias:
+			'How much of the side grip ABS keeps free for steering goes to the brake instead. 0 steers best and slows least while braking in a turn; from about 0.3 up the tire itself sets the split.',
+		brakeSteerGrip:
+			'Extra grip on all four tires while braking with the front wheels cornering (0.1 is 10% more). Fades in and out over 0.2 s. Nothing in a straight line or off the brake.',
 		launchControl:
 			'Pulling away from a stop, holds the driven tires at their peak slip, so full throttle neither spins them nor wastes grip. Ends when you lift or the tires grip at full throttle. Works with traction control off.',
 		stickyTire:
@@ -806,6 +810,14 @@ export function createWheeledVehicleSettings(
 		.name('traction control')
 		.onChange(applyAssists);
 	assistsFolder.add(assists, 'abs').name('ABS').onChange(applyAssists);
+	assistsFolder
+		.add(assists, 'absBrakeBias', 0, 1, 0.05)
+		.name('ABS brake bias')
+		.onChange(applyAssists);
+	assistsFolder
+		.add(assists, 'brakeSteerGrip', 0, 0.5, 0.01)
+		.name('brake + steer grip')
+		.onChange(applyAssists);
 	assistsFolder
 		.add(assists, 'launchControl')
 		.name('launch control')

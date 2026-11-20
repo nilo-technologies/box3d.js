@@ -15,8 +15,9 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | `airControl` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
 | `airAngularDamping` | 0 | 0.5 | 2.5 | 3 | 3.5 | set |
 | `maxTiltAngle` | off | off | off | 70° | 55° | set (radians; 0 is off) |
-| `tractionControl` | car's own | car's own | on | on | on | |
+| `tractionControl` | car's own | car's own | car's own | car's own | car's own | no level forces it (findings #60) |
 | `abs` | car's own | car's own | on | on | on | |
+| `brakeSteerGrip` | 0 | 0.05 | 0.1 | 0.1 | 0.1 | set: extra grip on all four tires while braking with the front wheels cornering (findings #61) |
 
 A car can carry its own rear grip for a level: `rearGrip: { 50: 0.99 }` in the car layer replaces the row's value for that car. The sports car does, so its tail moves at 50% (findings #52). Use it when the shared row is right for the other cars; do not change the row for one car.
 

@@ -47,7 +47,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | handbrake (N·m) | 2175 | 4480 (hydraulic) | 2000-2200 | 2500 |
 | steering lock, speedReference, `counterSteerLock` | 34°, 15, 0.5 | 38°, 15, 0.5 | 32°, 15, 0.5 | 35°, 11, 0 |
 | downforce, drag | 0.25, 0.4 | 0.15, 0.45 | 0.6, 0.38 | 0.15, 0.34-0.36 |
-| own TC / ABS | off / on | off / off | off / on | on / on |
+| own TC / ABS, `absBrakeBias` | off / on, 0.2 | off / off, 0.2 (for the levels that turn ABS on) | off / on, 0.2 | on / on, 0 |
 | LSDs F/R/center, AWD front share (car fields that the drivetrain layer applies, see drivetrains.md) | 1.0 (open) / 1.5 / 1.3, 0.4 | 1.3 / 1.1 / 1.4, 0.5 | 1.1 / 1.4 / 1.25, 0.3 | 1.25 / 1.4 / 1.3, 0.4-0.5 |
 
 ## Character notes

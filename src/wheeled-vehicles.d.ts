@@ -121,6 +121,8 @@ export interface WheeledVehicleCar {
 	drag: number;
 	tractionControl: boolean;
 	abs: boolean;
+	/** How much of the side grip ABS keeps free for steering goes to the brake instead, 0 to 1 (default 0) */
+	absBrakeBias?: number;
 	/** Read by the drivetrain layers */
 	drive: {
 		frontLsd: number;
@@ -166,6 +168,8 @@ export interface WheeledVehicleRealismLevel {
 	/** null keeps the car's own setting */
 	tractionControl: boolean | null;
 	abs: boolean | null;
+	/** Extra grip on every tire while braking with the front wheels cornering, as a fraction (0.1 is 10% more) */
+	brakeSteerGrip: number;
 }
 
 export type WheeledVehicleTurboName =

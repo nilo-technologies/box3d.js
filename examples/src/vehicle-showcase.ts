@@ -107,6 +107,10 @@ function describeRealism(
 	if (level.rollInfluence > 0)
 		parts.push(`roll influence ${level.rollInfluence}`);
 	if (level.counterSteer > 0) parts.push(`counter steer ${level.counterSteer}`);
+	if (level.brakeSteerGrip > 0)
+		parts.push(
+			`+${Math.round(level.brakeSteerGrip * 100)}% grip braking into a corner`,
+		);
 	if (level.selfRighting > 0) parts.push(`self righting ${level.selfRighting}`);
 	if (level.maxTiltAngle > 0) parts.push(`tilt limit ${level.maxTiltAngle}°`);
 	return parts.join(', ');

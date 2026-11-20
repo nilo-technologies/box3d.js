@@ -837,6 +837,8 @@ export type b3WheeledVehicleAssists = {
   driftGripScale: number,
   tractionControl: boolean,
   abs: boolean,
+  absBrakeBias: number,
+  brakeSteerGrip: number,
   downforce: number,
   drag: number,
   rollInfluence: number,

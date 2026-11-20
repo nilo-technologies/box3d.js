@@ -284,6 +284,7 @@ function applyCar(def, car) {
 	def.assists.drag = car.drag;
 	def.assists.tractionControl = car.tractionControl;
 	def.assists.abs = car.abs;
+	def.assists.absBrakeBias = car.absBrakeBias ?? 0;
 	return def;
 }
 
@@ -404,6 +405,13 @@ export const wheeledVehicleCars = {
 		// No traction control: the throttle is the driver's. ABS stays.
 		tractionControl: false,
 		abs: true,
+		// ABS gives the brake part of the side grip it would keep free for steering. At 0, braking
+		// at full lock on keys from 100 to 40 km/h took 43.7 m at 50% RWD (0.77 g) against 32.0 m with
+		// ABS off: the fronts sit at their peak slip angle, where ABS left the brake a third of its
+		// torque. At 0.2 it takes 33.3 m (1.03 g) and the car still turns more than with ABS off (44
+		// degrees against 37). From 0.3 up the tire's own friction ellipse sets the split. Front
+		// wheels only: the rears keep their side grip, or braking mid corner swings the tail out.
+		absBrakeBias: 0.2,
 		// Open at the front: a limited slip front axle pulls the car aside under wheelspin
 		drive: { frontLsd: 1.0, rearLsd: 1.5, centerLsd: 1.3, awdFront: 0.4, awdRearGrip: 0.985 },
 		// At 50% the tail moves: lifting mid corner or flicking the car swings it out to about 15
@@ -497,6 +505,8 @@ export const wheeledVehicleCars = {
 		drag: 0.45,
 		tractionControl: false,
 		abs: false,
+		// For the levels that turn ABS on (50% down), as on the sports car
+		absBrakeBias: 0.2,
 		// A strongly locking rear differential spins the inside rear wheel up on power and swings the
 		// tail out (1.6 read 1.21 g in the lateral test on gravel tires); 1.1 drives straight and stays put
 		drive: { frontLsd: 1.3, rearLsd: 1.1, centerLsd: 1.4, awdFront: 0.5 },
@@ -593,6 +603,8 @@ export const wheeledVehicleCars = {
 		// No traction control, as on the sports car. ABS stays.
 		tractionControl: false,
 		abs: true,
+		// As on the sports car
+		absBrakeBias: 0.2,
 		drive: { frontLsd: 1.1, rearLsd: 1.4, centerLsd: 1.25, awdFront: 0.3 },
 	},
 };
@@ -653,6 +665,9 @@ export const drivetrainLayers = {
  * mass below the car's own (m). `tractionControl` and `abs` of null keep the car's own setting.
  * No level forces traction control: the cars are driven without it, and a level that turned it
  * on would overrule that. ABS is on from 50% down.
+ * `brakeSteerGrip` is extra grip on all four tires while braking with the front wheels cornering:
+ * a little help braking into a corner that is too fast, for every level below 100%. It fades in
+ * and out over 0.2 s, and braking in a straight line or cornering off the brake gets none.
  * The rear brakes scale with `tireGrip` too, so the brake balance stays the same share of the
  * grip at every level.
  *
@@ -681,6 +696,7 @@ export const realismLevels = {
 		maxTiltAngle: 0,
 		tractionControl: null,
 		abs: null,
+		brakeSteerGrip: 0,
 	},
 	75: {
 		title: '75% realistic',
@@ -697,6 +713,7 @@ export const realismLevels = {
 		maxTiltAngle: 0,
 		tractionControl: null,
 		abs: null,
+		brakeSteerGrip: 0.05,
 	},
 	50: {
 		title: '50% realistic',
@@ -713,6 +730,7 @@ export const realismLevels = {
 		maxTiltAngle: 0,
 		tractionControl: null,
 		abs: true,
+		brakeSteerGrip: 0.1,
 	},
 	25: {
 		title: '25% realistic',
@@ -729,6 +747,7 @@ export const realismLevels = {
 		maxTiltAngle: 70,
 		tractionControl: null,
 		abs: true,
+		brakeSteerGrip: 0.1,
 	},
 	0: {
 		title: 'Arcade',
@@ -745,6 +764,7 @@ export const realismLevels = {
 		maxTiltAngle: 55,
 		tractionControl: null,
 		abs: true,
+		brakeSteerGrip: 0.1,
 	},
 };
 
@@ -779,6 +799,7 @@ function applyRealism(def, level) {
 	a.maxTiltAngle = deg(level.maxTiltAngle);
 	if (level.tractionControl !== null) a.tractionControl = level.tractionControl;
 	if (level.abs !== null) a.abs = level.abs;
+	a.brakeSteerGrip = level.brakeSteerGrip;
 }
 
 /**
