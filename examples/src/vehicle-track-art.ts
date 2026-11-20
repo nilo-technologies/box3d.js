@@ -1,10 +1,11 @@
 // Minimal topographic look for the vehicle examples: warm paper tones, terrain shaded by height
 // and slope with contour lines every 2 m, a flat background, dark roads with thin white edges and coral
-// accents. On the race circuit the road is the same mesh the car drives on, along the track's
-// spline, so its edges and lines are crisp instead of following the 2 m terrain grid.
+// accents. On the paved tracks the road is the same mesh the car drives on, along the track's
+// spline, so its edges and lines are crisp instead of following the 2 m terrain grid. A point to
+// point track gets a finish gate, and a mountain pass its guardrails.
 
 import * as THREE from 'three';
-import type { RaceTrack } from './vehicle-tracks';
+import { type RaceTrack, railHeight } from './vehicle-tracks';
 
 export const topo = {
 	fog: 0xf1ece2,
@@ -131,7 +132,8 @@ function ribbon(
 	const indices: number[] = [];
 	const n = line.length;
 	let open = false;
-	for (let i = 0; i <= n; i++) {
+	// A closed track's strip comes back round to its first sample; a point to point one ends
+	for (let i = 0; i <= (track.closed ? n : n - 1); i++) {
 		const c = line[i % n];
 		if (only && !only(c.s)) {
 			open = false;
@@ -314,17 +316,22 @@ export function addRaceTrackArt(
 			),
 		);
 	}
-	const startS = track.start.s;
-	const nearStart = (s: number) => {
-		const d = (((s - startS) % track.length) + track.length) % track.length;
-		return Math.min(d, track.length - d) <= 1;
-	};
-	group.add(
-		new THREE.Mesh(
-			ribbon(track, -half, half, lineLift + 0.01, nearStart, ground),
-			line,
-		),
-	);
+	// The start line, and on a point to point track the finish line
+	for (const pose of [track.start, track.finish]) {
+		if (!pose) continue;
+		const near = (s: number) => {
+			const d = (((s - pose.s) % track.length) + track.length) % track.length;
+			return Math.min(d, track.length - d) <= 1;
+		};
+		group.add(
+			new THREE.Mesh(
+				ribbon(track, -half, half, lineLift + 0.01, near, ground),
+				line,
+			),
+		);
+	}
+
+	if (track.rails.length) group.add(railMesh(track));
 
 	// Bumps in the accent colour, lifted a centimetre so even the small ones show, with smooth
 	// normals so the low sun shades their shape
@@ -364,26 +371,113 @@ export function addRaceTrackArt(
 		group.add(mesh);
 	}
 
-	// A thin start gate over the start line
-	const gate = new THREE.Group();
+	// A thin gate over the start line, and a dark one over the finish of a point to point track
 	const frame = new THREE.MeshStandardMaterial({
 		color: topo.asphalt,
 		roughness: 0.9,
 	});
 	const span = half + 1.5;
-	for (const side of [-1, 1]) {
-		const pole = new THREE.Mesh(new THREE.BoxGeometry(0.2, 5, 0.2), frame);
-		pole.position.set(side * span, 2.5, 0);
-		gate.add(pole);
+	for (const [pose, color] of [
+		[track.start, topo.accent],
+		[track.finish, topo.asphalt],
+	] as const) {
+		if (!pose) continue;
+		const gate = new THREE.Group();
+		for (const side of [-1, 1]) {
+			const pole = new THREE.Mesh(new THREE.BoxGeometry(0.2, 5, 0.2), frame);
+			pole.position.set(side * span, 2.5, 0);
+			gate.add(pole);
+		}
+		const banner = new THREE.Mesh(
+			new THREE.BoxGeometry(span * 2, 0.5, 0.12),
+			new THREE.MeshStandardMaterial({ color, roughness: 0.9 }),
+		);
+		banner.position.set(0, 4.9, 0);
+		gate.add(banner);
+		gate.position.set(...pose.position);
+		gate.rotation.y = pose.yaw;
+		group.add(gate);
 	}
-	const banner = new THREE.Mesh(
-		new THREE.BoxGeometry(span * 2, 0.5, 0.12),
-		new THREE.MeshStandardMaterial({ color: topo.accent, roughness: 0.9 }),
-	);
-	banner.position.set(0, 4.9, 0);
-	gate.add(banner);
-	gate.position.set(...track.start.position);
-	gate.rotation.y = track.start.yaw;
-	group.add(gate);
+	return group;
+}
+
+/**
+ * Guardrails: a white band along the top of each rail's wall with a dark post every 4 m. The
+ * physics wall is solid from under the verge to the band's top; the art leaves the gaps under the
+ * band open, as a real rail does.
+ */
+function railMesh(track: RaceTrack): THREE.Group {
+	const group = new THREE.Group();
+	const band: number[] = [];
+	const bandIndex: number[] = [];
+	const posts: number[] = [];
+	const postIndex: number[] = [];
+	// A quad between two points each at [x, z] with heights [lo, hi], into a list
+	const quad = (
+		list: number[],
+		index: number[],
+		a: [number, number, number, number],
+		b: [number, number, number, number],
+	) => {
+		const base = list.length / 3;
+		list.push(a[0], a[2], a[1], a[0], a[3], a[1]);
+		list.push(b[0], b[2], b[1], b[0], b[3], b[1]);
+		index.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+	};
+	for (const rail of track.rails) {
+		const p = rail.points;
+		for (let i = 0; i + 5 < p.length; i += 3) {
+			const dx = p[i + 3] - p[i];
+			const dz = p[i + 5] - p[i + 2];
+			const len = Math.hypot(dx, dz);
+			if (len < 1e-3) continue;
+			// Just outside the wall's inner face, so the band sits where the car meets the wall
+			const ox = ((rail.side * dz) / len) * 0.05;
+			const oz = ((-rail.side * dx) / len) * 0.05;
+			const at = (k: number, lo: number, hi: number) =>
+				[p[k] + ox, p[k + 2] + oz, p[k + 1] + lo, p[k + 1] + hi] as [
+					number,
+					number,
+					number,
+					number,
+				];
+			quad(band, bandIndex, at(i, 0.5, railHeight), at(i + 3, 0.5, railHeight));
+			// A post every other point (4 m), 12 cm wide, from below the verge to the band
+			if ((i / 3) % 2 === 0) {
+				const tx = (dx / len) * 0.06;
+				const tz = (dz / len) * 0.06;
+				const post = (s: number) =>
+					[
+						p[i] + ox + s * tx,
+						p[i + 2] + oz + s * tz,
+						p[i + 1] - 0.6,
+						p[i + 1] + 0.55,
+					] as [number, number, number, number];
+				quad(posts, postIndex, post(-1), post(1));
+			}
+		}
+	}
+	for (const [positions, index, color] of [
+		[band, bandIndex, topo.line],
+		[posts, postIndex, topo.asphalt],
+	] as const) {
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			'position',
+			new THREE.Float32BufferAttribute(positions, 3),
+		);
+		geometry.setIndex(index);
+		geometry.computeVertexNormals();
+		group.add(
+			new THREE.Mesh(
+				geometry,
+				new THREE.MeshStandardMaterial({
+					color,
+					roughness: 0.7,
+					side: THREE.DoubleSide,
+				}),
+			),
+		);
+	}
 	return group;
 }

@@ -143,6 +143,10 @@ const controllerTips: Record<string, Record<string, string>> = {
 			'Rolling resistance coefficient: a torque of coefficient x load x radius that slows the wheel',
 		longitudinalRelaxationLength:
 			'Distance the tire rolls for its slip to build up. Near rest a small wheelspin then takes a moment to break the tire loose, so pulling away is smoother. 0 measures slip instantly.',
+		loadSensitivity:
+			'How much less grip per newton a tire has as its load rises, as real tires do. With it, moving weight onto an axle (stiffer bars or springs, the center of mass) costs that axle grip: a stiffer front bar adds understeer, a stiffer rear bar oversteer. 0 makes grip proportional to the load, so the balance barely moves. Road tires are about 0.1-0.25.',
+		referenceLoad:
+			'Load at which the friction coefficients apply (N). 0 uses the static load on the wheel, so the car grips as set at rest and only the weight transfer changes it.',
 	},
 	'Anti-roll': {
 		stiffness:
@@ -483,6 +487,8 @@ export function createWheeledVehicleSettings(
 			lateralSlideFriction: tireField('lateralSlideFriction'),
 			rollingResistance: tireField('rollingResistance'),
 			longitudinalRelaxationLength: tireField('longitudinalRelaxationLength'),
+			loadSensitivity: tireField('loadSensitivity'),
+			referenceLoad: tireField('referenceLoad'),
 		});
 		t.add(q, 'longitudinalPeakSlip', 0.02, 0.5, 0.01).name('long. peak slip');
 		t.add(q, 'longitudinalPeakFriction', 0.1, 3, 0.01).name('long. peak μ');
@@ -495,6 +501,10 @@ export function createWheeledVehicleSettings(
 		t.add(q, 'rollingResistance', 0, 0.1, 0.001).name('rolling resistance');
 		t.add(q, 'longitudinalRelaxationLength', 0, 2, 0.01).name(
 			'slip build-up (m, 0 off)',
+		);
+		t.add(q, 'loadSensitivity', 0, 0.5, 0.01).name('load sensitivity');
+		t.add(q, 'referenceLoad', 0, 10000, 50).name(
+			'reference load (N, 0 static)',
 		);
 	}
 

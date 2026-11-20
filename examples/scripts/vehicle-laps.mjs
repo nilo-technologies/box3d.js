@@ -4,23 +4,30 @@
 //   node examples/scripts/vehicle-laps.mjs --track circuit --preset sports-50-rwd
 //   node examples/scripts/vehicle-laps.mjs --track stage --car rally
 //   node examples/scripts/vehicle-laps.mjs --all            every matrix preset on both tracks
-//   add --json for machine readable output
+//   node examples/scripts/vehicle-laps.mjs --track downhill --track uphill --preset sports-50-rwd
+//   add --keys to drive with keys instead, --pace 0.85 for the share of the grip it corners at,
+//   --json for machine readable output
 //
 // The autopilot steers at a point ahead on the centreline and plans its speed from the corners
 // ahead: as fast as the tires grip and the speed sensitive steering can turn, allowing for the
 // braking distance. It eases off the throttle when the driven wheels spin, as a player would
 // without traction control. Each track has an advisory speed for its bump section: the circuit's
-// bumps are taken flat out, the stage's whoops and jump at 60 km/h.
+// bumps are taken flat out, the stage's whoops and jump at 60 km/h. A point to point track (the
+// downhill and uphill runs) is one run from its start line to its finish line.
+//
+// With --keys it drives as a keyboard player does, with the same plan: full lock (A or D) while
+// the heading to the point ahead is off by more than 2 degrees, through createSteeringLimiter as
+// in the examples, and full throttle (W) or full brake (S), nothing in between.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const root = new URL('../../', import.meta.url);
 const { default: Box3D } = await import(new URL('dist/box3d.mjs', root).href);
-const { wheeledVehiclePresets } = await import(
+const { wheeledVehiclePresets, createSteeringLimiter } = await import(
 	new URL('src/wheeled-vehicles.js', root).href
 );
-const { buildRaceTrack, createRaceTrackBodies } = await import(
+const { buildRaceTrack, createRaceTrackBodies, wheelsIgnoreRails } = await import(
 	new URL('examples/src/vehicle-tracks.js', root).href
 );
 
@@ -35,6 +42,8 @@ export function driveLap(trackName, preset, options = {}) {
 		pace = 0.85,
 		bumpKmh = bumpSpeeds[trackName],
 		timeout = 400,
+		// Keyboard inputs: full lock, full throttle or full brake
+		keys = false,
 		// Called every step with the car's progress and pose, for debugging
 		onStep,
 	} = options;
@@ -53,9 +62,13 @@ export function driveLap(trackName, preset, options = {}) {
 	bodyDef.rotation = [0, Math.sin(start.yaw / 2), 0, Math.cos(start.yaw / 2)];
 	const chassis = api.b3CreateBody(world, bodyDef);
 	api.b3CreateBoxShape(chassis, api.b3DefaultShapeDef(), ...preset.halfExtents);
-	const def = preset.apply(api.b3DefaultWheeledVehicleDef());
+	// The wheels skip the guardrails, as in the examples
+	const def = wheelsIgnoreRails(preset.apply(api.b3DefaultWheeledVehicleDef()));
 	def.chassisId = chassis;
 	const vehicle = api.b3CreateWheeledVehicle(world, def);
+	const limitSteer = createSteeringLimiter(api);
+	const steering = api.b3WheeledVehicle_GetSteering(vehicle);
+	const wheels = def.wheels.slice(0, def.wheelCount);
 
 	const grip = def.wheels[0].tire.lateralPeakFriction;
 	const wheelbase = def.wheels[0].position[2] - def.wheels[2].position[2];
@@ -66,12 +79,18 @@ export function driveLap(trackName, preset, options = {}) {
 		.flatMap((d) => [d.leftWheel, d.rightWheel]);
 	const line = track.centerline;
 	const n = line.length;
+	// A closed track wraps around; a point to point one stops at its ends and finishes at its
+	// finish line
+	const wrap = track.closed
+		? (i) => ((i % n) + n) % n
+		: (i) => Math.min(Math.max(i, 0), n - 1);
+	const goal = track.closed ? n : Math.round(track.finish.s - start.s);
 
 	// Corner speed at each sample: the tire grip limit, and the speed at which the steering can
 	// still reach the angle the corner needs (wheelbase / radius plus a margin for slip)
 	const cornerSpeed = line.map((_, i) => {
-		const a = line[(i - 6 + n) % n];
-		const b = line[(i + 6) % n];
+		const a = line[wrap(i - 6)];
+		const b = line[wrap(i + 6)];
 		const turn = Math.abs(
 			Math.atan2(a.tx * b.tz - a.tz * b.tx, a.tx * b.tx + a.tz * b.tz),
 		);
@@ -85,8 +104,10 @@ export function driveLap(trackName, preset, options = {}) {
 					: Number.POSITIVE_INFINITY;
 		return Math.min(Math.sqrt(pace * grip * 9.81 * radius), steer);
 	});
-	for (let i = track.bumpSection.from; i <= track.bumpSection.to; i++) {
-		cornerSpeed[i % n] = Math.min(cornerSpeed[i % n], bumpKmh / 3.6);
+	if (track.bumpSection) {
+		for (let i = track.bumpSection.from; i <= track.bumpSection.to; i++) {
+			cornerSpeed[i % n] = Math.min(cornerSpeed[i % n], bumpKmh / 3.6);
+		}
 	}
 
 	const pos = [0, 0, 0];
@@ -110,16 +131,16 @@ export function driveLap(trackName, preset, options = {}) {
 		let best = index;
 		let bestD = Number.POSITIVE_INFINITY;
 		for (let k = -5; k < 40; k++) {
-			const p = line[(index + k + n) % n];
+			const p = line[wrap(index + k)];
 			const d = (p.x - pos[0]) ** 2 + (p.z - pos[2]) ** 2;
 			if (d < bestD) {
 				bestD = d;
 				best = index + k;
 			}
 		}
-		progress += best - index;
-		index = ((best % n) + n) % n;
-		if (progress >= n) break;
+		progress += (track.closed ? best : wrap(best)) - index;
+		index = wrap(best);
+		if (progress >= goal) break;
 		const speed = Math.hypot(vel[0], vel[2]);
 		topSpeed = Math.max(topSpeed, speed * 3.6);
 		maxOff = Math.max(maxOff, Math.sqrt(bestD));
@@ -133,15 +154,15 @@ export function driveLap(trackName, preset, options = {}) {
 
 		// Far off the road, slow down and head back to it, as a player would
 		const lost = Math.sqrt(bestD) > 12;
-		const aim = line[(index + Math.round(lost ? 10 : Math.max(8, speed * 0.7))) % n];
+		const aim = line[wrap(index + Math.round(lost ? 10 : Math.max(8, speed * 0.7)))];
 		let err = Math.atan2(aim.x - pos[0], aim.z - pos[2]) - yaw;
 		err = Math.atan2(Math.sin(err), Math.cos(err));
 		// Braking distance to each corner ahead, with less deceleration downhill
 		let target = Number.POSITIVE_INFINITY;
-		const grade = (line[(index + 20) % n].y - line[index].y) / 20;
+		const grade = (line[wrap(index + 20)].y - line[index].y) / 20;
 		const decel = Math.max(2, 9.81 * (0.8 * pace * grip + Math.min(grade, 0)));
 		for (let k = 0; k < 150; k += 3) {
-			const v = cornerSpeed[(index + k) % n];
+			const v = cornerSpeed[wrap(index + k)];
 			target = Math.min(target, Math.sqrt(v * v + 2 * decel * k));
 		}
 		if (lost) target = Math.min(target, 30 / 3.6);
@@ -153,12 +174,24 @@ export function driveLap(trackName, preset, options = {}) {
 			),
 		);
 		if (spin > 0.25) throttle *= 0.4;
-		api.b3WheeledVehicle_SetInput(vehicle, {
-			forward: throttle,
-			brake: e < -1 ? Math.min(1, -e * 0.3) : 0,
-			steer: Math.max(-1, Math.min(1, -err * 2.5)),
-			handbrake: 0,
-		});
+		if (keys) {
+			// The examples' automatic gearbox: S brakes, and reverses once stopped
+			const brakeKey = e < -1.5 ? 1 : 0;
+			const steerKey = Math.abs(err) > (2 * Math.PI) / 180 ? -Math.sign(err) : 0;
+			api.b3WheeledVehicle_SetInput(vehicle, {
+				forward: (e > 0.5 ? 1 : 0) - brakeKey,
+				brake: 0,
+				steer: limitSteer(chassis, steering, wheels, steerKey, brakeKey),
+				handbrake: 0,
+			});
+		} else {
+			api.b3WheeledVehicle_SetInput(vehicle, {
+				forward: throttle,
+				brake: e < -1 ? Math.min(1, -e * 0.3) : 0,
+				steer: Math.max(-1, Math.min(1, -err * 2.5)),
+				handbrake: 0,
+			});
+		}
 		api.b3World_Step(world, dt, 4);
 
 		if (api.b3WheeledVehicle_GetState(vehicle).wheelsInContact === 0 && t > 1) {
@@ -166,7 +199,11 @@ export function driveLap(trackName, preset, options = {}) {
 		}
 		const ay = (vel[1] - prevVy) / dt;
 		prevVy = vel[1];
-		if (index >= track.bumpSection.from && index <= track.bumpSection.to) {
+		if (
+			track.bumpSection &&
+			index >= track.bumpSection.from &&
+			index <= track.bumpSection.to
+		) {
 			bumpPeakG = Math.max(bumpPeakG, Math.abs(ay) / 9.81);
 		}
 		onStep?.({
@@ -177,6 +214,11 @@ export function driveLap(trackName, preset, options = {}) {
 			off: Math.sqrt(bestD),
 			contacts: api.b3WheeledVehicle_GetState(vehicle).wheelsInContact,
 			height: pos[1] - line[index].y,
+			// The handles, for a debugger that wants the wheel states or the inputs
+			api,
+			vehicle,
+			chassis,
+			yawError: err,
 		});
 		stopped = speed < 0.5 ? stopped + dt : 0;
 		if (stopped > 5) break;
@@ -185,17 +227,17 @@ export function driveLap(trackName, preset, options = {}) {
 	api.b3DestroyHeightField(field);
 	if (mesh) api.b3DestroyMesh(mesh);
 	return {
-		completed: progress >= n,
+		completed: progress >= goal,
 		lapTime: t,
 		topSpeed,
 		minUp,
 		maxOffCenter: maxOff,
 		airtime,
 		bumpPeakG,
-		progress: Math.min(progress / n, 1),
+		progress: Math.min(progress / goal, 1),
 		/** Where the car was least upright, and where it stopped if it did (m along the track) */
 		worstAt,
-		stoppedAt: progress >= n ? null : index,
+		stoppedAt: progress >= goal ? null : index,
 	};
 }
 
@@ -213,6 +255,7 @@ if (isMain) {
 		else if (a === '--car') args.cars.push(argv[++i]);
 		else if (a === '--all') args.all = true;
 		else if (a === '--json') args.json = true;
+		else if (a === '--keys') args.keys = true;
 		else if (a === '--pace') {
 			args.pace = Number(argv[++i]);
 			// A fraction of the grip limit: 0 or less would never move the car
@@ -230,18 +273,17 @@ if (isMain) {
 	});
 	if (names.length === 0) {
 		console.error(
-			'usage: vehicle-laps.mjs [--track circuit|stage] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--json]',
+			'usage: vehicle-laps.mjs [--track circuit|stage|downhill|uphill] --preset <name> | --car <sports|rally|super> | --all [--pace 0.85] [--keys] [--json]',
 		);
 		process.exit(2);
 	}
 	const rows = [];
 	for (const trackName of trackNames) {
 		for (const name of names) {
-			const r = driveLap(
-				trackName,
-				wheeledVehiclePresets[name],
-				args.pace === undefined ? {} : { pace: args.pace },
-			);
+			const r = driveLap(trackName, wheeledVehiclePresets[name], {
+				keys: args.keys,
+				...(args.pace === undefined ? {} : { pace: args.pace }),
+			});
 			const pass = r.completed && r.minUp > 0.3;
 			rows.push({ track: trackName, preset: name, pass, ...r });
 			if (!args.json) {
