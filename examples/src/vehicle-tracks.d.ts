@@ -179,9 +179,10 @@ export interface RaceTrack {
 
 export const raceTracks: Record<RaceTrackName, RaceTrackDef>;
 
-/** Guardrail wall thickness and height above the road (m) */
-export const railThickness: number;
+/** Guardrail height above the road (m) */
 export const railHeight: number;
+/** Radius of the capsules the rails collide as (m): the rail is twice this thick */
+export const railRadius: number;
 
 /** The guardrails' collision category: the chassis hits them, the wheel casts skip them */
 export const railCategory: bigint;

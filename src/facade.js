@@ -1259,6 +1259,7 @@ function getDebugTransformAt( out, buf, i )
 // The field read order below must match the WheeledVehicleStateBuffer packing order in src/bindings.cpp.
 
 const WHEELED_VEHICLE_I32 = LAYOUT.wheeledVehicleI32; //            gear isShifting wheelsInContact stuck isLaunching wheelCount
+//                                                                  isTractionControlActive isAbsActive
 const WHEELED_VEHICLE_F32 = LAYOUT.wheeledVehicleF32; //            speed engineRpm throttle brake steerAngle boost
 const WHEELED_VEHICLE_WHEEL_I32 = LAYOUT.wheeledVehicleWheelI32; // hasContact isSticky groundShapeId(3) userMaterialId(lo,hi)
 const WHEELED_VEHICLE_WHEEL_F32 = LAYOUT.wheeledVehicleWheelF32; // rotation(4) contactNormal(3) then 12 scalars
@@ -1299,7 +1300,7 @@ function getNumWheeledVehicleWheels( buf ) { return buf.wheelCount; }
 
 function createWheeledVehicleStateRecord()
 {
-	return { speed: 0, engineRpm: 0, boost: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false, isLaunching: false };
+	return { speed: 0, engineRpm: 0, boost: 0, gear: 0, isShifting: false, throttle: 0, brake: 0, steerAngle: 0, wheelsInContact: 0, stuck: false, isLaunching: false, isTractionControlActive: false, isAbsActive: false };
 }
 
 function getWheeledVehicleStateAt( out, buf )
@@ -1312,6 +1313,8 @@ function getWheeledVehicleStateAt( out, buf )
 	out.wheelsInContact = a[ is + 2 ];
 	out.stuck = a[ is + 3 ] !== 0;
 	out.isLaunching = a[ is + 4 ] !== 0;
+	out.isTractionControlActive = a[ is + 6 ] !== 0;
+	out.isAbsActive = a[ is + 7 ] !== 0;
 	out.speed = f[ fs ];
 	out.engineRpm = f[ fs + 1 ];
 	out.throttle = f[ fs + 2 ];

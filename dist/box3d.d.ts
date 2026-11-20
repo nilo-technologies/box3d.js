@@ -703,7 +703,8 @@ export type b3WheeledVehicleSuspension = {
   frequency: number,
   compressionDamping: number,
   reboundDamping: number,
-  enableBumpStop: boolean
+  enableBumpStop: boolean,
+  bumpStopRestitution: number
 };
 
 export type b3WheeledVehicleTire = {
@@ -718,7 +719,8 @@ export type b3WheeledVehicleTire = {
   rollingResistance: number,
   longitudinalRelaxationLength: number,
   loadSensitivity: number,
-  referenceLoad: number
+  referenceLoad: number,
+  curveRounding: number
 };
 
 export type b3WheeledVehicleWheelDef = {
@@ -788,7 +790,8 @@ export type b3WheeledVehicleTransmission = {
   shiftTime: number,
   clutchReleaseTime: number,
   shiftLatency: number,
-  clutchStrength: number
+  clutchStrength: number,
+  revMatch: boolean
 };
 
 export type b3WheeledVehicleDifferential = {
@@ -825,7 +828,8 @@ export type b3WheeledVehicleSteering = {
   speedReference: number,
   steerSpeed: number,
   returnSpeed: number,
-  ackermann: number
+  ackermann: number,
+  counterSteerLock: number
 };
 
 export type b3WheeledVehicleAssists = {
@@ -833,6 +837,8 @@ export type b3WheeledVehicleAssists = {
   driftGripScale: number,
   tractionControl: boolean,
   abs: boolean,
+  absBrakeBias: number,
+  brakeSteerGrip: number,
   downforce: number,
   drag: number,
   rollInfluence: number,
@@ -880,7 +886,9 @@ export type b3WheeledVehicleState = {
   steerAngle: number,
   wheelsInContact: number,
   stuck: boolean,
-  isLaunching: boolean
+  isLaunching: boolean,
+  isTractionControlActive: boolean,
+  isAbsActive: boolean
 };
 
 export type b3WheeledVehicleWheelState = {
@@ -1815,6 +1823,10 @@ export interface WheeledVehicleStateRecord {
   stuck: boolean;
   /** Launch control is managing the drive torque */
   isLaunching: boolean;
+  /** Traction control held the drive torque below what the throttle asked for in the last step */
+  isTractionControlActive: boolean;
+  /** ABS held a wheel's brake torque below what the brake asked for in the last step */
+  isAbsActive: boolean;
 }
 export interface WheeledVehicleWheelRecord {
   /** Wheel center, world space */

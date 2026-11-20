@@ -15,12 +15,13 @@ One table, shared by every car. Apply the row for the brief's level after the ca
 | `airControl` | 0 | 0.5 | 1.5 | 2.5 | 3.5 | set |
 | `airAngularDamping` | 0 | 0.5 | 2.5 | 3 | 3.5 | set |
 | `maxTiltAngle` | off | off | off | 70° | 55° | set (radians; 0 is off) |
-| `tractionControl` | car's own | car's own | on | on | on | |
+| `tractionControl` | car's own | car's own | car's own | car's own | car's own | no level forces it (findings #60) |
 | `abs` | car's own | car's own | on | on | on | |
+| `brakeSteerGrip` | 0 | 0.05 | 0.1 | 0.1 | 0.1 | set: extra grip on all four tires while braking with the front wheels cornering (findings #61) |
 
 A car can carry its own rear grip for a level: `rearGrip: { 50: 0.99 }` in the car layer replaces the row's value for that car. The sports car does, so its tail moves at 50% (findings #52). Use it when the shared row is right for the other cars; do not change the row for one car.
 
-"Car's own" means the real car's setting: modern road and supercars have ABS (and supercars TC); a rally car has neither.
+"Car's own" means the value in the preset's car layer (`tractionControl` and `abs` in `wheeledVehicleCars`). ABS uses the car's own value at 100% and 75% and is forced on at 50% and below. The car's own ABS follows the real car: road cars and supercars have it, a rally car does not. No level overrules traction control, and the car's own value does not follow the real car: the matrix sports car and supercar have `tractionControl: false` on purpose, as the rally car does, because the cars are driven without it (findings #59, #60). Do not turn it on for a level.
 
 ## What each level must do (the metrics check these)
 

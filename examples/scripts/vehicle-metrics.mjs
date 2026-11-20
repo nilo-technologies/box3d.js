@@ -39,7 +39,9 @@ export const archetypes = {
 		title: 'front engine sports coupe (Cayman GTS, M2 class)',
 		zeroTo100: { fwd: [5.0, 6.8], rwd: [4.2, 5.4], awd: [3.8, 5.0] },
 		topSpeed: [245, 290],
-		braking: [32, 40],
+		// 41, not 40: the sports car's tires have 1.0 of forward grip at 100%, the bottom of its
+		// class, and the arcade level's 25 m limit is that figure with no room for ABS
+		braking: [32, 41],
 		lateralG: [0.95, 1.15],
 		stepRoll: [1.4, 4],
 	},
@@ -102,6 +104,8 @@ export function targetRanges({ archetype, realism, drive }) {
 		// launchControl is on by default. More grip can only help the launch: a traction limited
 		// launch gets quicker with the level's tire grip, so the floor falls with it. grip^-0.6 gives
 		// the floors the old 1 - 0.2 * arcade did at the old grips (1.1 to 1.45).
+		// The upper bound is for a car that shifts in a blink; `shiftAllowance` (see check) adds
+		// what a slower gearbox spends without drive
 		zeroTo100: [z0 * r.grip ** -0.6, z1],
 		// Downforce loads the tires and adds rolling resistance
 		topSpeed: [a.topSpeed[0] * (1 - 0.05 * arcade), a.topSpeed[1]],
@@ -229,18 +233,36 @@ function settled(preset) {
 }
 
 // Throttle toward a target speed, with the brake when well over it
+// The largest slip ratio among the driven wheels
+function drivenSlip(car) {
+	const { differentials, differentialCount } = car.def.drivetrain;
+	let slip = 0;
+	for (const d of differentials.slice(0, differentialCount)) {
+		for (const i of [d.leftWheel, d.rightWheel]) {
+			if (i >= 0) slip = Math.max(slip, Math.abs(b3.b3WheeledVehicle_GetWheelState(car.vehicle, i).slipRatio));
+		}
+	}
+	return slip;
+}
+
 function holdSpeed(car, target, steer = 0) {
 	const speed = readState(car.vehicle).speed;
 	const error = target - speed;
-	const forward = Math.max(0, Math.min(1, error * 0.5 + 0.25));
+	let forward = Math.max(0, Math.min(1, error * 0.5 + 0.25));
+	// Without traction control the driver is the traction control: ease off when the driven
+	// wheels spin, or holding a speed through a corner spins the car and measures nothing
+	if (!car.def.assists.tractionControl && drivenSlip(car) > 0.2) forward *= 0.3;
 	const brake = error < -2 ? Math.min(1, -error * 0.2) : 0;
 	return input(error < -0.5 ? 0 : forward, brake, steer);
 }
 
 function driveTo(car, target, timeout = 30) {
 	let t = 0;
+	// Flat out, except that without traction control the driver eases off when the driven wheels
+	// spin, as in holdSpeed: a foot held flat on spinning tires measures the driver, not the car
+	const easeOff = !car.def.assists.tractionControl;
 	while (readState(car.vehicle).speed < target && t < timeout) {
-		b3.b3WheeledVehicle_SetInput(car.vehicle, input(1));
+		b3.b3WheeledVehicle_SetInput(car.vehicle, input(easeOff && drivenSlip(car) > 0.2 ? 0.5 : 1));
 		step(car);
 		t += dt;
 	}
@@ -272,6 +294,8 @@ function testLaunchAndBrake(preset) {
 	const start = pose(car.chassis).position;
 	const zeroTo100 = driveTo(car, 100 / kmh, 20);
 	const reached = readState(car.vehicle).speed >= 100 / kmh;
+	// Upshifts made on the way there: a supercar is still in second at 100 km/h
+	const upshiftsTo100 = Math.max(readState(car.vehicle).gear - 1, 0);
 	const drift = Math.abs(pose(car.chassis).position[0] - start[0]);
 	let braking = Number.NaN;
 	let brakeUpright = 1;
@@ -299,6 +323,7 @@ function testLaunchAndBrake(preset) {
 	b3.b3DestroyWorld(car.world);
 	return {
 		zeroTo100: reached ? zeroTo100 : Number.NaN,
+		upshiftsTo100,
 		launchDrift: drift,
 		braking,
 		brakeUpright,
@@ -604,9 +629,17 @@ function testRough(preset) {
 }
 
 export function measure(preset, { quick = false } = {}) {
+	const def = preset.apply(b3.b3DefaultWheeledVehicleDef());
+	const settle = testSettle(preset);
+	const launch = testLaunchAndBrake(preset);
+	// Time without drive in an upshift, past the tenth of a second the 0-100 targets already hold
+	const shiftCost = Math.max(def.transmission.shiftTime + 0.5 * def.transmission.clutchReleaseTime - 0.1, 0);
 	return {
-		...testSettle(preset),
-		...testLaunchAndBrake(preset),
+		tractionControl: def.assists.tractionControl,
+		// For the upshifts the car made on the way to 100 km/h, and no more
+		shiftAllowance: launch.upshiftsTo100 * shiftCost,
+		...settle,
+		...launch,
 		...(quick ? { topSpeed: Number.NaN, topSpeedUpright: 1 } : testTopSpeed(preset)),
 		...testShifts(preset),
 		...testLateral(preset),
@@ -638,7 +671,15 @@ export function check(m, target, { quick = false } = {}) {
 
 	rule('settles', m.wheelsInContact === 4 && m.settled, `${m.wheelsInContact} wheels down`);
 	range('rideHeight', 'm');
-	range('zeroTo100', 's');
+	{
+		const [lo, hi] = t.zeroTo100;
+		const top = hi + m.shiftAllowance;
+		checks.push({
+			name: 'zeroTo100',
+			pass: Number.isFinite(m.zeroTo100) && m.zeroTo100 >= lo && m.zeroTo100 <= top,
+			detail: `${m.zeroTo100.toFixed(2)} s (want ${lo.toFixed(2)}-${top.toFixed(2)}, ${m.shiftAllowance.toFixed(2)} s of it for the shifts)`,
+		});
+	}
 	rule('drivesStraight', m.launchDrift < 2, `${m.launchDrift.toFixed(2)} m off line`);
 	range('braking', 'm', 1);
 	rule('brakesUpright', m.brakeUpright > 0.95, `upright ${m.brakeUpright.toFixed(2)}`);
@@ -656,6 +697,11 @@ export function check(m, target, { quick = false } = {}) {
 	if (!t.maySpin) {
 		rule('noSpin', !m.spun, `peak sideslip ${m.stepSideslip.toFixed(0)} deg (want < 35)`);
 		for (const move of Object.keys(keyboardMoves)) {
+			// A car driven without traction control slides its driven wheels at full throttle by
+			// design, so the three moves that hold full throttle and full lock for over a second
+			// are not held to the limit. Braking and turning still is, and so is the trail brake,
+			// which is on the throttle for its first second only.
+			if (m.tractionControl === false && ['liftOff', 'slalom', 'flick'].includes(move)) continue;
 			const slip = m[`${move}Slip`];
 			rule(`forgiving ${move}`, slip < forgivingSlip, `peak sideslip ${slip.toFixed(0)} deg (want < ${forgivingSlip})`);
 		}

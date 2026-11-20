@@ -17,9 +17,10 @@ import { mountainPoints } from './vehicle-track-mountain.js';
 
 const TAU = Math.PI * 2;
 
-/** Guardrail wall thickness and height above the road (m) */
-export const railThickness = 0.25;
+/** Guardrail height above the road (m) */
 export const railHeight = 0.9;
+/** Radius of the capsules the rails collide as (m): the rail is twice this thick */
+export const railRadius = 0.3;
 
 /**
  * The guardrails' collision category. A wheel sticks out past the chassis box, so against a rail
@@ -918,7 +919,8 @@ export function buildRaceTrack(name) {
  */
 export function racingLineSpeeds(track, car, pace = 0.9) {
 	// With no grip to plan with, the braking pass below would divide by zero and return NaN
-	if (!(pace > 0)) throw new RangeError(`racingLineSpeeds: pace must be above 0, got ${pace}`);
+	if (!(pace > 0))
+		throw new RangeError(`racingLineSpeeds: pace must be above 0, got ${pace}`);
 	const line = track.racingLine;
 	const n = line.length;
 	const g = 9.81;
@@ -1013,8 +1015,11 @@ export function createRaceTrackBodies(b3, world, track) {
 		b3.b3DestroyHull(hull);
 		bumpBodies.push(body);
 	}
-	// Guardrails: a thin wall per 2 m of rail, from under the verge to 0.9 m above the road, its
-	// inner face on the rail line
+	// Guardrails: two rows of capsules end to end along the rail line, their road side on it,
+	// covering the 0.9 m above the road. Not a box per 2 m of rail: the corner of the chassis
+	// catches on the joint between two boxes, even in a straight line, and the car stops dead
+	// (80 to 0 km/h at over 100 g in a 5 degree brush). Capsules that share their end points make
+	// one smooth surface, and the car slides along it.
 	let rails = null;
 	if (track.rails.length) {
 		rails = b3.b3CreateBody(world, b3.b3DefaultBodyDef());
@@ -1024,26 +1029,37 @@ export function createRaceTrackBodies(b3, world, track) {
 		railDef.baseMaterial = { ...railDef.baseMaterial, friction: 0.1 };
 		for (const rail of track.rails) {
 			const p = rail.points;
-			for (let i = 0; i + 5 < p.length; i += 3) {
-				// Outward, away from the road: the left normal (dz, -dx) on the left side (+1)
-				const dx = p[i + 3] - p[i];
-				const dz = p[i + 5] - p[i + 2];
+			const count = p.length / 3;
+			// One offset per rail point, outward from the road, across the direction the rail has
+			// there (from the point before to the point after). The two capsules that meet at a
+			// point then end on the same spot, also in a bend, where an offset per segment would
+			// leave two caps side by side.
+			const offsets = new Float64Array(count * 2);
+			for (let k = 0; k < count; k++) {
+				const a = Math.max(k - 1, 0) * 3;
+				const b = Math.min(k + 1, count - 1) * 3;
+				const dx = p[b] - p[a];
+				const dz = p[b + 2] - p[a + 2];
 				const len = Math.hypot(dx, dz);
-				if (len < 1e-3) continue;
-				const ox = ((rail.side * dz) / len) * railThickness;
-				const oz = ((-rail.side * dx) / len) * railThickness;
-				const points = [];
-				for (const k of [i, i + 3]) {
-					for (const [x, z] of [
-						[p[k], p[k + 2]],
-						[p[k] + ox, p[k + 2] + oz],
-					]) {
-						points.push(x, p[k + 1] - 0.6, z, x, p[k + 1] + railHeight, z);
-					}
+				if (len < 1e-6) continue;
+				// The left normal (dz, -dx) on the left side (+1)
+				offsets[k * 2] = ((rail.side * dz) / len) * railRadius;
+				offsets[k * 2 + 1] = ((-rail.side * dx) / len) * railRadius;
+			}
+			for (let k = 0; k + 1 < count; k++) {
+				const i = k * 3;
+				const x1 = p[i] + offsets[k * 2];
+				const z1 = p[i + 2] + offsets[k * 2 + 1];
+				const x2 = p[i + 3] + offsets[k * 2 + 2];
+				const z2 = p[i + 5] + offsets[k * 2 + 3];
+				if (Math.hypot(x2 - x1, p[i + 4] - p[i + 1], z2 - z1) < 1e-3) continue;
+				for (const y of [railRadius, railHeight - railRadius]) {
+					b3.b3CreateCapsuleShape(rails, railDef, {
+						center1: [x1, p[i + 1] + y, z1],
+						center2: [x2, p[i + 4] + y, z2],
+						radius: railRadius,
+					});
 				}
-				const hull = b3.b3CreateHull(points);
-				b3.b3CreateHullShape(rails, railDef, hull);
-				b3.b3DestroyHull(hull);
 			}
 		}
 	}

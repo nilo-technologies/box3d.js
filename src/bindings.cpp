@@ -341,7 +341,8 @@ constexpr int debugTransformF64 = 3 + 4;       // position rotation
 constexpr int debugTransformI32 = 1;           // role
 
 // vehicle state buffer: one vehicle record, then one record per wheel
-constexpr int wheeledVehicleI32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: gear isShifting wheelsInContact stuck isLaunching wheelCount
+constexpr int wheeledVehicleI32 = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1; // 8: gear isShifting wheelsInContact stuck isLaunching wheelCount
+                                                          //     isTractionControlActive isAbsActive
 constexpr int wheeledVehicleF32 = 1 + 1 + 1 + 1 + 1 + 1;         // 6: speed engineRpm throttle brake steerAngle boost
 constexpr int wheeledVehicleWheelI32 = 1 + 1 + idW + u64W;       // 7: hasContact isSticky groundShapeId userMaterialId
 constexpr int wheeledVehicleWheelF32 = 4 + 3 + 12;               // 19: rotation contactNormal suspensionLength compression load
@@ -371,7 +372,7 @@ static_assert( debugShapeI32 == 3 && debugShapeF64 == 7 && debugSegmentF64 == 6 
 	&& debugBoundsF64 == 6 && debugBoundsI32 == 2
 	&& debugTransformF64 == 7 && debugTransformI32 == 1,
 	"debug draw stride changed — update the facade field reads + _layoutMeta" );
-static_assert( wheeledVehicleI32 == 6 && wheeledVehicleF32 == 6 && wheeledVehicleWheelI32 == 7 && wheeledVehicleWheelF32 == 19 && wheeledVehicleWheelF64 == 6,
+static_assert( wheeledVehicleI32 == 8 && wheeledVehicleF32 == 6 && wheeledVehicleWheelI32 == 7 && wheeledVehicleWheelF32 == 19 && wheeledVehicleWheelF64 == 6,
 	"vehicle state stride changed — update the facade field reads + _layoutMeta" );
 static_assert( wheeledVehicleWheelLocal == 11,
 	"vehicle wheel local stride changed — update the facade, the typings + _layoutMeta" );
@@ -2131,7 +2132,8 @@ struct WheeledVehicleStateBuffer
 
 		b3WheeledVehicleState s = b3WheeledVehicle_GetState( wheeledVehicleId );
 		wheelCount = b3WheeledVehicle_GetWheelCount( wheeledVehicleId );
-		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, s.isLaunching ? 1 : 0, wheelCount } );
+		i32.insert( i32.end(), { s.gear, s.isShifting ? 1 : 0, s.wheelsInContact, s.stuck ? 1 : 0, s.isLaunching ? 1 : 0, wheelCount,
+								 s.isTractionControlActive ? 1 : 0, s.isAbsActive ? 1 : 0 } );
 		f32.insert( f32.end(), { s.speed, s.engineRpm, s.throttle, s.brake, s.steerAngle, s.boost } );
 
 		for ( int i = 0; i < wheelCount; ++i )
@@ -4199,7 +4201,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "frequency", &b3WheeledVehicleSuspension::frequency )
 		.field( "compressionDamping", &b3WheeledVehicleSuspension::compressionDamping )
 		.field( "reboundDamping", &b3WheeledVehicleSuspension::reboundDamping )
-		.field( "enableBumpStop", &b3WheeledVehicleSuspension::enableBumpStop );
+		.field( "enableBumpStop", &b3WheeledVehicleSuspension::enableBumpStop )
+		.field( "bumpStopRestitution", &b3WheeledVehicleSuspension::bumpStopRestitution );
 
 	value_object<b3WheeledVehicleTire>( "b3WheeledVehicleTire" )
 		.field( "longitudinalPeakSlip", &b3WheeledVehicleTire::longitudinalPeakSlip )
@@ -4213,7 +4216,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "rollingResistance", &b3WheeledVehicleTire::rollingResistance )
 		.field( "longitudinalRelaxationLength", &b3WheeledVehicleTire::longitudinalRelaxationLength )
 		.field( "loadSensitivity", &b3WheeledVehicleTire::loadSensitivity )
-		.field( "referenceLoad", &b3WheeledVehicleTire::referenceLoad );
+		.field( "referenceLoad", &b3WheeledVehicleTire::referenceLoad )
+		.field( "curveRounding", &b3WheeledVehicleTire::curveRounding );
 
 	value_object<b3WheeledVehicleWheelDef>( "b3WheeledVehicleWheelDef" )
 		.field( "position", &b3WheeledVehicleWheelDef::position )
@@ -4275,7 +4279,8 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "shiftTime", &b3WheeledVehicleTransmission::shiftTime )
 		.field( "clutchReleaseTime", &b3WheeledVehicleTransmission::clutchReleaseTime )
 		.field( "shiftLatency", &b3WheeledVehicleTransmission::shiftLatency )
-		.field( "clutchStrength", &b3WheeledVehicleTransmission::clutchStrength );
+		.field( "clutchStrength", &b3WheeledVehicleTransmission::clutchStrength )
+		.field( "revMatch", &b3WheeledVehicleTransmission::revMatch );
 
 	value_object<b3WheeledVehicleDifferential>( "b3WheeledVehicleDifferential" )
 		.field( "leftWheel", &b3WheeledVehicleDifferential::leftWheel )
@@ -4307,13 +4312,16 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "speedReference", &b3WheeledVehicleSteering::speedReference )
 		.field( "steerSpeed", &b3WheeledVehicleSteering::steerSpeed )
 		.field( "returnSpeed", &b3WheeledVehicleSteering::returnSpeed )
-		.field( "ackermann", &b3WheeledVehicleSteering::ackermann );
+		.field( "ackermann", &b3WheeledVehicleSteering::ackermann )
+		.field( "counterSteerLock", &b3WheeledVehicleSteering::counterSteerLock );
 
 	value_object<b3WheeledVehicleAssists>( "b3WheeledVehicleAssists" )
 		.field( "counterSteer", &b3WheeledVehicleAssists::counterSteer )
 		.field( "driftGripScale", &b3WheeledVehicleAssists::driftGripScale )
 		.field( "tractionControl", &b3WheeledVehicleAssists::tractionControl )
 		.field( "abs", &b3WheeledVehicleAssists::abs )
+		.field( "absBrakeBias", &b3WheeledVehicleAssists::absBrakeBias )
+		.field( "brakeSteerGrip", &b3WheeledVehicleAssists::brakeSteerGrip )
 		.field( "downforce", &b3WheeledVehicleAssists::downforce )
 		.field( "drag", &b3WheeledVehicleAssists::drag )
 		.field( "rollInfluence", &b3WheeledVehicleAssists::rollInfluence )
@@ -4360,7 +4368,9 @@ EMSCRIPTEN_BINDINGS( box3d )
 		.field( "steerAngle", &b3WheeledVehicleState::steerAngle )
 		.field( "wheelsInContact", &b3WheeledVehicleState::wheelsInContact )
 		.field( "stuck", &b3WheeledVehicleState::stuck )
-		.field( "isLaunching", &b3WheeledVehicleState::isLaunching );
+		.field( "isLaunching", &b3WheeledVehicleState::isLaunching )
+		.field( "isTractionControlActive", &b3WheeledVehicleState::isTractionControlActive )
+		.field( "isAbsActive", &b3WheeledVehicleState::isAbsActive );
 
 	value_object<b3WheeledVehicleWheelState>( "b3WheeledVehicleWheelState" )
 		.field( "hasContact", &b3WheeledVehicleWheelState::hasContact )

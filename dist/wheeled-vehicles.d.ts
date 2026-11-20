@@ -46,6 +46,8 @@ export interface WheeledVehicleTire {
 	latSlideAngle: number;
 	latSlide: number;
 	rolling: number;
+	/** b3WheeledVehicleTire curveRounding, 0 to 1 (default 0: straight lines between the curve's points) */
+	rounding?: number;
 }
 
 export interface WheeledVehicleAxle {
@@ -84,6 +86,8 @@ export interface WheeledVehicleCar {
 		reboundDamping: number;
 		/** Extra spring length past `maxLength` (m, default 0): carries a soft spring's sag without a longer droop */
 		preload?: number;
+		/** Share of the speed the body meets the bump stops with that they give back, 0 to 1 (default 0: no bounce) */
+		bumpStopRestitution?: number;
 	};
 	tire: WheeledVehicleTire;
 	engine: {
@@ -98,6 +102,10 @@ export interface WheeledVehicleCar {
 	shiftUpRpm: number;
 	shiftDownRpm: number;
 	shiftTime: number;
+	/** b3WheeledVehicleTransmission clutchReleaseTime (s). Left out, the engine default. */
+	clutchReleaseTime?: number;
+	/** b3WheeledVehicleTransmission revMatch (default false) */
+	revMatch?: boolean;
 	/** Front and rear anti-roll bar stiffness (N/m) */
 	antiRoll: [number, number];
 	steering: {
@@ -106,11 +114,15 @@ export interface WheeledVehicleCar {
 		speedReference: number;
 		steerSpeed: number;
 		returnSpeed: number;
+		/** Extra lock while steering into a rear slide, as a fraction of the slide angle, 0 to 1 (default 0) */
+		counterSteerLock?: number;
 	};
 	downforce: number;
 	drag: number;
 	tractionControl: boolean;
 	abs: boolean;
+	/** How much of the side grip ABS keeps free for steering goes to the brake instead, 0 to 1 (default 0) */
+	absBrakeBias?: number;
 	/** Read by the drivetrain layers */
 	drive: {
 		frontLsd: number;
@@ -156,6 +168,8 @@ export interface WheeledVehicleRealismLevel {
 	/** null keeps the car's own setting */
 	tractionControl: boolean | null;
 	abs: boolean | null;
+	/** Extra grip on every tire while braking with the front wheels cornering, as a fraction (0.1 is 10% more) */
+	brakeSteerGrip: number;
 }
 
 export type WheeledVehicleTurboName =
