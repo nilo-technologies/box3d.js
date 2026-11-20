@@ -25,14 +25,16 @@
 //            force: the engine has about as much as the tires can use
 //   revs%    share of the run above 75% of the limiter
 //   shifts   gear changes per km
-//   slip5%   share of the run with over 5° of sideslip: how much the car moves around
+//   slip5%   share of the time above 25 km/h with over 5° of sideslip: how much the car moves
+//            around. Slower than that the sideslip of a car turning on the spot means nothing.
 //   p95, peak  sideslip (°)
 //   slides   times the sideslip passed 12° and came back under 5° (a slide the car recovered)
 //   spins    times it passed 60°
 //   rear/front  how hard the rear tires work against the fronts in the corners, each as its slip
 //            angle over its peak angle. Under 0.8 the car pushes its nose; over 1.1 the tail leads.
 //   off%     share of the run with the car's centre off the asphalt
-//   hits     sudden stops: over 1.5 m/s lost in one step (a guardrail)
+//   hits     sudden stops: over 1.5 m/s lost in one step. On the pass that is nearly always a
+//            guardrail, but the count does not tell a rail from a bank or a landing.
 //
 // Single runs are chaotic (a key held one frame longer takes another line), so compare the mean
 // rows, and treat a few tenths of a second or a point of share as noise.
@@ -55,7 +57,8 @@ function setPath(target, dotted, value) {
 	const keys = dotted.split('.');
 	let node = target;
 	for (const [i, key] of keys.entries()) {
-		if (node === null || typeof node !== 'object' || !(key in node)) {
+		// Own fields only: `in` would also find what every object inherits (constructor, __proto__)
+		if (node === null || typeof node !== 'object' || !Object.hasOwn(node, key)) {
 			throw new Error(`--set ${dotted}: the car layer has no ${keys.slice(0, i + 1).join('.')}`);
 		}
 		if (i < keys.length - 1) node = node[key];
@@ -192,7 +195,7 @@ export function driveFeel(trackName, preset, options = {}) {
 		revShare: steps ? revSteps / steps : 0,
 		shiftsPerKm: km > 0 ? shifts / km : 0,
 		slipShare: movingSteps ? slipSteps / movingSteps : 0,
-		slipP95: slips.length ? slips[Math.floor(slips.length * 0.95)] : 0,
+		slipP95: slips.length ? slips[Math.floor((slips.length - 1) * 0.95)] : 0,
 		slipPeak: peakSlip,
 		slides,
 		spins,
