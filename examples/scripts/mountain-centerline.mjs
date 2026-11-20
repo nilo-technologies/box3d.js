@@ -10,8 +10,8 @@
 // the others are walls along it and road markings. This script rasterises the road from above
 // (a height per 25 cm cell), walks it from the summit to the bottom, re-centring between the
 // road edges at every metre, smooths the walk (more where the road widens into a start area or
-// a lay-by, which would otherwise pull the line sideways), trims the dead ends and keeps the
-// fewest points that stay within a few centimetres of the smoothed line.
+// a lay-by, which would otherwise pull the line sideways), trims the dead ends and resamples
+// the smoothed line evenly, a point every 5 m.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,13 +31,21 @@ function accessor(index) {
 	const view = gltf.bufferViews[a.bufferView];
 	const size = { SCALAR: 1, VEC2: 2, VEC3: 3 }[a.type];
 	const offset = (view.byteOffset ?? 0) + (a.byteOffset ?? 0);
-	const stride = view.byteStride ?? size * 4;
-	const ints = a.componentType === 5125;
+	// Each glTF component type with its own width: indices may be bytes, shorts or ints
+	const components = {
+		5121: [1, (at) => bin.readUInt8(at)],
+		5123: [2, (at) => bin.readUInt16LE(at)],
+		5125: [4, (at) => bin.readUInt32LE(at)],
+		5126: [4, (at) => bin.readFloatLE(at)],
+	};
+	const component = components[a.componentType];
+	if (!component) throw new Error(`accessor ${index}: component type ${a.componentType} is not supported`);
+	const [width, read] = component;
+	const stride = view.byteStride ?? size * width;
 	const values = new Float64Array(a.count * size);
 	for (let k = 0; k < a.count; k++) {
 		for (let c = 0; c < size; c++) {
-			const at = offset + k * stride + c * 4;
-			values[k * size + c] = ints ? bin.readUInt32LE(at) : bin.readFloatLE(at);
+			values[k * size + c] = read(offset + k * stride + c * width);
 		}
 	}
 	return values;
@@ -164,7 +172,9 @@ const smooth = (values, sigma) =>
 	});
 const NARROW = 2;
 const WIDE = 7;
-const SPACING = Number(process.env.SPACING ?? 5);
+// Distance between the control points written out (m). A constant, not a setting: the tracks
+// and their lap times in the tests are built from this file's output.
+const SPACING = 5;
 const sx = smooth(walk.map((q) => q[0]), (i) => (wide[i] ? WIDE : NARROW));
 const sz = smooth(walk.map((q) => q[1]), (i) => (wide[i] ? WIDE : NARROW));
 const sy = smooth(walk.map((q) => q[2]), () => 6);
