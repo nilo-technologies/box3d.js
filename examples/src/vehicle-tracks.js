@@ -917,6 +917,8 @@ export function buildRaceTrack(name) {
  * `speedReference` (m/s). `pace` is the share of the grip to plan with: 0.9 leaves a tenth in hand.
  */
 export function racingLineSpeeds(track, car, pace = 0.9) {
+	// With no grip to plan with, the braking pass below would divide by zero and return NaN
+	if (!(pace > 0)) throw new RangeError(`racingLineSpeeds: pace must be above 0, got ${pace}`);
 	const line = track.racingLine;
 	const n = line.length;
 	const g = 9.81;

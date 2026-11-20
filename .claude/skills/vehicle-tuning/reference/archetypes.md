@@ -32,7 +32,7 @@ Starting ranges for the car layer at 100% realism, and the targets the metrics s
 | tire slide slip, lateral slide angle | 0.4, 18° | 0.6, 28° (gravel: broad, late) | 0.35, 16° | 0.4, 18° |
 | tire μ (lat peak / lat slide) | 1.10 / 1.06, rear 1.10 / 1.10; AWD rear ×0.985; rear ×0.99 at 50% (`rearGrip`) | 1.00 / 0.96, rear 1.05 / 1.05 | 1.25 / 1.18, rear 1.25 / 1.25 | 1.02 / 0.90 |
 | longitudinal peak / slide | 1.15 / 0.95 | 1.05 / 0.92 | 1.30 / 1.00 | 1.08 / 0.92 |
-| torque (N·m) at rpm | 400-490 at 5000 (the sports car: 486, 370 hp) | 380-420 at 4000 | 650-770 at 6000 | 380-420 at 3000 (turbo) |
+| torque (N·m) at rpm | 400-490 at 5000 (the sports car: 486 at 5000, 370 hp at 6900) | 380-420 at 4000 | 650-770 at 6000 | 380-420 at 3000 (turbo) |
 | max rpm | 7000-7500 | 7500 | 8500 | 6500-7000 |
 | gear ratios | 3.6, 2.2, 1.55, 1.2, 0.98, 0.82 | 3.3, 2.3, 1.75, 1.4, 1.15, 0.98 | 3.2, 2.3, 1.75, 1.4, 1.15, 0.95, 0.78 | 3.46, 2.05, 1.37, 1.03, 0.85, 0.78 |
 | final drive | 3.6 | 4.93 (4.4 at 0.33 m) | 3.4 | 3.9 |

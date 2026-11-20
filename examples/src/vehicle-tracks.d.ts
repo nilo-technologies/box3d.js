@@ -196,7 +196,8 @@ export function buildRaceTrack(name: RaceTrackName): RaceTrack;
 /**
  * The fastest a car may be at each racing line sample and still make every corner ahead (m/s):
  * what its tires and its steering can hold round the line there, and what it can still brake from
- * for the corners after it. `pace` is the share of the grip to plan with (0.9 by default).
+ * for the corners after it. `pace` is the share of the grip to plan with (0.9 by default) and
+ * must be above 0: anything else throws a RangeError.
  */
 export function racingLineSpeeds(
 	track: RaceTrack,

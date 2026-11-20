@@ -49,12 +49,16 @@ const { driveLap } = await import(new URL('examples/scripts/vehicle-laps.mjs', r
 
 const deg = 180 / Math.PI;
 
+// Sets a field the car layer already has. A path that is not there is a typo: creating it
+// would run the unmodified car and report it as the variant.
 function setPath(target, dotted, value) {
 	const keys = dotted.split('.');
 	let node = target;
-	for (const key of keys.slice(0, -1)) {
-		node[key] ??= {};
-		node = node[key];
+	for (const [i, key] of keys.entries()) {
+		if (node === null || typeof node !== 'object' || !(key in node)) {
+			throw new Error(`--set ${dotted}: the car layer has no ${keys.slice(0, i + 1).join('.')}`);
+		}
+		if (i < keys.length - 1) node = node[key];
 	}
 	node[keys[keys.length - 1]] = value;
 }
