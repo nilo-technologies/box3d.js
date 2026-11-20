@@ -518,9 +518,9 @@ export const wheeledVehicleCars = {
 		front: { width: 0.255, brake: 2400, frequency: 1.7 },
 		// Mid engine, but under hard braking the weight moves forward: 1500 N·m puts about 38% of the
 		// braking on the rear (2200 was 48% and spun the car braking into a turn). The rear tires grip
-		// as hard as the fronts but reach it sooner (5.5 degrees of slip against 6.5) and hold it past
-		// the peak, so a lift through the steering limiter does not swing the tail out. 5% more rear
-		// grip did that too, but left the fronts washing out at full lock.
+		// as hard as the fronts but reach it sooner (7.5 degrees of slip against 8.5) and grip harder
+		// still past the peak, so a lift through the steering limiter does not swing the tail out. 5%
+		// more rear grip at the peak did that too, but left the fronts washing out at full lock.
 		rear: {
 			width: 0.325,
 			brake: 1500,

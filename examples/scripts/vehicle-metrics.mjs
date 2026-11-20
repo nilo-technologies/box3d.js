@@ -294,6 +294,8 @@ function testLaunchAndBrake(preset) {
 	const start = pose(car.chassis).position;
 	const zeroTo100 = driveTo(car, 100 / kmh, 20);
 	const reached = readState(car.vehicle).speed >= 100 / kmh;
+	// Upshifts made on the way there: a supercar is still in second at 100 km/h
+	const upshiftsTo100 = Math.max(readState(car.vehicle).gear - 1, 0);
 	const drift = Math.abs(pose(car.chassis).position[0] - start[0]);
 	let braking = Number.NaN;
 	let brakeUpright = 1;
@@ -321,6 +323,7 @@ function testLaunchAndBrake(preset) {
 	b3.b3DestroyWorld(car.world);
 	return {
 		zeroTo100: reached ? zeroTo100 : Number.NaN,
+		upshiftsTo100,
 		launchDrift: drift,
 		braking,
 		brakeUpright,
@@ -627,13 +630,16 @@ function testRough(preset) {
 
 export function measure(preset, { quick = false } = {}) {
 	const def = preset.apply(b3.b3DefaultWheeledVehicleDef());
+	const settle = testSettle(preset);
+	const launch = testLaunchAndBrake(preset);
+	// Time without drive in an upshift, past the tenth of a second the 0-100 targets already hold
+	const shiftCost = Math.max(def.transmission.shiftTime + 0.5 * def.transmission.clutchReleaseTime - 0.1, 0);
 	return {
 		tractionControl: def.assists.tractionControl,
-		// Time without drive in the two upshifts on the way to 100 km/h, past the tenth of a
-		// second each that the 0-100 targets already hold
-		shiftAllowance: 2 * Math.max(def.transmission.shiftTime + 0.5 * def.transmission.clutchReleaseTime - 0.1, 0),
-		...testSettle(preset),
-		...testLaunchAndBrake(preset),
+		// For the upshifts the car made on the way to 100 km/h, and no more
+		shiftAllowance: launch.upshiftsTo100 * shiftCost,
+		...settle,
+		...launch,
 		...(quick ? { topSpeed: Number.NaN, topSpeedUpright: 1 } : testTopSpeed(preset)),
 		...testShifts(preset),
 		...testLateral(preset),
@@ -692,9 +698,10 @@ export function check(m, target, { quick = false } = {}) {
 		rule('noSpin', !m.spun, `peak sideslip ${m.stepSideslip.toFixed(0)} deg (want < 35)`);
 		for (const move of Object.keys(keyboardMoves)) {
 			// A car driven without traction control slides its driven wheels at full throttle by
-			// design, so the four moves that hold full throttle and full lock at once are not
-			// held to the limit. Braking and turning still is.
-			if (m.tractionControl === false && ['trailBrake', 'liftOff', 'slalom', 'flick'].includes(move)) continue;
+			// design, so the three moves that hold full throttle and full lock for over a second
+			// are not held to the limit. Braking and turning still is, and so is the trail brake,
+			// which is on the throttle for its first second only.
+			if (m.tractionControl === false && ['liftOff', 'slalom', 'flick'].includes(move)) continue;
 			const slip = m[`${move}Slip`];
 			rule(`forgiving ${move}`, slip < forgivingSlip, `peak sideslip ${slip.toFixed(0)} deg (want < ${forgivingSlip})`);
 		}

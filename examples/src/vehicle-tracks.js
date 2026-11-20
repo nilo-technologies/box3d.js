@@ -17,10 +17,9 @@ import { mountainPoints } from './vehicle-track-mountain.js';
 
 const TAU = Math.PI * 2;
 
-/** Guardrail wall thickness and height above the road (m) */
-export const railThickness = 0.25;
+/** Guardrail height above the road (m) */
 export const railHeight = 0.9;
-/** Radius of the rounded collision segments the rails are made of (m) */
+/** Radius of the capsules the rails collide as (m): the rail is twice this thick */
 export const railRadius = 0.3;
 
 /**
@@ -1030,18 +1029,34 @@ export function createRaceTrackBodies(b3, world, track) {
 		railDef.baseMaterial = { ...railDef.baseMaterial, friction: 0.1 };
 		for (const rail of track.rails) {
 			const p = rail.points;
-			for (let i = 0; i + 5 < p.length; i += 3) {
-				// Outward, away from the road: the left normal (dz, -dx) on the left side (+1)
-				const dx = p[i + 3] - p[i];
-				const dz = p[i + 5] - p[i + 2];
+			const count = p.length / 3;
+			// One offset per rail point, outward from the road, across the direction the rail has
+			// there (from the point before to the point after). The two capsules that meet at a
+			// point then end on the same spot, also in a bend, where an offset per segment would
+			// leave two caps side by side.
+			const offsets = new Float64Array(count * 2);
+			for (let k = 0; k < count; k++) {
+				const a = Math.max(k - 1, 0) * 3;
+				const b = Math.min(k + 1, count - 1) * 3;
+				const dx = p[b] - p[a];
+				const dz = p[b + 2] - p[a + 2];
 				const len = Math.hypot(dx, dz);
-				if (len < 1e-3) continue;
-				const ox = ((rail.side * dz) / len) * railRadius;
-				const oz = ((-rail.side * dx) / len) * railRadius;
+				if (len < 1e-6) continue;
+				// The left normal (dz, -dx) on the left side (+1)
+				offsets[k * 2] = ((rail.side * dz) / len) * railRadius;
+				offsets[k * 2 + 1] = ((-rail.side * dx) / len) * railRadius;
+			}
+			for (let k = 0; k + 1 < count; k++) {
+				const i = k * 3;
+				const x1 = p[i] + offsets[k * 2];
+				const z1 = p[i + 2] + offsets[k * 2 + 1];
+				const x2 = p[i + 3] + offsets[k * 2 + 2];
+				const z2 = p[i + 5] + offsets[k * 2 + 3];
+				if (Math.hypot(x2 - x1, p[i + 4] - p[i + 1], z2 - z1) < 1e-3) continue;
 				for (const y of [railRadius, railHeight - railRadius]) {
 					b3.b3CreateCapsuleShape(rails, railDef, {
-						center1: [p[i] + ox, p[i + 1] + y, p[i + 2] + oz],
-						center2: [p[i + 3] + ox, p[i + 4] + y, p[i + 5] + oz],
+						center1: [x1, p[i + 1] + y, z1],
+						center2: [x2, p[i + 4] + y, z2],
 						radius: railRadius,
 					});
 				}

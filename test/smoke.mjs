@@ -2517,6 +2517,12 @@ async function vehicleScenarios( b3 )
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 4 ), RangeError, 'wheel index past the count is refused' );
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, -1 ), RangeError, 'negative wheel index is refused' );
 		assert.throws( () => b3.getWheeledVehicleWheelAt( wheel, buf, 1.5 ), RangeError, 'fractional wheel index is refused' );
+		b3.b3DestroyWorld( world );
+
+		const spare = b3.createWheeledVehicleStateBuffer();
+		b3.destroyWheeledVehicleStateBuffer( spare );
+		b3.destroyWheeledVehicleStateBuffer( spare );
+		assert.throws( () => b3.getWheeledVehicleStateData( spare, vehicle ), /destroyed/, 'a destroyed buffer cannot be refilled' );
 	}
 
 	// The state says when traction control and ABS are intervening, by the struct and by the buffer:
@@ -2545,12 +2551,6 @@ async function vehicleScenarios( b3 )
 		assert.ok( abs, 'ABS shows as active under a full brake' );
 		assert.ok( direct.isTractionControlActive === false && direct.isAbsActive === false, 'no assist is active with no input' );
 		b3.b3DestroyWorld( world );
-		b3.b3DestroyWorld( world );
-
-		const spare = b3.createWheeledVehicleStateBuffer();
-		b3.destroyWheeledVehicleStateBuffer( spare );
-		b3.destroyWheeledVehicleStateBuffer( spare );
-		assert.throws( () => b3.getWheeledVehicleStateData( spare, vehicle ), /destroyed/, 'a destroyed buffer cannot be refilled' );
 	}
 
 	b3.destroyWheeledVehicleStateBuffer( buf );

@@ -110,7 +110,7 @@ const controllerTips: Record<string, Record<string, string>> = {
 		enableBumpStop:
 			'Hard stop at the min length, so hard landings cannot push the wheel through the chassis',
 		bumpStopRestitution:
-			'Share of its landing speed the body bounces back up with off the bump stop. 0 stays down.',
+			'Share of the speed the chassis meets the bump stop with that the stop gives back. 0 means no bounce; below 1 m/s there is no bounce.',
 		radius:
 			'Wheel radius. A larger wheel turns the same torque into less force at the ground.',
 		width: 'Wheel width, used by the cylinder ground probe',
