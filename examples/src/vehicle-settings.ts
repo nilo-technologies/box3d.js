@@ -815,7 +815,7 @@ export function createWheeledVehicleSettings(
 		.name('ABS brake bias')
 		.onChange(applyAssists);
 	assistsFolder
-		.add(assists, 'brakeSteerGrip', 0, 0.5, 0.01)
+		.add(assists, 'brakeSteerGrip', 0, 1, 0.01)
 		.name('brake + steer grip')
 		.onChange(applyAssists);
 	assistsFolder
