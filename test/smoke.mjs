@@ -2568,6 +2568,141 @@ async function vehicleScenarios( b3 )
 	return results;
 }
 
+// The vehicle anchor: a world's first wheeled vehicle makes a static body for the wheel joints to
+// hold to. It goes with the world's last vehicle, whether that vehicle is destroyed itself or with
+// its chassis body, so the world is left with the bodies it had before its first vehicle, and the
+// next vehicle makes a new anchor. A world destroyed with vehicles in it takes its anchor along.
+function wheeledVehicleAnchor( b3 )
+{
+	const bodyCount = ( world ) => b3.b3World_GetCounters( world ).bodyCount;
+	const sameBody = ( a, b ) => a.index1 === b.index1 && a.world0 === b.world0 && a.generation === b.generation;
+	const step = ( world, count ) =>
+	{
+		for ( let i = 0; i < count; i++ ) b3.b3World_Step( world, 1 / 60, 4 );
+	};
+
+	function createWorld()
+	{
+		const worldDef = b3.b3DefaultWorldDef();
+		worldDef.gravity = [ 0, -9.81, 0 ];
+		const world = b3.b3CreateWorld( worldDef );
+		const groundDef = b3.b3DefaultBodyDef();
+		groundDef.position = [ 0, -1, 0 ];
+		const ground = b3.b3CreateBody( world, groundDef );
+		b3.b3CreateBoxShape( ground, b3.b3DefaultShapeDef(), 500, 1, 500 );
+		return world;
+	}
+
+	function createCar( world, x )
+	{
+		const bodyDef = b3.b3DefaultBodyDef();
+		bodyDef.type = b3.b3BodyType.b3_dynamicBody;
+		bodyDef.position = [ x, 1, 0 ];
+		const chassis = b3.b3CreateBody( world, bodyDef );
+		b3.b3CreateBoxShape( chassis, b3.b3DefaultShapeDef(), 0.9, 0.3, 2.1 );
+		const def = b3.b3DefaultWheeledVehicleDef();
+		def.chassisId = chassis;
+		const vehicle = b3.b3CreateWheeledVehicle( world, def );
+		assert.ok( b3.b3WheeledVehicle_IsValid( vehicle ), 'vehicle is valid' );
+		return { vehicle, chassis };
+	}
+
+	// The static body a vehicle's wheel joints hold to while it is on static ground
+	function anchorOf( chassis )
+	{
+		const joints = b3.b3Body_GetJoints( chassis );
+		try
+		{
+			for ( let i = 0; i < joints.size(); i++ )
+			{
+				const joint = joints.get( i );
+				if ( b3.b3Joint_GetType( joint ) !== b3.b3JointType.b3_wheeledVehicleWheelJoint ) continue;
+				const body = b3.b3Joint_GetBodyB( joint );
+				if ( b3.b3Body_GetType( body ) === b3.b3BodyType.b3_staticBody ) return body;
+			}
+		}
+		finally
+		{
+			joints.delete();
+		}
+		assert.fail( 'the wheel joints hold to a static anchor' );
+	}
+
+	// Settles on four wheels, then pulls away under throttle
+	function assertDrives( world, { vehicle, chassis }, label )
+	{
+		const pos = [ 0, 0, 0 ];
+		step( world, 60 );
+		assert.equal( b3.b3WheeledVehicle_GetState( vehicle ).wheelsInContact, 4, `${label}: all four wheels touch the ground` );
+		const rideHeight = b3.b3Body_GetPosition( pos, chassis )[ 1 ];
+		assert.ok( rideHeight > 0.6 && rideHeight < 0.8, `${label}: rides at ${rideHeight.toFixed( 3 )} m` );
+		b3.b3WheeledVehicle_SetInput( vehicle, { forward: 1, brake: 0, steer: 0, handbrake: 0 } );
+		step( world, 60 );
+		const speed = b3.b3WheeledVehicle_GetState( vehicle ).speed;
+		assert.ok( speed > 3, `${label}: pulls away (${speed.toFixed( 2 )} m/s)` );
+		b3.b3WheeledVehicle_SetInput( vehicle, { forward: 0, brake: 0, steer: 0, handbrake: 0 } );
+	}
+
+	const world = createWorld();
+	const before = bodyCount( world );
+
+	// The last vehicle destroyed directly
+	const a = createCar( world, -5 );
+	const b = createCar( world, 5 );
+	const firstAnchor = anchorOf( a.chassis );
+	assert.ok( sameBody( anchorOf( b.chassis ), firstAnchor ), 'a world\'s vehicles share one anchor' );
+	assert.equal( bodyCount( world ), before + 3, 'the first vehicle adds the anchor beside the chassis bodies' );
+	step( world, 30 );
+	b3.b3DestroyWheeledVehicle( a.vehicle );
+	assert.ok( b3.b3Body_IsValid( firstAnchor ), 'the anchor stays while the world has a vehicle' );
+	assertDrives( world, b, 'the vehicle left' );
+	b3.b3DestroyWheeledVehicle( b.vehicle );
+	assert.equal( b3.b3World_GetWheeledVehicleCount( world ), 0, 'no vehicles left' );
+	assert.ok( !b3.b3Body_IsValid( firstAnchor ), 'the anchor goes with the last vehicle destroyed directly' );
+	assert.equal( bodyCount( world ), before + 2, 'only the chassis bodies stay' );
+	b3.b3DestroyBody( a.chassis );
+	b3.b3DestroyBody( b.chassis );
+	assert.equal( bodyCount( world ), before, 'the world has the bodies it had before its first vehicle' );
+
+	// The last vehicle destroyed with its chassis body
+	const c = createCar( world, -5 );
+	const d = createCar( world, 5 );
+	const secondAnchor = anchorOf( c.chassis );
+	assert.ok( !sameBody( secondAnchor, firstAnchor ), 'the next vehicle makes a new anchor' );
+	assert.equal( bodyCount( world ), before + 3, 'the new anchor is the only body beside the chassis bodies' );
+	step( world, 30 );
+	b3.b3DestroyBody( c.chassis );
+	assert.ok( !b3.b3WheeledVehicle_IsValid( c.vehicle ), 'destroying a chassis destroys its vehicle' );
+	assert.ok( b3.b3Body_IsValid( secondAnchor ), 'the anchor stays while the world has a vehicle' );
+	assertDrives( world, d, 'the vehicle left' );
+	b3.b3DestroyBody( d.chassis );
+	assert.ok( !b3.b3WheeledVehicle_IsValid( d.vehicle ), 'destroying a chassis destroys its vehicle' );
+	assert.ok( !b3.b3Body_IsValid( secondAnchor ), 'the anchor goes with the last vehicle destroyed with its chassis' );
+	assert.equal( bodyCount( world ), before, 'the world has the bodies it had before its first vehicle' );
+
+	// A vehicle made afterwards makes its own anchor and drives
+	const e = createCar( world, 0 );
+	const thirdAnchor = anchorOf( e.chassis );
+	assert.ok( b3.b3Body_IsValid( thirdAnchor ) && !sameBody( thirdAnchor, secondAnchor ), 'a later vehicle makes a new anchor' );
+	assertDrives( world, e, 'a later vehicle' );
+	b3.b3DestroyWheeledVehicle( e.vehicle );
+	b3.b3DestroyBody( e.chassis );
+	assert.equal( bodyCount( world ), before, 'the world has the bodies it had before its first vehicle' );
+
+	// A world destroyed with a vehicle in it: the next world in its place starts without an anchor
+	createCar( world, 0 );
+	step( world, 30 );
+	b3.b3DestroyWorld( world );
+	const next = createWorld();
+	assert.equal( bodyCount( next ), before, 'a new world has only its own bodies' );
+	const f = createCar( next, 0 );
+	assert.equal( bodyCount( next ), before + 2, 'its first vehicle makes its own anchor' );
+	assertDrives( next, f, 'a vehicle in a new world' );
+	b3.b3DestroyWheeledVehicle( f.vehicle );
+	assert.equal( bodyCount( next ), before + 1, 'its anchor goes with its last vehicle' );
+	b3.b3DestroyWorld( next );
+}
+
 // Triangle first collide functions: the manifold normal points from the triangle to the other shape,
 // and a triangle only collides from its front (counter clockwise) side.
 function triangleCollision( b3 )
@@ -2861,6 +2996,7 @@ async function check( label, importPath, decompositionOptions, moduleOptions )
 
 	triangleCollision( b3 );
 
+	wheeledVehicleAnchor( b3 );
 	const vehicle = await vehicleScenarios( b3 );
 	const runs = Object.entries( vehicle.presets );
 	const matrix = runs.filter( ( [ name ] ) => name.includes( '-' ) ).map( ( [ , t ] ) => t );
